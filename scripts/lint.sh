@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# Strict gate on the shipped library: no force-unwrap / force-try / implicitly-unwrapped.
-# The repo-wide .swift-format (used by editors/hooks) only enforces formatting, since
-# tests and benchmarks legitimately use force-try.
-swift format lint --strict --configuration .swift-format-strict --recursive Sources/ADJSON
-echo "library lint clean"
+
+# Formatting gate across the package (single .swift-format).
+swift format lint --strict --recursive Sources Tests Package.swift
+
+# Shipped-library discipline: no force-cast / force-try / force-unwrap in Sources/ADJSON.
+# (Tests and benchmarks are exempt — `try!` is idiomatic there.)
+if grep -rnE '(\bas!|\btry!|baseAddress!|\.first!)' Sources/ADJSON; then
+    echo "error: force cast / force try / force unwrap found in Sources/ADJSON" >&2
+    exit 1
+fi
+
+echo "lint clean"

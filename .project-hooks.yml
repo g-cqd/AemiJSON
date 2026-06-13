@@ -1,0 +1,11 @@
+# project-hooks (https://github.com/g-cqd/project-hooks) configuration.
+#
+# The repo-wide .swift-format is formatting-only, so the auto-discovered swift-format
+# lint stays quiet and never blocks on the benchmarks/tests (which use `try!`). The
+# shipped library's stricter discipline (no force-unwrap/force-try/force-cast) is
+# enforced by scripts/lint.sh instead.
+pre-push:
+  # This is a SwiftPM library; run `swift test` rather than the auto-detected
+  # iOS xcodebuild path.
+  test-override:
+    type: swift
