@@ -1,0 +1,14 @@
+# Swift Package Manager / Xcode
+.build/
+.swiftpm/
+*.xcodeproj
+Package.resolved
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Vendored third-party fixtures (fetched via scripts/fetch-fixtures.sh)
+/Benchmarks/Corpus/*.json
+/Tests/ADJSONTests/Resources/JSONTestSuite/*.json
+/Tests/ADJSONTests/Resources/JSONPathCTS/*.json
