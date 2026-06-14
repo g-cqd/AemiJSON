@@ -97,6 +97,19 @@ private func valid(_ schema: JSONSchema, _ json: String) -> Bool { schema.isVali
     #expect(valid(s, "1"))
 }
 
+@Test func deeplyNestedSchemaCompilesWithoutStackOverflow() throws {
+    // The iterative compiler must build a deep node table without recursing; 2k levels would
+    // overflow recursive compilation. (Validation stays shallow — the instance lacks the nested
+    // key — so the still-recursive validator isn't exercised.)
+    let depth = 2000
+    let json =
+        String(repeating: #"{"properties":{"a":"#, count: depth) + #"{"type":"integer"}"#
+        + String(repeating: "}}", count: depth)
+    let root = try ADJSON.parse(json, options: JSONParseOptions(maxDepth: depth * 3)).root
+    let compiled = JSONSchema(root)
+    #expect(compiled.isValid(try ADJSON.parse(#"{"b":1}"#).root))
+}
+
 @Test func validatesAdditionalAndDependent() {
     let s = schema(#"{"type":"object","properties":{"a":{"type":"integer"}},"additionalProperties":false}"#)
     #expect(valid(s, #"{"a":1}"#))
