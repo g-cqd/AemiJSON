@@ -65,6 +65,11 @@ let first = doc.root["items"][index: 0].int    // Int?
 let users = try ADJSON.JSONDecoder().decode([User].self, from: data)
 let bytes = try ADJSON.JSONEncoder().encode(users)
 
+// Opt-in fast path: @JSONCodable generates a monomorphic decode/encode that
+// ADJSON.JSONDecoder/JSONEncoder use automatically (the type stays normal Codable).
+@JSONCodable
+struct User: Codable { var id: Int; var name: String; var tags: [String] }
+
 // Strictness / profiles
 let lenient = try ADJSON.parse(data, options: .lenient)
 var decoder = ADJSON.JSONDecoder()
@@ -112,8 +117,10 @@ Without the fixtures, `swift test` still passes (corpus/conformance cases skip).
 
 ## Roadmap
 
-- `@JSONCodable` macro for monomorphic, one-pass decode/encode targeting maximum
-  server-side throughput (the generic paths already beat Foundation today).
+- `@JSONCodable` macro: landed as the opt-in monomorphic fast path. The throughput
+  rework that takes it to the hand-rolled ceiling (a value-type encode buffer and an
+  `@inlinable` cursor SPI so the generated code inlines across the module boundary) is
+  in progress; the generic paths already beat Foundation today.
 
 ## License
 
