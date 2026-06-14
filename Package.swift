@@ -30,6 +30,25 @@ let benchSettings: [SwiftSetting] = strictSettings + timingWarningFlags
 let testSettings: [SwiftSetting] =
     strictSettings + timingWarningFlags + [.unsafeFlags(["-enable-actor-data-race-checks"])]
 
+// Dev-only tooling is gated behind `ADJSON_DEV` so packages that depend on ADJSON never resolve it
+// (consumers keep just swift-syntax, which the macro needs). Contributors and CI set `ADJSON_DEV=1`
+// to enable the DocC plugin (`swift package generate-documentation`) and build-time lint
+// enforcement. The `format` / `lint` / `fetch-fixtures` command plugins carry no external
+// dependencies, so they are always available without the flag.
+let isDev = Context.environment["ADJSON_DEV"] != nil
+
+var packageDependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0")
+]
+if isDev {
+    packageDependencies.append(
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.0.0"))
+}
+
+// Build-time formatting enforcement attaches to the library only in dev/CI. A build-tool plugin on
+// a library target would otherwise run for everyone who depends on ADJSON, so it stays gated.
+let adjsonBuildPlugins: [Target.PluginUsage] = isDev ? ["LintBuild"] : []
+
 let package = Package(
     name: "ADJSON",
     // macOS is intentionally one generation below the device platforms: everything the library
@@ -47,9 +66,7 @@ let package = Package(
     products: [
         .library(name: "ADJSON", targets: ["ADJSON"])
     ],
-    dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0")
-    ],
+    dependencies: packageDependencies,
     targets: [
         .macro(
             name: "ADJSONMacros",
@@ -59,7 +76,9 @@ let package = Package(
             ],
             swiftSettings: strictSettings
         ),
-        .target(name: "ADJSON", dependencies: ["ADJSONMacros"], swiftSettings: strictSettings),
+        .target(
+            name: "ADJSON", dependencies: ["ADJSONMacros"], swiftSettings: strictSettings,
+            plugins: adjsonBuildPlugins),
         .executableTarget(name: "ADJSONBenchmarks", dependencies: ["ADJSON"], swiftSettings: benchSettings),
         .testTarget(
             name: "ADJSONTests",
@@ -70,5 +89,27 @@ let package = Package(
             resources: [.copy("Resources")],
             swiftSettings: testSettings
         ),
+
+        // Developer tooling. Command plugins are dependency-free (they drive the toolchain's
+        // bundled `swift format`), so they impose nothing on packages that depend on ADJSON.
+        .plugin(
+            name: "Format",
+            capability: .command(
+                intent: .custom(verb: "format", description: "Format Swift sources with swift-format"),
+                permissions: [.writeToPackageDirectory(reason: "Format Swift sources with swift-format")])),
+        .plugin(
+            name: "Lint",
+            capability: .command(
+                intent: .custom(verb: "lint", description: "Check formatting and shipped-library discipline"))),
+        .plugin(
+            name: "FetchFixtures",
+            capability: .command(
+                intent: .custom(
+                    verb: "fetch-fixtures", description: "Download conformance and benchmark corpora"),
+                permissions: [
+                    .allowNetworkConnections(scope: .all(), reason: "Download third-party JSON corpora"),
+                    .writeToPackageDirectory(reason: "Write fixtures into Tests and Benchmarks"),
+                ])),
+        .plugin(name: "LintBuild", capability: .buildTool()),
     ]
 )
