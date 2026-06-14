@@ -44,20 +44,20 @@ public struct JSON: Sendable {
     public var int: Int? {
         guard tag == JSONKind.number.rawValue, Slot.flags(slot) & 1 == 1 else { return nil }
         let off = Slot.low(slot), len = Slot.length(slot)
-        return doc.withBytePointer { adParseInteger($0, off, len, Int.self) }
+        return doc.withBytePointer { JSONNumber.parseInteger($0, off, len, Int.self) }
     }
 
     public var double: Double? {
         guard tag == JSONKind.number.rawValue else { return nil }
         let off = Slot.low(slot), len = Slot.length(slot)
-        return doc.withBytePointer { adParseDouble($0, off, len) }
+        return doc.withBytePointer { JSONNumber.parseDouble($0, off, len) }
     }
 
     /// Parse the number as any fixed-width integer type (used by the decoder).
     func integer<T: FixedWidthInteger>(_ type: T.Type) -> T? {
         guard tag == JSONKind.number.rawValue else { return nil }
         let off = Slot.low(slot), len = Slot.length(slot)
-        return doc.withBytePointer { adParseInteger($0, off, len, T.self) }
+        return doc.withBytePointer { JSONNumber.parseInteger($0, off, len, T.self) }
     }
 
     public var float: Float? {
@@ -71,7 +71,7 @@ public struct JSON: Sendable {
         let esc = Slot.flags(slot) & 1 == 1
         return doc.withBytePointer { p in
             if !esc { return String(decoding: UnsafeBufferPointer(start: p + off, count: len), as: UTF8.self) }
-            return unescapeString(p, off, len)
+            return JSONString.unescape(p, off, len)
         }
     }
 
@@ -161,7 +161,7 @@ public struct JSON: Sendable {
     private func keyMatches(_ p: UnsafePointer<UInt8>, _ keySlot: UInt64, _ key: String) -> Bool {
         let off = Slot.low(keySlot), len = Slot.length(keySlot)
         if Slot.flags(keySlot) & 1 == 1 {
-            return unescapeString(p, off, len) == key
+            return JSONString.unescape(p, off, len) == key
         }
         return keyBytesEqual(key, p + off, len)
     }
@@ -169,7 +169,7 @@ public struct JSON: Sendable {
     @inline(__always)
     private func decodeKey(_ p: UnsafePointer<UInt8>, _ keySlot: UInt64) -> String {
         let off = Slot.low(keySlot), len = Slot.length(keySlot)
-        if Slot.flags(keySlot) & 1 == 1 { return unescapeString(p, off, len) }
+        if Slot.flags(keySlot) & 1 == 1 { return JSONString.unescape(p, off, len) }
         return String(decoding: UnsafeBufferPointer(start: p + off, count: len), as: UTF8.self)
     }
 }

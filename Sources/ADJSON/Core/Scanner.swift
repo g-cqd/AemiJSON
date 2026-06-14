@@ -195,7 +195,7 @@ struct TapeBuilder {
             }
             if c < 0x20 { throw JSONError.invalidString(at: j) }
             if strict && c >= 0x80 {
-                j += try utf8SequenceLength(p, j, n)
+                j += try JSONUTF8.sequenceLength(p, j, n)
                 continue
             }
             j += 1

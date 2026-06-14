@@ -67,14 +67,14 @@ final class DecodeContext {
         let s = slot(i)
         guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
         assertBytes(Slot.low(s), Slot.length(s))
-        return adParseDouble(bytes, Slot.low(s), Slot.length(s))
+        return JSONNumber.parseDouble(bytes, Slot.low(s), Slot.length(s))
     }
 
     @inline(__always) @inlinable func integer<T: FixedWidthInteger>(_ i: Int, _ type: T.Type) -> T? {
         let s = slot(i)
         guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
         assertBytes(Slot.low(s), Slot.length(s))
-        return adParseInteger(bytes, Slot.low(s), Slot.length(s), type)
+        return JSONNumber.parseInteger(bytes, Slot.low(s), Slot.length(s), type)
     }
 
     @inlinable func string(_ i: Int) -> String? {
@@ -91,7 +91,7 @@ final class DecodeContext {
         if Slot.flags(s) & 1 == 0 {
             return String(decoding: UnsafeBufferPointer(start: bytes + off, count: len), as: UTF8.self)
         }
-        return unescapeString(bytes, off, len)
+        return JSONString.unescape(bytes, off, len)
     }
 
     /// Index of the value slot for `key` within the object at `obj`, or nil.
@@ -108,7 +108,7 @@ final class DecodeContext {
             assertBytes(koff, klen)
             let matched: Bool
             if Slot.flags(ks) & 1 == 1 {
-                matched = unescapeString(bytes, koff, klen) == key
+                matched = JSONString.unescape(bytes, koff, klen) == key
             } else {
                 matched = keyBytesEqual(key, bytes + koff, klen)
             }

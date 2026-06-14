@@ -20,7 +20,7 @@ extension DecodeContext {
             assertBytes(koff, klen)
             if Slot.flags(ks) & 1 == 0 {
                 if klen == tlen, keyBytesEqual(bytes + koff, target, tlen) { found = valIdx }
-            } else if unescapeString(bytes, koff, klen) == lit.description {
+            } else if JSONString.unescape(bytes, koff, klen) == lit.description {
                 found = valIdx
             }
             i = nextIndex(after: valIdx)
