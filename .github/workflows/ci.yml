@@ -12,6 +12,8 @@ on:
     paths-ignore: ["README.md", "CONTRIBUTING.md", "LICENSE", ".gitignore", ".githooks/**"]
   pull_request:
     paths-ignore: ["README.md", "CONTRIBUTING.md", "LICENSE", ".gitignore", ".githooks/**"]
+  # On-demand trigger for the slow sanitizer passes (and a full platform/docs run when wanted).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -83,6 +85,44 @@ jobs:
           -derivedDataPath .derivedData
           -skipMacroValidation
           -skipPackagePluginValidation
+
+  sanitizers:
+    name: Sanitize (${{ matrix.name }})
+    needs: build-test
+    # Sanitizers are slow (TSan ~5-15x, ASan ~2x) and rebuild the whole graph under instrumentation,
+    # so run them on main / on demand — never on every PR. The conformance + simdjson corpora double
+    # as the stress input that trips data races (TSan) and OOB / use-after-free (ASan) in the unsafe
+    # scanner and the shared-state concurrency layer. These find what `-enable-actor-data-race-checks`
+    # (actor-isolation only) cannot. TSan and ASan are mutually exclusive, hence two passes.
+    if: github.event_name != 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: thread, flags: "--sanitize=thread" }
+          - { name: address, flags: "--sanitize=address --sanitize=undefined" }
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select latest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+      - name: Show toolchain
+        run: swift --version
+      - name: Cache SwiftPM
+        uses: actions/cache@v5
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Tests/**', 'Plugins/**') }}
+          restore-keys: |
+            spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-
+            spm-${{ runner.os }}-san-${{ matrix.name }}-
+      - name: Fetch conformance & benchmark fixtures
+        run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
+      - name: Test under ${{ matrix.name }} sanitizer
+        run: swift test ${{ matrix.flags }}
 
   docs:
     name: Build & deploy docs (Pages)
