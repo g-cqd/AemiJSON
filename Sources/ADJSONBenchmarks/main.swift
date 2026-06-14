@@ -253,7 +253,7 @@ let concDec = await benchAsync("concurrent decode", bytes: userData.count) {
 }
 report(serialDec, vs: nil)
 report(concDec, vs: serialDec)
-let metrics = ADJSONMetrics.snapshot()
+let metrics = ADJSON.Metrics.snapshot()
 print("Synchronization metrics: documents=\(metrics.documents) bytes=\(metrics.bytes)")
 
 // MARK: - Standard corpus (untyped) vs Foundation JSONSerialization

@@ -45,13 +45,13 @@ import Testing
         a.withUnsafeBufferPointer { pa in
             guard let ba = pa.baseAddress else { return }
             aCopy.withUnsafeBufferPointer { pc in
-                if let bc = pc.baseAddress { #expect(keyBytesEqual(ba, bc, len)) }  // equal, distinct buffers
+                if let bc = pc.baseAddress { #expect(JSONKey.bytesEqual(ba, bc, len)) }  // equal, distinct buffers
             }
             for flip in Set([0, len / 2, len - 1]) {
                 var b = aCopy
                 b[flip] ^= 0xFF
                 b.withUnsafeBufferPointer { pb in
-                    if let bb = pb.baseAddress { #expect(!keyBytesEqual(ba, bb, len)) }
+                    if let bb = pb.baseAddress { #expect(!JSONKey.bytesEqual(ba, bb, len)) }
                 }
             }
         }
@@ -60,10 +60,10 @@ import Testing
     let key = "user_name_field_01234567"  // 24 bytes = three whole words
     Array(key.utf8).withUnsafeBufferPointer { bp in
         guard let b = bp.baseAddress else { return }
-        #expect(keyBytesEqual(key, b, bp.count))
-        #expect(!keyBytesEqual(key + "x", b, bp.count))
-        #expect(!keyBytesEqual(String(key.dropLast()) + "Z", b, bp.count))
-        #expect(keyBytesEqual("", b, 0))
+        #expect(JSONKey.bytesEqual(key, b, bp.count))
+        #expect(!JSONKey.bytesEqual(key + "x", b, bp.count))
+        #expect(!JSONKey.bytesEqual(String(key.dropLast()) + "Z", b, bp.count))
+        #expect(JSONKey.bytesEqual("", b, 0))
     }
 }
 

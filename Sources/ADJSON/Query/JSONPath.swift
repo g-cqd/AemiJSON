@@ -56,7 +56,7 @@ struct RelQuery: Sendable {
 public struct JSONPath: Sendable {
     let segments: [PathSegment]
 
-    public init(_ string: String) throws {
+    public init(_ string: String) throws(JSONPathError) {
         var parser = JSONPathParser(string)
         segments = try parser.parseRoot()
     }
@@ -69,7 +69,7 @@ public struct JSONPath: Sendable {
 
 extension JSON {
     /// Evaluate an RFC 9535 JSONPath against this value as the root.
-    public func query(_ path: String) throws -> [JSON] {
+    public func query(_ path: String) throws(JSONPathError) -> [JSON] {
         try JSONPath(path).query(self)
     }
 }

@@ -9,7 +9,7 @@ public struct RelativeJSONPointer: Sendable, Equatable {
     public let yieldsKeyOrIndex: Bool  // trailing '#'
     public let pointer: JSONPointer?  // trailing JSON Pointer (nil when '#')
 
-    public init(_ string: String) throws {
+    public init(_ string: String) throws(JSONPointerError) {
         let chars = Array(string)
         var i = 0
 
@@ -52,7 +52,7 @@ public struct RelativeJSONPointer: Sendable, Equatable {
     }
 
     /// Resolve against `document`, starting from the `base` location.
-    public func resolve(from base: JSONPointer, in document: JSONValue) throws -> JSONValue {
+    public func resolve(from base: JSONPointer, in document: JSONValue) throws(JSONPointerError) -> JSONValue {
         var tokens = base.tokens
         guard tokens.count >= up else { throw JSONPointerError.notFound }
         tokens.removeLast(up)

@@ -11,6 +11,10 @@
 //   string flags bit0 = hasEscape
 //   number flags bit0 = isInteger
 // Containers (object/array):         aux = element count,          low = next index
+//
+// A single container holds at most 2^28-1 (`Slot.auxMask`) elements and the whole input is capped
+// at 4 GiB; a document exceeding either is rejected as `JSONError.documentTooLarge`
+// (see `TapeBuilder.closeContainer`).
 
 @usableFromInline
 enum JSONKind: UInt8 {

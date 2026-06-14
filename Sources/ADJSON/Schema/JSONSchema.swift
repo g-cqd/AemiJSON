@@ -35,11 +35,11 @@ public struct JSONSchema: Sendable {
         self.document = schema.doc
     }
 
-    public init(_ data: Data) throws {
+    public init(_ data: Data) throws(JSONError) {
         self.init(try ADJSON.parse(data).root)
     }
 
-    public init(parsing string: String) throws {
+    public init(parsing string: String) throws(JSONError) {
         self.init(try ADJSON.parse(string).root)
     }
 
@@ -50,7 +50,7 @@ public struct JSONSchema: Sendable {
         return ValidationResult(isValid: errors.isEmpty, errors: errors)
     }
 
-    public func validate(_ data: Data) throws -> ValidationResult {
+    public func validate(_ data: Data) throws(JSONError) -> ValidationResult {
         validate(try ADJSON.parse(data).root)
     }
 

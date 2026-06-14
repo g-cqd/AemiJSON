@@ -26,12 +26,22 @@ extension ADJSON {
         public func encodeToBytes<T: Encodable>(_ value: T) throws -> [UInt8] {
             if let fast = value as? any ADJSONFastEncodable {
                 var w = JSONByteWriter(adopting: EncoderBufferPool.take(), options: options)
-                try fast.__adjsonEncode(into: &w)
+                do {
+                    try fast.__adjsonEncode(into: &w)
+                } catch {
+                    EncoderBufferPool.recycle(w.bytes)
+                    throw error
+                }
                 return w.bytes
             }
             let writer = JSONWriter(adopting: EncoderBufferPool.take())
             let state = EncodeState(writer, options: options)
-            try value.encode(to: TapeEncoder(state: state))
+            do {
+                try value.encode(to: TapeEncoder(state: state))
+            } catch {
+                EncoderBufferPool.recycle(writer.bytes)
+                throw error
+            }
             state.closeDownTo(0)
             return writer.bytes
         }

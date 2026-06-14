@@ -15,7 +15,7 @@ public struct JSONPatch: Sendable {
 
     public init(operations: [Operation]) { self.operations = operations }
 
-    public init(_ json: JSON) throws {
+    public init(_ json: JSON) throws(JSONPatchError) {
         guard json.isArray else { throw JSONPatchError.invalidOperation }
         var ops: [Operation] = []
         for item in json.arrayValue {
@@ -35,12 +35,12 @@ public struct JSONPatch: Sendable {
 
     public init(_ data: Data) throws { try self.init(ADJSON.parse(data).root) }
 
-    private static func pointer(_ item: JSON, _ key: String) throws -> JSONPointer {
+    private static func pointer(_ item: JSON, _ key: String) throws(JSONPatchError) -> JSONPointer {
         guard let raw = item[key].string, let p = try? JSONPointer(raw) else { throw JSONPatchError.invalidOperation }
         return p
     }
 
-    public func apply(to target: JSONValue) throws -> JSONValue {
+    public func apply(to target: JSONValue) throws(JSONPatchError) -> JSONValue {
         var result = target
         for op in operations {
             switch op {

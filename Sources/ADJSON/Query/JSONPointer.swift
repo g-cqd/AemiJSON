@@ -14,7 +14,7 @@ public struct JSONPointer: Sendable, Equatable {
 
     public init(tokens: [String]) { self.tokens = tokens }
 
-    public init(_ string: String) throws {
+    public init(_ string: String) throws(JSONPointerError) {
         if string.isEmpty {
             tokens = []
             return

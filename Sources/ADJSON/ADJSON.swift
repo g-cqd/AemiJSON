@@ -10,12 +10,13 @@ public enum ADJSON {
         // Parse over the `Data`'s own storage and retain it — no intermediate `[UInt8]` copy of the
         // input is made on this (server-hot) path. `withUnsafeBytes` is untyped `rethrows`, so the
         // typed `JSONError` funnels out through `Result.get()` as in `parse(_:[UInt8])`.
-        let tape = try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> Result<[UInt64], JSONError> in
+        let tape = try data.withUnsafeBytes {
+            (raw: UnsafeRawBufferPointer) -> Result<ContiguousArray<UInt64>, JSONError> in
             guard let base = raw.baseAddress else { return .failure(.unexpectedEndOfInput) }
             var builder = TapeBuilder(base.assumingMemoryBound(to: UInt8.self), raw.count, options: options)
             return Result { () throws(JSONError) in try builder.build() }
         }.get()
-        ADJSONMetrics.record(bytes: data.count)
+        ADJSON.Metrics.record(bytes: data.count)
         return JSONDocument(backing: .data(data), tape: tape)
     }
 
@@ -26,12 +27,12 @@ public enum ADJSON {
         // `withUnsafeBufferPointer` is untyped `rethrows` (it erases the closure's error to
         // `any Error`), so the closure stays non-throwing and funnels the typed `JSONError`
         // out through `Result`, whose `.get()` is itself `throws(JSONError)`.
-        let tape = try bytes.withUnsafeBufferPointer { bp -> Result<[UInt64], JSONError> in
+        let tape = try bytes.withUnsafeBufferPointer { bp -> Result<ContiguousArray<UInt64>, JSONError> in
             guard let base = bp.baseAddress else { return .failure(.unexpectedEndOfInput) }
             var builder = TapeBuilder(base, bp.count, options: options)
             return Result { () throws(JSONError) in try builder.build() }
         }.get()
-        ADJSONMetrics.record(bytes: bytes.count)
+        ADJSON.Metrics.record(bytes: bytes.count)
         return JSONDocument(backing: .bytes(bytes), tape: tape)
     }
 

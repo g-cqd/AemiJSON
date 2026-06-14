@@ -163,7 +163,7 @@ public struct JSON: Sendable {
         if Slot.flags(keySlot) & 1 == 1 {
             return JSONString.unescape(p, off, len) == key
         }
-        return keyBytesEqual(key, p + off, len)
+        return JSONKey.bytesEqual(key, p + off, len)
     }
 
     @inline(__always)

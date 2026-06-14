@@ -10,7 +10,7 @@ struct TapeBuilder {
     let checkDuplicates: Bool
     let maxDepth: Int
     var i = 0
-    var slots: [UInt64]
+    var slots: ContiguousArray<UInt64>
     var stack: [Frame] = []
 
     // One open container being built. Stands in for a recursive-descent call frame, so nesting
@@ -33,7 +33,7 @@ struct TapeBuilder {
         stack.reserveCapacity(16)
     }
 
-    mutating func build() throws(JSONError) -> [UInt64] {
+    mutating func build() throws(JSONError) -> ContiguousArray<UInt64> {
         skipWS()
         try parseValue()
         skipWS()

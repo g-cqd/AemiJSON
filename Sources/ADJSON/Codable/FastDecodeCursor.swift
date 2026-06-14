@@ -19,7 +19,7 @@ extension DecodeContext {
             let koff = Slot.low(ks), klen = Slot.length(ks)
             assertBytes(koff, klen)
             if Slot.flags(ks) & 1 == 0 {
-                if klen == tlen, keyBytesEqual(bytes + koff, target, tlen) { found = valIdx }
+                if klen == tlen, JSONKey.bytesEqual(bytes + koff, target, tlen) { found = valIdx }
             } else if JSONString.unescape(bytes, koff, klen) == lit.description {
                 found = valIdx
             }

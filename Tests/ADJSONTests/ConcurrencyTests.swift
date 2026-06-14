@@ -33,9 +33,9 @@ private func makeRows(_ n: Int) -> [Row] {
 }
 
 @Test func parseMetricsIncrement() throws {
-    let before = ADJSONMetrics.snapshot()
+    let before = ADJSON.Metrics.snapshot()
     _ = try ADJSON.parse("[1,2,3]")
-    let after = ADJSONMetrics.snapshot()
+    let after = ADJSON.Metrics.snapshot()
     #expect(after.documents >= before.documents + 1)
     #expect(after.bytes >= before.bytes + 7)
 }

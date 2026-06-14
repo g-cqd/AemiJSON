@@ -20,10 +20,10 @@ public final class JSONDocument: Sendable {
     }
 
     @usableFromInline let backing: Backing
-    @usableFromInline let tape: [UInt64]
+    @usableFromInline let tape: ContiguousArray<UInt64>
 
     @usableFromInline
-    init(backing: Backing, tape: [UInt64]) {
+    init(backing: Backing, tape: ContiguousArray<UInt64>) {
         self.backing = backing
         self.tape = tape
     }

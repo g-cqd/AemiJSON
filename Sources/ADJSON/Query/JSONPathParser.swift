@@ -1,8 +1,9 @@
 import Foundation
 
-struct JSONPathError: Error, Sendable {
-    let message: String
-    let position: Int
+/// An error from parsing an RFC 9535 JSONPath expression, located by character `position`.
+public struct JSONPathError: Error, Sendable, Equatable {
+    public let message: String
+    public let position: Int
 }
 
 struct JSONPathParser {
@@ -15,7 +16,7 @@ struct JSONPathParser {
 
     init(_ s: String) { chars = Array(s) }
 
-    mutating func enter() throws {
+    mutating func enter() throws(JSONPathError) {
         depth += 1
         guard depth <= Self.maxDepth else { throw err("expression nested too deeply") }
     }
@@ -29,13 +30,13 @@ struct JSONPathParser {
         while i < chars.count, chars[i] == " " || chars[i] == "\t" || chars[i] == "\n" || chars[i] == "\r" { i += 1 }
     }
 
-    mutating func expect(_ c: Character) throws {
+    mutating func expect(_ c: Character) throws(JSONPathError) {
         skipWS()
         guard peek() == c else { throw err("expected '\(c)'") }
         i += 1
     }
 
-    mutating func parseRoot() throws -> [PathSegment] {
+    mutating func parseRoot() throws(JSONPathError) -> [PathSegment] {
         skipWS()
         guard peek() == "$" else { throw err("path must start with $") }
         i += 1
@@ -45,7 +46,7 @@ struct JSONPathParser {
         return segs
     }
 
-    mutating func parseSegments() throws -> [PathSegment] {
+    mutating func parseSegments() throws(JSONPathError) -> [PathSegment] {
         try enter()
         defer { depth -= 1 }
         var segs: [PathSegment] = []
@@ -68,7 +69,7 @@ struct JSONPathParser {
         return segs
     }
 
-    mutating func parseAfterDescendant() throws -> [Selector] {
+    mutating func parseAfterDescendant() throws(JSONPathError) -> [Selector] {
         guard let c = peek() else { throw err("expected selector after '..'") }
         if c == "[" { return try parseBracket() }
         if c == "*" {
@@ -78,7 +79,7 @@ struct JSONPathParser {
         return [.name(try parseMemberName())]
     }
 
-    mutating func parseDotSelector() throws -> Selector {
+    mutating func parseDotSelector() throws(JSONPathError) -> Selector {
         guard let c = peek() else { throw err("expected selector after '.'") }
         if c == "*" {
             i += 1
@@ -87,7 +88,7 @@ struct JSONPathParser {
         return .name(try parseMemberName())
     }
 
-    mutating func parseMemberName() throws -> String {
+    mutating func parseMemberName() throws(JSONPathError) -> String {
         var name = ""
         while let c = peek(), c.isLetter || c.isNumber || c == "_" || (c.unicodeScalars.first?.value ?? 0) > 0x7F {
             name.append(c)
@@ -97,7 +98,7 @@ struct JSONPathParser {
         return name
     }
 
-    mutating func parseBracket() throws -> [Selector] {
+    mutating func parseBracket() throws(JSONPathError) -> [Selector] {
         try expect("[")
         var sels: [Selector] = []
         repeat {
@@ -118,7 +119,7 @@ struct JSONPathParser {
         return false
     }
 
-    mutating func parseBracketSelector() throws -> Selector {
+    mutating func parseBracketSelector() throws(JSONPathError) -> Selector {
         skipWS()
         guard let c = peek() else { throw err("expected selector") }
         if c == "*" {
@@ -133,7 +134,7 @@ struct JSONPathParser {
         return try parseIndexOrSlice()
     }
 
-    mutating func parseIndexOrSlice() throws -> Selector {
+    mutating func parseIndexOrSlice() throws(JSONPathError) -> Selector {
         let first = try? parseInt()
         skipWS()
         if peek() == ":" {
@@ -153,7 +154,7 @@ struct JSONPathParser {
         return .index(idx)
     }
 
-    mutating func parseInt() throws -> Int {
+    mutating func parseInt() throws(JSONPathError) -> Int {
         skipWS()
         var s = ""
         if peek() == "-" {
@@ -168,7 +169,7 @@ struct JSONPathParser {
         return v
     }
 
-    mutating func parseQuotedString() throws -> String {
+    mutating func parseQuotedString() throws(JSONPathError) -> String {
         let quote = chars[i]
         i += 1
         var s = ""
@@ -205,9 +206,9 @@ struct JSONPathParser {
 
     // MARK: - Filter expressions
 
-    mutating func parseFilter() throws -> FilterExpr { try parseOr() }
+    mutating func parseFilter() throws(JSONPathError) -> FilterExpr { try parseOr() }
 
-    mutating func parseOr() throws -> FilterExpr {
+    mutating func parseOr() throws(JSONPathError) -> FilterExpr {
         var terms = [try parseAnd()]
         while true {
             skipWS()
@@ -221,7 +222,7 @@ struct JSONPathParser {
         return terms.count == 1 ? terms[0] : .or(terms)
     }
 
-    mutating func parseAnd() throws -> FilterExpr {
+    mutating func parseAnd() throws(JSONPathError) -> FilterExpr {
         var terms = [try parseNot()]
         while true {
             skipWS()
@@ -235,7 +236,7 @@ struct JSONPathParser {
         return terms.count == 1 ? terms[0] : .and(terms)
     }
 
-    mutating func parseNot() throws -> FilterExpr {
+    mutating func parseNot() throws(JSONPathError) -> FilterExpr {
         skipWS()
         if peek() == "!" {
             i += 1
@@ -244,7 +245,7 @@ struct JSONPathParser {
         return try parsePrimary()
     }
 
-    mutating func parsePrimary() throws -> FilterExpr {
+    mutating func parsePrimary() throws(JSONPathError) -> FilterExpr {
         try enter()
         defer { depth -= 1 }
         skipWS()
@@ -319,7 +320,7 @@ struct JSONPathParser {
         return nil
     }
 
-    mutating func parseComparand() throws -> Comparand {
+    mutating func parseComparand() throws(JSONPathError) -> Comparand {
         skipWS()
         guard let c = peek() else { throw err("expected comparand") }
         if c == "@" || c == "$" { return .query(try parseRelQuery()) }
@@ -349,7 +350,7 @@ struct JSONPathParser {
         throw err("invalid comparand")
     }
 
-    mutating func parseRelQuery() throws -> RelQuery {
+    mutating func parseRelQuery() throws(JSONPathError) -> RelQuery {
         skipWS()
         guard peek() == "@" || peek() == "$" else { throw err("expected '@' or '$'") }
         let fromRoot = peek() == "$"
@@ -358,7 +359,7 @@ struct JSONPathParser {
         return RelQuery(fromRoot: fromRoot, segments: segs)
     }
 
-    mutating func parseNumber() throws -> Double {
+    mutating func parseNumber() throws(JSONPathError) -> Double {
         skipWS()
         var s = ""
         if peek() == "-" {

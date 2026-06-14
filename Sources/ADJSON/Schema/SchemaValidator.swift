@@ -10,6 +10,9 @@ struct SchemaValidator {
         return registry[r]
     }
 
+    // Recursion tracks schema-node depth plus instance depth; both are bounded by the parser's
+    // `maxDepth` (512) for parsed inputs, so this cannot overflow the stack on documents produced
+    // by `ADJSON.parse`. Local `$ref` cycles are broken via `activeRefs`.
     @discardableResult
     func validate(
         _ index: Int, _ instance: JSON, _ loc: String, _ errors: inout [ValidationError],

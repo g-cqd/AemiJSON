@@ -110,7 +110,7 @@ final class DecodeContext {
             if Slot.flags(ks) & 1 == 1 {
                 matched = JSONString.unescape(bytes, koff, klen) == key
             } else {
-                matched = keyBytesEqual(key, bytes + koff, klen)
+                matched = JSONKey.bytesEqual(key, bytes + koff, klen)
             }
             if matched { found = valIdx }
             i = nextIndex(after: valIdx)

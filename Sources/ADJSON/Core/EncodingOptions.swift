@@ -15,7 +15,11 @@ public struct JSONEncodingOptions: Sendable {
 
     /// How `Double`/`Float` values are rendered.
     public enum NumberFormat: Sendable, Equatable {
-        /// Swift's shortest round-trippable form (`Double.description`, the default).
+        /// Swift's shortest round-trippable form (`Double.description`, the default). The Codable
+        /// encoder renders a value typed `Double` faithfully, so `Double(2)` becomes `2.0`; the
+        /// `JSONValue` model instead collapses integral magnitudes to `2` to preserve integer
+        /// round-trips (it stores only `Double`). Neither matches Foundation byte-for-byte — use
+        /// `.ecma262` for `JSON.stringify` parity.
         case swiftShortest
         /// ECMA-262 `Number::toString` (what `JSON.stringify` emits: `5.0`→`5`, `1e-7`, `-0`→`0`).
         case ecma262

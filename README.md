@@ -1,6 +1,6 @@
 # ADJSON
 
-A fast, conformant, concurrency-safe JSON library for Swift 6.4 — a Codable-compatible,
+A fast, conformant, concurrency-safe JSON library for Swift 6 — a Codable-compatible,
 drop-in alternative to Foundation's `JSONDecoder` / `JSONEncoder` / `JSONSerialization`,
 plus JSON Schema, JSONPath, JSON Pointer, and JSON Patch.
 
@@ -40,9 +40,11 @@ parses off the main actor, and uses the Synchronization framework (`Atomic`, `Mu
 
 ## Requirements
 
-- Swift 6.4+
-- macOS 26 / iOS 26 / tvOS 26 / watchOS 26 / visionOS 26 or later
-  (uses `Span`, `InlineArray`, and the Synchronization framework).
+- Swift 6.3+ toolchain (`swift-tools-version: 6.3`, language mode v6; developed and tested on 6.4)
+- macOS 15+ / iOS 26 / tvOS 26 / watchOS 26 / visionOS 26 or later
+  (uses the Synchronization framework — `Atomic` / `Mutex`). The macOS floor is intentionally a
+  generation below the device platforms; types gated to the 2025 SDKs (`UTF8Span`, `InlineArray`)
+  are therefore not adopted.
 
 ## Installation
 
@@ -109,6 +111,15 @@ and materializes Swift values only when accessed. The Codable decoder reads the 
 byte-wise key matching (no eager dictionary, no per-node ARC); the encoder streams directly
 into one buffer (no intermediate object tree).
 
+## Number formatting
+
+`Double` rendering follows `JSONEncodingOptions.numberFormat`. Under the default `.swiftShortest`
+(`Double.description`), the Codable encoder renders a value typed `Double` faithfully — `Double(2)`
+becomes `2.0`. The `JSONValue` model instead collapses integral magnitudes (`2`) so a parsed JSON
+integer round-trips unchanged through its `Double`-only storage. Neither path reproduces
+Foundation's float formatter byte-for-byte; use `.ecma262` (the `.javaScript` profile) for
+`JSON.stringify` parity.
+
 ## Testing & benchmarks
 
 The conformance suites and benchmark corpus are third-party and fetched on demand:
@@ -131,7 +142,9 @@ duration — is documented at each boundary, and the decode path bounds-checks e
 byte access under `assert` (so debug/test builds trap on any out-of-range index, while release
 keeps raw-pointer speed). `Span`/`RawSpan` are not used on these paths because Codable's
 `Decoder` must be `Escapable` (a `Span` cannot be stored in the shared decode context), and the
-current toolchain's lifetime-dependence support is not yet able to thread spans through them.
+current toolchain's lifetime-dependence support is not yet able to thread spans through them
+(verified: storing a `Span` as a struct stored property — e.g. in the scanner — requires the
+experimental `LifetimeDependence` feature, so the single-pass scanner also stays on raw pointers).
 
 ## Roadmap
 

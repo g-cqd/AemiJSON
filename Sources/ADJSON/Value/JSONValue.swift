@@ -89,6 +89,13 @@ extension JSONValue {
         }
     }
 
+    // Number emission for the value model. Under `.swiftShortest` an integral magnitude below 2^53
+    // is rendered without a fractional part (`2`, not `2.0`) so a JSON integer survives a
+    // parse → `JSONValue` → `encoded()` round-trip unchanged — `JSONValue` only stores `Double`,
+    // so it cannot otherwise tell `2` from `2.0`. This intentionally differs from the Codable
+    // encode path, where a value typed `Double` is faithfully rendered as `2.0` (see
+    // `JSONEncodingOptions.NumberFormat.swiftShortest`). Neither path reproduces Foundation's
+    // formatter byte-for-byte; use `.ecma262` for `JSON.stringify` parity.
     private func writeNumber(_ d: Double, into writer: JSONWriter, options: JSONEncodingOptions) throws {
         guard d.isFinite else {
             switch options.nonFinite {
@@ -113,108 +120,4 @@ extension JSONValue {
             }
         }
     }
-}
-
-// MARK: - JSON Pointer (RFC 6901) access & mutation
-
-extension JSONValue {
-    /// The value at an RFC 6901 pointer, or nil if it doesn't resolve.
-    public func value(at pointer: JSONPointer) -> JSONValue? {
-        var current = self
-        for token in pointer.tokens {
-            switch current {
-            case .object(let members):
-                guard let next = members[token] else { return nil }
-                current = next
-            case .array(let elements):
-                guard let i = JSONPointer.arrayIndex(token), i < elements.count else { return nil }
-                current = elements[i]
-            default:
-                return nil
-            }
-        }
-        return current
-    }
-
-    func adding(_ tokens: ArraySlice<String>, _ value: JSONValue) throws -> JSONValue {
-        guard let first = tokens.first else { return value }  // empty path replaces the root
-        let rest = tokens.dropFirst()
-        switch self {
-        case .object(var members):
-            if rest.isEmpty {
-                members[first] = value
-            } else {
-                guard let child = members[first] else { throw JSONPatchError.pathNotFound }
-                members[first] = try child.adding(rest, value)
-            }
-            return .object(members)
-        case .array(var elements):
-            if rest.isEmpty {
-                if first == "-" {
-                    elements.append(value)
-                } else {
-                    guard let i = JSONPointer.arrayIndex(first), i <= elements.count else {
-                        throw JSONPatchError.pathNotFound
-                    }
-                    elements.insert(value, at: i)
-                }
-            } else {
-                guard let i = JSONPointer.arrayIndex(first), i < elements.count else {
-                    throw JSONPatchError.pathNotFound
-                }
-                elements[i] = try elements[i].adding(rest, value)
-            }
-            return .array(elements)
-        default:
-            throw JSONPatchError.pathNotFound
-        }
-    }
-
-    func removing(_ tokens: ArraySlice<String>) throws -> JSONValue {
-        guard let first = tokens.first else { throw JSONPatchError.pathNotFound }
-        let rest = tokens.dropFirst()
-        switch self {
-        case .object(var members):
-            guard members[first] != nil else { throw JSONPatchError.pathNotFound }
-            if rest.isEmpty {
-                members[first] = nil
-            } else {
-                members[first] = try members[first].map { try $0.removing(rest) }
-            }
-            return .object(members)
-        case .array(var elements):
-            guard let i = JSONPointer.arrayIndex(first), i < elements.count else { throw JSONPatchError.pathNotFound }
-            if rest.isEmpty {
-                elements.remove(at: i)
-            } else {
-                elements[i] = try elements[i].removing(rest)
-            }
-            return .array(elements)
-        default:
-            throw JSONPatchError.pathNotFound
-        }
-    }
-
-    func replacing(_ tokens: ArraySlice<String>, _ value: JSONValue) throws -> JSONValue {
-        guard let first = tokens.first else { return value }
-        let rest = tokens.dropFirst()
-        switch self {
-        case .object(var members):
-            guard members[first] != nil else { throw JSONPatchError.pathNotFound }
-            members[first] = rest.isEmpty ? value : try members[first].map { try $0.replacing(rest, value) }
-            return .object(members)
-        case .array(var elements):
-            guard let i = JSONPointer.arrayIndex(first), i < elements.count else { throw JSONPatchError.pathNotFound }
-            elements[i] = rest.isEmpty ? value : try elements[i].replacing(rest, value)
-            return .array(elements)
-        default:
-            throw JSONPatchError.pathNotFound
-        }
-    }
-}
-
-public enum JSONPatchError: Error, Sendable, Equatable {
-    case pathNotFound
-    case testFailed
-    case invalidOperation
 }
