@@ -200,8 +200,14 @@ struct JSONPathParser {
             digits.append(c)
             i += 1
         }
-        guard let v = Int(digits), v <= 9_007_199_254_740_991 else { throw err("index out of range") }
-        return neg ? -v : v
+        // Parse the magnitude as Int64 — 64-bit on every platform, so the 2^53-1 bound is
+        // representable even on 32-bit watchOS (arm64_32) — then narrow to Int. On a 32-bit
+        // platform an index beyond Int.max is rejected here, since it can't be represented or used
+        // to subscript anyway.
+        guard let magnitude = Int64(digits), magnitude <= 9_007_199_254_740_991,
+            let signed = Int(exactly: neg ? -magnitude : magnitude)
+        else { throw err("index out of range") }
+        return signed
     }
 
     // RFC 9535 §2.3.1.1 string-literal: the active quote closes; `\` introduces an escape; bare
