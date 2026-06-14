@@ -6,7 +6,7 @@ public enum ADJSON {
     /// Parse UTF-8 `Data` into an immutable, lazily-navigable document.
     public static func parse(_ data: Data, options: JSONParseOptions = .strict) throws(JSONError) -> JSONDocument {
         guard !data.isEmpty else { throw JSONError.unexpectedEndOfInput }
-        guard data.count <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
+        guard UInt64(data.count) <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
         // Parse over the `Data`'s own storage and retain it — no intermediate `[UInt8]` copy of the
         // input is made on this (server-hot) path. `withUnsafeBytes` is untyped `rethrows`, so the
         // typed `JSONError` funnels out through `Result.get()` as in `parse(_:[UInt8])`.
@@ -23,7 +23,7 @@ public enum ADJSON {
     /// Parse a UTF-8 byte buffer into an immutable, lazily-navigable document.
     public static func parse(_ bytes: [UInt8], options: JSONParseOptions = .strict) throws(JSONError) -> JSONDocument {
         guard !bytes.isEmpty else { throw JSONError.unexpectedEndOfInput }
-        guard bytes.count <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
+        guard UInt64(bytes.count) <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
         // `withUnsafeBufferPointer` is untyped `rethrows` (it erases the closure's error to
         // `any Error`), so the closure stays non-throwing and funnels the typed `JSONError`
         // out through `Result`, whose `.get()` is itself `throws(JSONError)`.

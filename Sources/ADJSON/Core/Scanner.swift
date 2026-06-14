@@ -150,7 +150,7 @@ struct TapeBuilder {
     // `count` occupies the 28-bit aux field, `next` the low 32 bits — both bounded by the 4 GB
     // input cap, but guarded so a pathological count can't silently wrap and corrupt navigation.
     mutating func closeContainer(_ openIdx: Int, count: Int, isObject: Bool) throws(JSONError) {
-        guard count <= Slot.auxMask, slots.count <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
+        guard count <= Slot.auxMask, UInt64(slots.count) <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
         let tag = isObject ? JSONKind.object.rawValue : JSONKind.array.rawValue
         slots[openIdx] = Slot.container(tag, count: count, next: slots.count)
     }
