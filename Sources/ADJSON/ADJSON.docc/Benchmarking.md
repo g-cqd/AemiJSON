@@ -53,34 +53,36 @@ Every comparison pits the real public API against Foundation; where Foundation h
 
 ## Reference results
 
-Apple M2 Pro (macOS 27), release build, strict mode. Median of 60 iterations. Your numbers will
-vary with hardware, OS, and payload; treat these as ratios, not absolutes.
+Apple M2 Pro (macOS 27), release build, strict mode. Each cell is the **median across 15 full
+runs** (each run is itself the median of 60 iterations); run-to-run spread was within **±8%** for
+every row except concurrent decode (±12%), with thermal throttling under sustained load the main
+source. Your numbers will vary with hardware, OS, and payload; treat these as ratios, not absolutes.
 
 **Against Foundation** (synthetic 2000-user payload ≈ 500 KB; corpus files as noted):
 
 | Workload | ADJSON | Foundation | Ratio |
 |---|---|---|---|
-| Tape parse — `twitter.json` | 1019 MB/s | 172 MB/s | **5.9×** |
-| Tape parse — `citm_catalog.json` | 1246 MB/s | 318 MB/s | **3.9×** |
-| Tape parse — `canada.json` | 847 MB/s | 125 MB/s | **6.8×** |
-| Codable decode — generic | 78 MB/s | 41 MB/s | **1.9×** |
-| Codable decode — `@JSONCodable` | 185 MB/s | 41 MB/s | **4.4×** |
-| Codable encode — generic | 86 MB/s | 47 MB/s | **1.8×** |
-| Codable encode — `@JSONCodable` | 377 MB/s | 47 MB/s | **8.0×** |
-| `[Double]` decode | 166 MB/s | 76 MB/s | **2.2×** |
-| `JSONValue` materialize — `twitter.json` | 231 MB/s | 172 MB/s | **1.3×** |
-| `JSONValue` materialize — `citm_catalog.json` | 318 MB/s | 314 MB/s | **1.0×** |
-| `JSONValue` materialize — `canada.json` | 131 MB/s | 124 MB/s | **1.05×** |
+| Tape parse — `twitter.json` | 959 MB/s | 176 MB/s | **5.4×** |
+| Tape parse — `citm_catalog.json` | 1274 MB/s | 318 MB/s | **4.0×** |
+| Tape parse — `canada.json` | 842 MB/s | 128 MB/s | **6.6×** |
+| Codable decode — generic | 79 MB/s | 43 MB/s | **1.8×** |
+| Codable decode — `@JSONCodable` | 183 MB/s | 43 MB/s | **4.2×** |
+| Codable encode — generic | 90 MB/s | 47 MB/s | **1.9×** |
+| Codable encode — `@JSONCodable` | 387 MB/s | 47 MB/s | **8.2×** |
+| `[Double]` decode | 176 MB/s | 79 MB/s | **2.2×** |
+| `JSONValue` materialize — `twitter.json` | 216 MB/s | 176 MB/s | **1.2×** |
+| `JSONValue` materialize — `citm_catalog.json` | 326 MB/s | 318 MB/s | **1.0×** |
+| `JSONValue` materialize — `canada.json` | 134 MB/s | 128 MB/s | **1.05×** |
 
 **ADJSON-only** (features Foundation has no equivalent for):
 
 | Feature | Throughput |
 |---|---|
-| JSONPath wildcard — `$[*].profile.bio` | 2289 MB/s |
-| JSONPath filter — `$[?(@.followers > N)]` | 970 MB/s |
-| JSON Schema validate (pre-parsed, full structural) | 102 MB/s |
+| JSONPath wildcard — `$[*].profile.bio` | 2125 MB/s |
+| JSONPath filter — `$[?(@.followers > N)]` | 927 MB/s |
+| JSON Schema validate (pre-parsed, full structural) | 105 MB/s |
 | JSON Patch apply (3 ops over a 2000-element tree) | 46 µs |
-| Concurrent decode | 223 MB/s (**2.4×** serial) |
+| Concurrent decode | 227 MB/s (**2.5×** serial) |
 
 Tape parsing runs at roughly **1 GB/s**; partial/lazy access is faster still, since it skips
 subtrees it never reads. Full `JSONValue` materialization now edges past `JSONSerialization`

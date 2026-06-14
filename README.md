@@ -91,23 +91,24 @@ See the [documentation](#documentation) for the full guides.
 
 ## Performance
 
-Apple M2 Pro (macOS 27), release build, strict mode. Median of 60 iterations; treat these as
-ratios, not absolutes. Reproduce with `swift run -c release ADJSONBenchmarks`.
+Apple M2 Pro (macOS 27), release build, strict mode. Medians across 15 runs (each itself the
+median of 60 iterations), run-to-run spread within ~±8%; treat these as ratios, not absolutes.
+Reproduce with `swift run -c release ADJSONBenchmarks`.
 
 | Workload | ADJSON vs Foundation |
 |---|---|
-| Untyped tape parse — `twitter.json` | **5.9×** `JSONSerialization` |
-| Untyped tape parse — `citm_catalog.json` | **3.9×** |
-| Untyped tape parse — `canada.json` (number-heavy) | **6.8×** |
-| Codable decode — generic (`Data` → struct) | **1.9×** `JSONDecoder` |
-| Codable decode — `@JSONCodable` fast path | **4.4×** `JSONDecoder` |
-| Codable encode — `@JSONCodable` fast path | **8.0×** `JSONEncoder` |
+| Untyped tape parse — `twitter.json` | **5.4×** `JSONSerialization` |
+| Untyped tape parse — `citm_catalog.json` | **4.0×** |
+| Untyped tape parse — `canada.json` (number-heavy) | **6.6×** |
+| Codable decode — generic (`Data` → struct) | **1.8×** `JSONDecoder` |
+| Codable decode — `@JSONCodable` fast path | **4.2×** `JSONDecoder` |
+| Codable encode — `@JSONCodable` fast path | **8.2×** `JSONEncoder` |
 | `[Double]` decode — number-heavy | **2.2×** `JSONDecoder` |
 
-Tape parsing runs at roughly **1 GB/s** (0.85–1.25 GB/s across the corpus); lazy access is faster
+Tape parsing runs at roughly **1 GB/s** (0.8–1.3 GB/s across the corpus); lazy access is faster
 still since it skips subtrees it never reads. Full untyped materialization into `JSONValue` now
 edges past `JSONSerialization` on the corpus, and compiled JSON Schema validation runs at roughly
-**100 MB/s**. Query and patch throughput, methodology, and the full table: see the **Benchmarking**
+**105 MB/s**. Query and patch throughput, methodology, and the full table: see the **Benchmarking**
 guide in the documentation.
 
 ## Standards
