@@ -157,7 +157,7 @@ private func fragment(
     }
     if let id = type.as(IdentifierTypeSyntax.self) {
         let base = id.name.text
-        if let generics = id.genericArgumentClause?.arguments.map(\.argument) {
+        if let generics = id.genericArgumentClause?.arguments.compactMap({ $0.argument.as(TypeSyntax.self) }) {
             if base == "Array", let inner = generics.first {
                 return arrayFragment(element: inner, desc: desc, enclosing: enclosing, selfRefs: &selfRefs)
             }
@@ -262,7 +262,7 @@ private func dialectSchemaURL(_ node: AttributeSyntax) -> String? {
 private func optionalWrapped(_ type: TypeSyntax) -> TypeSyntax? {
     if let opt = type.as(OptionalTypeSyntax.self) { return opt.wrappedType }
     if let id = type.as(IdentifierTypeSyntax.self), id.name.text == "Optional" {
-        return id.genericArgumentClause?.arguments.first?.argument
+        return id.genericArgumentClause?.arguments.first?.argument.as(TypeSyntax.self)
     }
     return nil
 }

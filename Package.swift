@@ -38,7 +38,7 @@ let testSettings: [SwiftSetting] =
 let isDev = Context.environment["ADJSON_DEV"] != nil
 
 var packageDependencies: [Package.Dependency] = [
-    .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0")
+    .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0")
 ]
 if isDev {
     packageDependencies.append(
