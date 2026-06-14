@@ -14,7 +14,7 @@ extension Profile: ADJSONFastDecodable, ADJSONFastEncodable {
         )
     }
 
-    func __adjsonEncode(into w: _FastEncodeWriter) throws {
+    func __adjsonEncode(into w: inout JSONByteWriter) throws {
         w.beginObject()
         w.key("bio")
         w.string(bio)
@@ -51,7 +51,7 @@ extension User: ADJSONFastDecodable, ADJSONFastEncodable {
         )
     }
 
-    func __adjsonEncode(into w: _FastEncodeWriter) throws {
+    func __adjsonEncode(into w: inout JSONByteWriter) throws {
         w.beginObject()
         w.key("id")
         w.integer(id)

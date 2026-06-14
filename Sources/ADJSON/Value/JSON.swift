@@ -44,7 +44,7 @@ public struct JSON: Sendable {
     public var int: Int? {
         guard tag == JSONKind.number.rawValue, Slot.flags(slot) & 1 == 1 else { return nil }
         let off = Slot.low(slot), len = Slot.length(slot)
-        return doc.withBytePointer { adParseInt($0, off, len) }
+        return doc.withBytePointer { adParseInteger($0, off, len, Int.self) }
     }
 
     public var double: Double? {

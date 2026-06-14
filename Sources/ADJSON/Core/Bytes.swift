@@ -14,13 +14,13 @@ extension JSONDocument {
     }
 
     @inline(__always)
-    func withBuffers<R>(_ body: (UnsafePointer<UInt8>, UnsafePointer<UInt64>) throws -> R) rethrows -> R {
+    func withBuffers<R>(_ body: (UnsafePointer<UInt8>, Int, UnsafePointer<UInt64>, Int) throws -> R) rethrows -> R {
         try bytes.withUnsafeBufferPointer { byteBuffer in
             try tape.withUnsafeBufferPointer { tapeBuffer in
                 guard let byteBase = byteBuffer.baseAddress, let tapeBase = tapeBuffer.baseAddress else {
                     preconditionFailure("JSONDocument storage is never empty")
                 }
-                return try body(byteBase, tapeBase)
+                return try body(byteBase, byteBuffer.count, tapeBase, tapeBuffer.count)
             }
         }
     }

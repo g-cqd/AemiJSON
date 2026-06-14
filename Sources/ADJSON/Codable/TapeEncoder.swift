@@ -33,6 +33,15 @@ final class EncodeState {
         if counts[frame] > 0 { w.byte(0x2C) }
         counts[frame] += 1
     }
+
+    /// Bridge a fast-path value nested inside a generic encode: move the shared buffer
+    /// into a value `JSONByteWriter` (so its appends don't trigger CoW), then move back.
+    @inline(__always) func encodeFast(_ fast: ADJSONFastEncodable) throws {
+        var bw = JSONByteWriter(adopting: w.bytes)
+        w.bytes = []
+        try fast.__adjsonEncode(into: &bw)
+        w.bytes = bw.bytes
+    }
 }
 
 @inline(__always) private func checkFinite(_ v: Double, _ path: [CodingKey]) throws {
@@ -140,7 +149,7 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
     mutating func encode<T: Encodable>(_ v: T, forKey key: Key) throws {
         member(key)
         if let fast = v as? ADJSONFastEncodable {
-            try fast.__adjsonEncode(into: _FastEncodeWriter(state.w))
+            try state.encodeFast(fast)
         } else {
             try v.encode(to: TapeEncoder(state: state))
         }
@@ -243,7 +252,7 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
     mutating func encode<T: Encodable>(_ v: T) throws {
         elem()
         if let fast = v as? ADJSONFastEncodable {
-            try fast.__adjsonEncode(into: _FastEncodeWriter(state.w))
+            try state.encodeFast(fast)
         } else {
             try v.encode(to: TapeEncoder(state: state))
         }
@@ -297,7 +306,7 @@ private struct SingleValueTapeEncodingContainer: SingleValueEncodingContainer {
 
     mutating func encode<T: Encodable>(_ v: T) throws {
         if let fast = v as? ADJSONFastEncodable {
-            return try fast.__adjsonEncode(into: _FastEncodeWriter(state.w))
+            return try state.encodeFast(fast)
         }
         try v.encode(to: TapeEncoder(state: state))
     }

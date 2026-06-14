@@ -73,4 +73,9 @@ private func parses(_ bytes: [UInt8], _ options: JSONParseOptions = .strict) -> 
     #expect(!parses("1."))
     #expect(parses("1.", .lenient))
     #expect(!parses("[1,2,]"))  // trailing comma still rejected (structural, not strictness)
+    // M2: lenient relaxes the grammar but still emits only well-formed number tokens —
+    // a malformed run is rejected here, never silently decoded to NaN/nil.
+    #expect(!parses("1.2.3", .lenient))
+    #expect(!parses("1e", .lenient))
+    #expect(!parses("--5", .lenient))
 }

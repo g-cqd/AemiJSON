@@ -1,5 +1,6 @@
 // Decode a JSON string body (between quotes) that contains escape sequences.
 // The no-escape fast path is handled by the caller via String(decoding:).
+@usableFromInline
 func unescapeString(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> String {
     var out = [UInt8]()
     out.reserveCapacity(length)
@@ -37,7 +38,7 @@ func unescapeString(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> 
                 }
             }
             if let us = Unicode.Scalar(scalar) {
-                out.append(contentsOf: Array(String(us).utf8))
+                Unicode.UTF8.encode(us) { out.append($0) }
             } else {
                 out.append(contentsOf: [0xEF, 0xBF, 0xBD])  // U+FFFD
             }

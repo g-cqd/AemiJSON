@@ -6,62 +6,88 @@ import Foundation
 // `DecodeContext` holds a stable base pointer for the duration of one decode, so scalar
 // access needs no per-value `withUnsafeBufferPointer`.
 
+@usableFromInline
 final class DecodeContext {
     let doc: JSONDocument  // retains backing storage for the decode's lifetime
-    let bytes: UnsafePointer<UInt8>
-    let tape: UnsafePointer<UInt64>
+    @usableFromInline let bytes: UnsafePointer<UInt8>
+    @usableFromInline let tape: UnsafePointer<UInt64>
+    @usableFromInline let byteCount: Int
+    @usableFromInline let tapeCount: Int
     let userInfo: [CodingUserInfoKey: Any]
 
+    // INVARIANT: `bytes`/`tape` are borrowed from `doc`'s storage for the duration of one
+    // `withBuffers` scope (see Bytes.swift). `doc` is retained here so the storage outlives
+    // every read. We use raw pointers rather than `Span` because Codable's `Decoder` must be
+    // `Escapable` (a `Span` cannot be stored in this shared context). `slot`/`decodeString`
+    // bounds-check every access under `assert`, so debug/test builds trap on any out-of-range
+    // index while release builds keep the raw-pointer speed.
+    @usableFromInline
     init(
-        doc: JSONDocument, bytes: UnsafePointer<UInt8>, tape: UnsafePointer<UInt64>, userInfo: [CodingUserInfoKey: Any]
+        doc: JSONDocument, bytes: UnsafePointer<UInt8>, byteCount: Int,
+        tape: UnsafePointer<UInt64>, tapeCount: Int, userInfo: [CodingUserInfoKey: Any]
     ) {
         self.doc = doc
         self.bytes = bytes
+        self.byteCount = byteCount
         self.tape = tape
+        self.tapeCount = tapeCount
         self.userInfo = userInfo
     }
 
-    @inline(__always) func tag(_ i: Int) -> UInt8 { Slot.tag(tape[i]) }
-    @inline(__always) func count(_ i: Int) -> Int { Slot.count(tape[i]) }
-    @inline(__always) func isNull(_ i: Int) -> Bool { Slot.tag(tape[i]) == JSONKind.null.rawValue }
+    /// Bounds-checked tape read (the single choke point for tape navigation).
+    @inline(__always) @inlinable func slot(_ i: Int) -> UInt64 {
+        assert(i >= 0 && i < tapeCount, "ADJSON: tape index \(i) out of bounds [0, \(tapeCount))")
+        return tape[i]
+    }
 
-    @inline(__always) func nextIndex(after i: Int) -> Int {
-        let s = tape[i]
+    @inline(__always) @inlinable func assertBytes(_ off: Int, _ len: Int) {
+        assert(off >= 0 && len >= 0 && off + len <= byteCount, "ADJSON: byte range out of bounds")
+    }
+
+    @inline(__always) @inlinable func tag(_ i: Int) -> UInt8 { Slot.tag(slot(i)) }
+    @inline(__always) @inlinable func count(_ i: Int) -> Int { Slot.count(slot(i)) }
+    @inline(__always) @inlinable func isNull(_ i: Int) -> Bool { Slot.tag(slot(i)) == JSONKind.null.rawValue }
+
+    @inline(__always) @inlinable func nextIndex(after i: Int) -> Int {
+        let s = slot(i)
         let t = Slot.tag(s)
         if t == JSONKind.object.rawValue || t == JSONKind.array.rawValue { return Slot.low(s) }
         return i + 1
     }
 
-    @inline(__always) func bool(_ i: Int) -> Bool? {
-        switch Slot.tag(tape[i]) {
+    @inline(__always) @inlinable func bool(_ i: Int) -> Bool? {
+        switch Slot.tag(slot(i)) {
         case JSONKind.boolTrue.rawValue: return true
         case JSONKind.boolFalse.rawValue: return false
         default: return nil
         }
     }
 
-    @inline(__always) func double(_ i: Int) -> Double? {
-        let s = tape[i]
+    @inline(__always) @inlinable func double(_ i: Int) -> Double? {
+        let s = slot(i)
         guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
+        assertBytes(Slot.low(s), Slot.length(s))
         return adParseDouble(bytes, Slot.low(s), Slot.length(s))
     }
 
-    @inline(__always) func integer<T: FixedWidthInteger>(_ i: Int, _ type: T.Type) -> T? {
-        let s = tape[i]
+    @inline(__always) @inlinable func integer<T: FixedWidthInteger>(_ i: Int, _ type: T.Type) -> T? {
+        let s = slot(i)
         guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
+        assertBytes(Slot.low(s), Slot.length(s))
         return adParseInteger(bytes, Slot.low(s), Slot.length(s), type)
     }
 
-    func string(_ i: Int) -> String? {
-        let s = tape[i]
+    @inlinable func string(_ i: Int) -> String? {
+        let s = slot(i)
         guard Slot.tag(s) == JSONKind.string.rawValue else { return nil }
         return decodeString(s)
     }
 
-    func keyString(_ i: Int) -> String { decodeString(tape[i]) }
+    @inlinable func keyString(_ i: Int) -> String { decodeString(slot(i)) }
 
-    @inline(__always) private func decodeString(_ s: UInt64) -> String {
+    @inline(__always) @usableFromInline func decodeString(_ s: UInt64) -> String {
         let off = Slot.low(s), len = Slot.length(s)
+        assertBytes(off, len)
         if Slot.flags(s) & 1 == 0 {
             return String(decoding: UnsafeBufferPointer(start: bytes + off, count: len), as: UTF8.self)
         }
@@ -72,13 +98,14 @@ final class DecodeContext {
     // Returns the LAST matching member (duplicate keys resolve last-value-wins,
     // consistent with `JSON.object` and JS / Foundation semantics).
     func memberValueIndex(of obj: Int, key: String) -> Int? {
-        let c = Slot.count(tape[obj])
+        let c = Slot.count(slot(obj))
         var i = obj + 1
         var found: Int? = nil
         for _ in 0..<c {
-            let ks = tape[i]
+            let ks = slot(i)
             let valIdx = i + 1
             let koff = Slot.low(ks), klen = Slot.length(ks)
+            assertBytes(koff, klen)
             let matched: Bool
             if Slot.flags(ks) & 1 == 1 {
                 matched = unescapeString(bytes, koff, klen) == key

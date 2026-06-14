@@ -59,7 +59,7 @@ struct TapeBuilder {
         i += 1  // {
         skipWS()
         var count = 0
-        var keyRanges: [(offset: Int, length: Int)] = []
+        var seenKeys: [UInt64: [(offset: Int, length: Int)]] = [:]
         if i < n && p[i] == 0x7D {
             i += 1
         } else {
@@ -70,7 +70,7 @@ struct TapeBuilder {
                 }
                 let keyStart = i
                 try scanString()  // key
-                if checkDuplicates { try recordKey(keyStart, into: &keyRanges) }
+                if checkDuplicates { try recordKey(keyStart, into: &seenKeys) }
                 skipWS()
                 guard i < n, p[i] == 0x3A else {
                     throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i)
@@ -92,20 +92,36 @@ struct TapeBuilder {
                 throw JSONError.unexpectedCharacter(c, at: i)
             }
         }
+        // `count` occupies the 28-bit aux field; `next` (== slots.count) the low 32 bits.
+        // Both are bounded by the 4 GB input cap (ADJSON.parse), but guard explicitly so a
+        // pathological element count can never silently wrap and corrupt tape navigation.
+        guard count <= Slot.auxMask, slots.count <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
         slots[openIdx] = Slot.container(JSONKind.object.rawValue, count: count, next: slots.count)
         depth -= 1
     }
 
-    // Compares the just-scanned key (raw bytes) against earlier keys in this object.
-    mutating func recordKey(_ keyStart: Int, into keyRanges: inout [(offset: Int, length: Int)]) throws {
+    // Detects duplicate keys (RFC 7493 / `.throwError`) in O(1) expected time by bucketing
+    // keys under an FNV-1a hash of their raw bytes — avoiding the O(n^2) all-pairs scan that
+    // a hostile object with many keys could exploit (DoS). Hash collisions fall back to memcmp.
+    mutating func recordKey(
+        _ keyStart: Int, into seen: inout [UInt64: [(offset: Int, length: Int)]]
+    )
+        throws
+    {
         let keySlot = slots[slots.count - 1]
         let offset = Slot.low(keySlot)
         let length = Slot.length(keySlot)
-        for previous in keyRanges
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for k in 0..<length {
+            hash = (hash ^ UInt64(p[offset + k])) &* 0x0000_0100_0000_01b3
+        }
+        var bucket = seen[hash] ?? []
+        for previous in bucket
         where previous.length == length && (length == 0 || memcmp(p + previous.offset, p + offset, length) == 0) {
             throw JSONError.duplicateKey(at: keyStart)
         }
-        keyRanges.append((offset, length))
+        bucket.append((offset, length))
+        seen[hash] = bucket
     }
 
     mutating func parseArray() throws {
@@ -136,6 +152,7 @@ struct TapeBuilder {
                 throw JSONError.unexpectedCharacter(c, at: i)
             }
         }
+        guard count <= Slot.auxMask, slots.count <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
         slots[openIdx] = Slot.container(JSONKind.array.rawValue, count: count, next: slots.count)
         depth -= 1
     }
@@ -220,17 +237,28 @@ struct TapeBuilder {
         if strict {
             try scanNumberStrict(&isInt, start: start)
         } else {
-            if p[i] == 0x2D { i += 1 }
-            while i < n {
-                let c = p[i]
-                if c >= 0x30 && c <= 0x39 {
-                    i += 1
-                } else if c == 0x2E || c == 0x65 || c == 0x45 || c == 0x2B || c == 0x2D {
-                    isInt = 0
-                    i += 1
-                } else {
-                    break
-                }
+            // Lenient: relaxes the strict grammar (leading zeros, leading '+', trailing '.')
+            // but still emits only well-formed number tokens, so a malformed run like `1.2.3`
+            // or `1e` is rejected here rather than silently decoding to NaN/nil later.
+            if i < n && (p[i] == 0x2D || p[i] == 0x2B) { i += 1 }
+            let intStart = i
+            while i < n && isDigit(p[i]) { i += 1 }
+            var sawDigits = i > intStart
+            if i < n && p[i] == 0x2E {
+                isInt = 0
+                i += 1
+                let fracStart = i
+                while i < n && isDigit(p[i]) { i += 1 }
+                sawDigits = sawDigits || i > fracStart
+            }
+            guard sawDigits else { throw JSONError.invalidNumber(at: start) }
+            if i < n && (p[i] == 0x65 || p[i] == 0x45) {
+                isInt = 0
+                i += 1
+                if i < n && (p[i] == 0x2B || p[i] == 0x2D) { i += 1 }
+                let expStart = i
+                while i < n && isDigit(p[i]) { i += 1 }
+                guard i > expStart else { throw JSONError.invalidNumber(at: start) }
             }
         }
         let length = i - start

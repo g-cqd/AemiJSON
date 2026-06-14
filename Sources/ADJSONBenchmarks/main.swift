@@ -290,6 +290,22 @@ for file in ["twitter.json", "citm_catalog.json", "canada.json"] {
 }
 print(corpusGatePassed ? "corpus gate: PASS" : "corpus gate: FAIL")
 
+print("\n== @JSONCodable macro  (decode/encode [MacroUser]) ==")
+let macroDecoder = ADJSON.JSONDecoder()
+let macroEncoder = ADJSON.JSONEncoder()
+let macroUsers = try! macroDecoder.decode([MacroUser].self, from: userData)
+print("verify       : @JSONCodable decoded \(macroUsers.count) users")
+let macroDec = bench("@JSONCodable decode", bytes: userData.count) {
+    blackHole(try! macroDecoder.decode([MacroUser].self, from: userData))
+}
+let macroEnc = bench("@JSONCodable encode", bytes: userData.count) {
+    blackHole(try! macroEncoder.encode(macroUsers))
+}
+report(fd, vs: nil)
+report(macroDec, vs: fd)
+report(fe, vs: nil)
+report(macroEnc, vs: fe)
+
 print("\n(min times, for reference)")
 print(pad("decode users", 26) + "F " + f1(fd.minNs / 1000) + "us  M " + f1(md.minNs / 1000) + "us")
 print(pad("encode users", 26) + "F " + f1(fe.minNs / 1000) + "us  M " + f1(me_.minNs / 1000) + "us")

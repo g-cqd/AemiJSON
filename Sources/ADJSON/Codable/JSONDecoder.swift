@@ -20,8 +20,10 @@ extension ADJSON {
 
         /// Decode directly from an already-parsed document (skips re-scanning).
         public func decode<T: Decodable>(_ type: T.Type, from document: JSONDocument) throws -> T {
-            try document.withBuffers { bytesBase, tapeBase in
-                let ctx = DecodeContext(doc: document, bytes: bytesBase, tape: tapeBase, userInfo: userInfo)
+            try document.withBuffers { bytesBase, byteCount, tapeBase, tapeCount in
+                let ctx = DecodeContext(
+                    doc: document, bytes: bytesBase, byteCount: byteCount,
+                    tape: tapeBase, tapeCount: tapeCount, userInfo: userInfo)
                 return try ctx.decodeValue(T.self, at: 0)
             }
         }

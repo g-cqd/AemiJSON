@@ -22,8 +22,10 @@ extension JSONDocument {
     /// pointer over the shared immutable storage, so it is safe to run from many
     /// tasks at once.
     func decodeElementRange<T: Decodable>(_ type: T.Type, _ lo: Int, _ hi: Int, _ starts: [Int]) throws -> [T] {
-        try withBuffers { byteBase, tapeBase in
-            let ctx = DecodeContext(doc: self, bytes: byteBase, tape: tapeBase, userInfo: [:])
+        try withBuffers { byteBase, byteCount, tapeBase, tapeCount in
+            let ctx = DecodeContext(
+                doc: self, bytes: byteBase, byteCount: byteCount,
+                tape: tapeBase, tapeCount: tapeCount, userInfo: [:])
             var out = [T]()
             out.reserveCapacity(hi - lo)
             for k in lo..<hi { out.append(try ctx.decodeValue(T.self, at: starts[k])) }

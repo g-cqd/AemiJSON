@@ -36,6 +36,17 @@ import Testing
     #expect(throws: JSONError.self) { try ADJSON.parse("{\"a\":1} trailing") }
 }
 
+@Test func parsesIntegerBoundaries() throws {
+    // Regression (C1): the lazy `.int` accessor must agree with the Codable path across
+    // the full Int64 range, including Int.min — which previously decoded to nil.
+    let doc = try ADJSON.parse(#"[-9223372036854775808, 9223372036854775807, 0, -1]"#)
+    let nums = try #require(doc.root.array)
+    #expect(nums.map(\.int) == [Int.min, Int.max, 0, -1])
+
+    let data = Data(#"[-9223372036854775808,9223372036854775807]"#.utf8)
+    #expect(try ADJSON.JSONDecoder().decode([Int].self, from: data) == [Int.min, Int.max])
+}
+
 @Test func differentialAgainstFoundation() throws {
     let samples = [
         #"{"id":1,"name":"héllo","ok":true,"x":null}"#,

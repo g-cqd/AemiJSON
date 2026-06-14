@@ -9,30 +9,27 @@ extension ADJSON {
         public init() {}
 
         public func encode<T: Encodable>(_ value: T) throws -> Data {
-            let writer = JSONWriter(adopting: EncoderBufferPool.take())
-            try write(value, into: writer)
-            let data = Data(writer.bytes)
-            EncoderBufferPool.recycle(writer.bytes)
+            let bytes = try encodeToBytes(value)
+            let data = Data(bytes)
+            EncoderBufferPool.recycle(bytes)
             return data
         }
 
-        public func encodeToBytes<T: Encodable>(_ value: T) throws -> [UInt8] {
-            let writer = JSONWriter(capacity: 1024)
-            try write(value, into: writer)
-            return writer.bytes
-        }
-
         // Takes the monomorphic fast path when the value opts in (incl. arrays,
-        // optionals, and string-keyed dictionaries of fast elements); otherwise the
-        // generic streaming encoder.
-        private func write<T: Encodable>(_ value: T, into writer: JSONWriter) throws {
+        // optionals, and string-keyed dictionaries of fast elements) — writing into a
+        // value-type buffer with no class indirection; otherwise the generic streaming
+        // encoder over the class-backed writer.
+        public func encodeToBytes<T: Encodable>(_ value: T) throws -> [UInt8] {
             if let fast = value as? ADJSONFastEncodable {
-                try fast.__adjsonEncode(into: _FastEncodeWriter(writer))
-            } else {
-                let state = EncodeState(writer)
-                try value.encode(to: TapeEncoder(state: state))
-                state.closeDownTo(0)
+                var w = JSONByteWriter(adopting: EncoderBufferPool.take())
+                try fast.__adjsonEncode(into: &w)
+                return w.bytes
             }
+            let writer = JSONWriter(adopting: EncoderBufferPool.take())
+            let state = EncodeState(writer)
+            try value.encode(to: TapeEncoder(state: state))
+            state.closeDownTo(0)
+            return writer.bytes
         }
     }
 }

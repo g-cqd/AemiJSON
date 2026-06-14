@@ -48,7 +48,7 @@ public struct JSONCodableMacro: ExtensionMacro {
                     \(raw: decodeBindings)
                     return Self(\(raw: ctorArgs))
                 }
-                public func __adjsonEncode(into w: _FastEncodeWriter) throws {
+                public func __adjsonEncode(into w: inout JSONByteWriter) throws {
                     w.beginObject()
                     \(raw: encodeBody)
                     w.endObject()
