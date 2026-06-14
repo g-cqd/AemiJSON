@@ -46,18 +46,17 @@ extension JSONValue {
     /// the parser's `maxDepth` so a value that round-trips through parse always re-encodes.
     static let maxEncodingDepth = 512
 
-    /// Serialize to compact UTF-8 JSON.
-    ///
-    /// Throws `EncodingError.invalidValue` if the tree holds a non-finite number
-    /// (infinity/NaN, which JSON cannot represent) or nests beyond `maxEncodingDepth` —
-    /// matching the Codable encoder rather than silently emitting `inf`/`nan`.
-    public func encoded() throws -> Data {
+    /// Serialize to compact UTF-8 JSON using the given profile. The default (`.rfc8259`) is strict
+    /// and throws `EncodingError.invalidValue` on a non-finite number; pass `.javaScript` for
+    /// `JSON.stringify` byte-parity (non-finite → `null`, ECMA-262 number formatting). Also throws
+    /// if the tree nests beyond `maxEncodingDepth`.
+    public func encoded(options: JSONEncodingOptions = .rfc8259) throws -> Data {
         let writer = JSONWriter(capacity: 256)
-        try write(into: writer, depth: 0)
+        try write(into: writer, depth: 0, options: options)
         return Data(writer.bytes)
     }
 
-    func write(into writer: JSONWriter, depth: Int) throws {
+    func write(into writer: JSONWriter, depth: Int, options: JSONEncodingOptions) throws {
         guard depth <= Self.maxEncodingDepth else {
             throw EncodingError.invalidValue(
                 self, .init(codingPath: [], debugDescription: "Nesting exceeds \(Self.maxEncodingDepth)"))
@@ -68,33 +67,50 @@ extension JSONValue {
         case .bool(let b):
             writer.writeBool(b)
         case .number(let d):
-            guard d.isFinite else {
-                throw EncodingError.invalidValue(
-                    d, .init(codingPath: [], debugDescription: "Non-finite \(d) cannot be encoded as JSON"))
-            }
-            if d == d.rounded(), abs(d) < 9.007_199_254_740_992e15 {
-                writer.writeInteger(Int64(d))
-            } else {
-                writer.writeDouble(d)
-            }
+            try writeNumber(d, into: writer, options: options)
         case .string(let s):
             writer.writeString(s)
         case .array(let elements):
             writer.byte(0x5B)
             for (i, element) in elements.enumerated() {
                 if i > 0 { writer.byte(0x2C) }
-                try element.write(into: writer, depth: depth + 1)
+                try element.write(into: writer, depth: depth + 1, options: options)
             }
             writer.byte(0x5D)
         case .object(let members):
             writer.byte(0x7B)
-            var first = true
-            for (key, value) in members {
-                if first { first = false } else { writer.byte(0x2C) }
-                writer.writeKey(key)
-                try value.write(into: writer, depth: depth + 1)
+            let pairs = options.keyOrder == .sorted ? members.sorted { $0.key < $1.key } : Array(members)
+            for (i, pair) in pairs.enumerated() {
+                if i > 0 { writer.byte(0x2C) }
+                writer.writeKey(pair.key)
+                try pair.value.write(into: writer, depth: depth + 1, options: options)
             }
             writer.byte(0x7D)
+        }
+    }
+
+    private func writeNumber(_ d: Double, into writer: JSONWriter, options: JSONEncodingOptions) throws {
+        guard d.isFinite else {
+            switch options.nonFinite {
+            case .throw:
+                throw EncodingError.invalidValue(
+                    d, .init(codingPath: [], debugDescription: "Non-finite \(d) cannot be encoded as JSON"))
+            case .null:
+                writer.writeNull()
+            case .stringLiterals(let pos, let neg, let nan):
+                writer.writeString(d.isNaN ? nan : (d > 0 ? pos : neg))
+            }
+            return
+        }
+        switch options.numberFormat {
+        case .ecma262:
+            JSONOutput.appendECMANumber(d, to: &writer.bytes)
+        case .swiftShortest:
+            if d == d.rounded(), abs(d) < 9.007_199_254_740_992e15 {
+                writer.writeInteger(Int64(d))
+            } else {
+                writer.writeDouble(d)
+            }
         }
     }
 }

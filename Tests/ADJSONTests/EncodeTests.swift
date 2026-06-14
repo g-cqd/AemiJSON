@@ -85,3 +85,17 @@ private let samples: [E] = [
     #expect(back == v)
     #expect(String(decoding: try JSONValue.number(3.5).encoded(), as: UTF8.self) == "3.5")
 }
+
+@Test func jsonValueEncodedHonorsOptionsProfile() throws {
+    // .javaScript: ECMA-262 numbers (5.0 -> "5") and non-finite -> null.
+    #expect(String(decoding: try JSONValue.number(5.0).encoded(options: .javaScript), as: UTF8.self) == "5")
+    #expect(
+        String(decoding: try JSONValue.number(.infinity).encoded(options: .javaScript), as: UTF8.self) == "null")
+    // keyOrder: .sorted
+    let obj = JSONValue.object(["b": .number(2), "a": .number(1)])
+    #expect(
+        String(decoding: try obj.encoded(options: JSONEncodingOptions(keyOrder: .sorted)), as: UTF8.self)
+            == #"{"a":1,"b":2}"#)
+    // The default profile stays strict.
+    #expect(throws: EncodingError.self) { try JSONValue.number(.nan).encoded() }
+}

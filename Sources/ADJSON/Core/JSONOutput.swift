@@ -57,7 +57,7 @@ enum JSONOutput {
     /// (`\n \r \t \b \f` short forms, everything else `\u00XX`). Bytes ≥ 0x20 other than
     /// `"`/`\` are copied verbatim in runs, so well-formed UTF-8 passes through untouched.
     @inlinable
-    static func appendString(_ s: String, to bytes: inout [UInt8]) {
+    static func appendString(_ s: String, to bytes: inout [UInt8], escapeSlashes: Bool = false) {
         bytes.append(0x22)
         var str = s
         str.withUTF8 { buf in
@@ -67,7 +67,7 @@ enum JSONOutput {
             var i = 0
             while i < n {
                 let b = p[i]
-                if b < 0x20 || b == 0x22 || b == 0x5C {
+                if b < 0x20 || b == 0x22 || b == 0x5C || (escapeSlashes && b == 0x2F) {
                     if i > runStart {
                         bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
                     }
@@ -91,6 +91,7 @@ enum JSONOutput {
         switch b {
         case 0x22: bytes.append(0x22)
         case 0x5C: bytes.append(0x5C)
+        case 0x2F: bytes.append(0x2F)
         case 0x0A: bytes.append(0x6E)
         case 0x0D: bytes.append(0x72)
         case 0x09: bytes.append(0x74)
@@ -108,5 +109,106 @@ enum JSONOutput {
     @inlinable
     static func hexDigit(_ v: UInt8) -> UInt8 {
         v < 10 ? 0x30 + v : 0x61 + (v - 10)
+    }
+
+    /// Appends a finite `Double` formatted per ECMA-262 §6.1.6.1.20 `Number::toString` — i.e. what
+    /// JavaScript `JSON.stringify` emits, which differs from `Double.description` (integral doubles
+    /// lose the trailing `.0`, `-0` becomes `0`, exponents aren't zero-padded, and the
+    /// decimal↔exponential threshold is `n > 21` / `n ≤ -6`). It reuses Swift's shortest
+    /// round-trippable digits (from `description`) and only re-renders their placement. The caller
+    /// must have already handled non-finite values.
+    @usableFromInline
+    static func appendECMANumber(_ v: Double, to bytes: inout [UInt8]) {
+        let d = Array(v.description.utf8)  // shortest round-trippable, ASCII
+        var pos = 0
+        let negative = d.first == 0x2D
+        if negative { pos = 1 }
+
+        // Split off an explicit exponent (`e±NN`), if any.
+        var exp = 0
+        var mantEnd = d.count
+        var j = pos
+        while j < d.count {
+            if d[j] == 0x65 || d[j] == 0x45 {
+                mantEnd = j
+                var ei = j + 1
+                var eNeg = false
+                if ei < d.count, d[ei] == 0x2B || d[ei] == 0x2D {
+                    eNeg = d[ei] == 0x2D
+                    ei += 1
+                }
+                var e = 0
+                while ei < d.count {
+                    e = e * 10 + Int(d[ei] - 0x30)
+                    ei += 1
+                }
+                exp = eNeg ? -e : e
+                break
+            }
+            j += 1
+        }
+
+        // Gather the significant digits and the decimal-point position `pointPos` (digits before it).
+        var dotAt = -1
+        var t = pos
+        while t < mantEnd {
+            if d[t] == 0x2E {
+                dotAt = t
+                break
+            }
+            t += 1
+        }
+        var digits = [UInt8]()
+        digits.reserveCapacity(mantEnd - pos)
+        var pointPos: Int
+        if dotAt >= 0 {
+            for x in pos..<dotAt { digits.append(d[x]) }
+            for x in (dotAt + 1)..<mantEnd { digits.append(d[x]) }
+            pointPos = dotAt - pos
+        } else {
+            for x in pos..<mantEnd { digits.append(d[x]) }
+            pointPos = mantEnd - pos
+        }
+        pointPos += exp
+
+        // Normalize to shortest significant digits `[start, end)`, adjusting `pointPos`.
+        var start = 0
+        while start < digits.count, digits[start] == 0x30 {
+            start += 1
+            pointPos -= 1
+        }
+        var end = digits.count
+        while end > start, digits[end - 1] == 0x30 { end -= 1 }
+        if start >= end {  // value is zero (including -0)
+            bytes.append(0x30)
+            return
+        }
+
+        let k = end - start
+        let n = pointPos
+        if negative { bytes.append(0x2D) }
+        if k <= n, n <= 21 {
+            for x in start..<end { bytes.append(digits[x]) }
+            for _ in 0..<(n - k) { bytes.append(0x30) }
+        } else if n > 0, n <= 21 {
+            for x in start..<(start + n) { bytes.append(digits[x]) }
+            bytes.append(0x2E)
+            for x in (start + n)..<end { bytes.append(digits[x]) }
+        } else if n > -6, n <= 0 {
+            bytes.append(0x30)
+            bytes.append(0x2E)
+            for _ in 0..<(-n) { bytes.append(0x30) }
+            for x in start..<end { bytes.append(digits[x]) }
+        } else {
+            bytes.append(digits[start])
+            if k > 1 {
+                bytes.append(0x2E)
+                for x in (start + 1)..<end { bytes.append(digits[x]) }
+            }
+            bytes.append(0x65)  // 'e'
+            let e = n - 1
+            bytes.append(e >= 0 ? 0x2B : 0x2D)
+            appendInteger(abs(e), to: &bytes)
+        }
     }
 }
