@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 extension ADJSON {
     /// Drop-in replacement for `Foundation.JSONDecoder`. Reference as

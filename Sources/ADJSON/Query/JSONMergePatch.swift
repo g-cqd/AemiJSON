@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// RFC 7396 JSON Merge Patch. A patch that is an object recursively merges into the
 /// target; a member whose patch value is `null` removes that key; a non-object patch

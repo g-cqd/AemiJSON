@@ -122,7 +122,7 @@ final class DecodeContext {
 struct TapeDecoder: Decoder {
     let ctx: DecodeContext
     let index: Int
-    let codingPath: [CodingKey]
+    let codingPath: [any CodingKey]
     var userInfo: [CodingUserInfoKey: Any] { ctx.userInfo }
 
     func container<Key: CodingKey>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> {
@@ -133,7 +133,7 @@ struct TapeDecoder: Decoder {
         return KeyedDecodingContainer(KeyedTapeDecodingContainer<Key>(ctx: ctx, index: index, codingPath: codingPath))
     }
 
-    func unkeyedContainer() throws -> UnkeyedDecodingContainer {
+    func unkeyedContainer() throws -> any UnkeyedDecodingContainer {
         guard ctx.tag(index) == JSONKind.array.rawValue else {
             throw DecodingError.typeMismatch(
                 [Any].self, .init(codingPath: codingPath, debugDescription: "Expected an array"))
@@ -141,7 +141,7 @@ struct TapeDecoder: Decoder {
         return UnkeyedTapeDecodingContainer(ctx: ctx, containerIndex: index, codingPath: codingPath)
     }
 
-    func singleValueContainer() throws -> SingleValueDecodingContainer {
+    func singleValueContainer() throws -> any SingleValueDecodingContainer {
         SingleValueTapeDecodingContainer(ctx: ctx, index: index, codingPath: codingPath)
     }
 }
@@ -151,7 +151,7 @@ struct TapeDecoder: Decoder {
 private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
     let ctx: DecodeContext
     let index: Int
-    let codingPath: [CodingKey]
+    let codingPath: [any CodingKey]
 
     var allKeys: [Key] {
         var out: [Key] = []
@@ -216,16 +216,16 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
         return try TapeDecoder(ctx: ctx, index: vi, codingPath: codingPath + [key]).container(keyedBy: type)
     }
 
-    func nestedUnkeyedContainer(forKey key: Key) throws -> UnkeyedDecodingContainer {
+    func nestedUnkeyedContainer(forKey key: Key) throws -> any UnkeyedDecodingContainer {
         let vi = try requireIndex(key)
         return try TapeDecoder(ctx: ctx, index: vi, codingPath: codingPath + [key]).unkeyedContainer()
     }
 
-    func superDecoder() throws -> Decoder {
+    func superDecoder() throws -> any Decoder {
         TapeDecoder(ctx: ctx, index: index, codingPath: codingPath)
     }
 
-    func superDecoder(forKey key: Key) throws -> Decoder {
+    func superDecoder(forKey key: Key) throws -> any Decoder {
         TapeDecoder(ctx: ctx, index: try requireIndex(key), codingPath: codingPath + [key])
     }
 
@@ -253,12 +253,12 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
 private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
     let ctx: DecodeContext
     let containerIndex: Int
-    let codingPath: [CodingKey]
+    let codingPath: [any CodingKey]
     let total: Int
     var currentIndex = 0
     var cursor: Int
 
-    init(ctx: DecodeContext, containerIndex: Int, codingPath: [CodingKey]) {
+    init(ctx: DecodeContext, containerIndex: Int, codingPath: [any CodingKey]) {
         self.ctx = ctx
         self.containerIndex = containerIndex
         self.codingPath = codingPath
@@ -312,14 +312,14 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
         return try decoder.container(keyedBy: type)
     }
 
-    mutating func nestedUnkeyedContainer() throws -> UnkeyedDecodingContainer {
+    mutating func nestedUnkeyedContainer() throws -> any UnkeyedDecodingContainer {
         guard !isAtEnd else { throw end(Any.self) }
         let decoder = TapeDecoder(ctx: ctx, index: cursor, codingPath: codingPath)
         advance()
         return try decoder.unkeyedContainer()
     }
 
-    mutating func superDecoder() throws -> Decoder {
+    mutating func superDecoder() throws -> any Decoder {
         guard !isAtEnd else { throw end(Any.self) }
         let decoder = TapeDecoder(ctx: ctx, index: cursor, codingPath: codingPath)
         advance()
@@ -349,7 +349,7 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
 private struct SingleValueTapeDecodingContainer: SingleValueDecodingContainer {
     let ctx: DecodeContext
     let index: Int
-    let codingPath: [CodingKey]
+    let codingPath: [any CodingKey]
 
     func decodeNil() -> Bool { ctx.isNull(index) }
 

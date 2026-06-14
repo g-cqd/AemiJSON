@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 extension ADJSON {
     /// Drop-in replacement for `Foundation.JSONEncoder`. Reference as
@@ -20,7 +20,7 @@ extension ADJSON {
         // value-type buffer with no class indirection; otherwise the generic streaming
         // encoder over the class-backed writer.
         public func encodeToBytes<T: Encodable>(_ value: T) throws -> [UInt8] {
-            if let fast = value as? ADJSONFastEncodable {
+            if let fast = value as? any ADJSONFastEncodable {
                 var w = JSONByteWriter(adopting: EncoderBufferPool.take())
                 try fast.__adjsonEncode(into: &w)
                 return w.bytes

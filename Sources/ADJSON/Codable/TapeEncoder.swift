@@ -36,7 +36,7 @@ final class EncodeState {
 
     /// Bridge a fast-path value nested inside a generic encode: move the shared buffer
     /// into a value `JSONByteWriter` (so its appends don't trigger CoW), then move back.
-    @inline(__always) func encodeFast(_ fast: ADJSONFastEncodable) throws {
+    @inline(__always) func encodeFast(_ fast: any ADJSONFastEncodable) throws {
         var bw = JSONByteWriter(adopting: w.bytes)
         w.bytes = []
         try fast.__adjsonEncode(into: &bw)
@@ -44,7 +44,7 @@ final class EncodeState {
     }
 }
 
-@inline(__always) private func checkFinite(_ v: Double, _ path: [CodingKey]) throws {
+@inline(__always) private func checkFinite(_ v: Double, _ path: [any CodingKey]) throws {
     if !v.isFinite {
         throw EncodingError.invalidValue(
             v, .init(codingPath: path, debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
@@ -53,7 +53,7 @@ final class EncodeState {
 
 struct TapeEncoder: Encoder {
     let state: EncodeState
-    var codingPath: [CodingKey] { [] }
+    var codingPath: [any CodingKey] { [] }
     var userInfo: [CodingUserInfoKey: Any] { [:] }
 
     func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedEncodingContainer<Key> {
@@ -61,12 +61,12 @@ struct TapeEncoder: Encoder {
         return KeyedEncodingContainer(KeyedTapeEncodingContainer<Key>(state: state, frame: frame))
     }
 
-    func unkeyedContainer() -> UnkeyedEncodingContainer {
+    func unkeyedContainer() -> any UnkeyedEncodingContainer {
         let frame = state.open(object: false)
         return UnkeyedTapeEncodingContainer(state: state, frame: frame)
     }
 
-    func singleValueContainer() -> SingleValueEncodingContainer {
+    func singleValueContainer() -> any SingleValueEncodingContainer {
         SingleValueTapeEncodingContainer(state: state)
     }
 }
@@ -76,7 +76,7 @@ struct TapeEncoder: Encoder {
 private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContainerProtocol {
     let state: EncodeState
     let frame: Int
-    var codingPath: [CodingKey] { [] }
+    var codingPath: [any CodingKey] { [] }
 
     @inline(__always) func member(_ key: Key) {
         state.beginMember(frame)
@@ -148,7 +148,7 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
 
     mutating func encode<T: Encodable>(_ v: T, forKey key: Key) throws {
         member(key)
-        if let fast = v as? ADJSONFastEncodable {
+        if let fast = v as? any ADJSONFastEncodable {
             try state.encodeFast(fast)
         } else {
             try v.encode(to: TapeEncoder(state: state))
@@ -163,14 +163,14 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
         return KeyedEncodingContainer(KeyedTapeEncodingContainer<NK>(state: state, frame: f))
     }
 
-    mutating func nestedUnkeyedContainer(forKey key: Key) -> UnkeyedEncodingContainer {
+    mutating func nestedUnkeyedContainer(forKey key: Key) -> any UnkeyedEncodingContainer {
         member(key)
         let f = state.open(object: false)
         return UnkeyedTapeEncodingContainer(state: state, frame: f)
     }
 
-    mutating func superEncoder() -> Encoder { TapeEncoder(state: state) }
-    mutating func superEncoder(forKey key: Key) -> Encoder {
+    mutating func superEncoder() -> any Encoder { TapeEncoder(state: state) }
+    mutating func superEncoder(forKey key: Key) -> any Encoder {
         member(key)
         return TapeEncoder(state: state)
     }
@@ -181,7 +181,7 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
 private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
     let state: EncodeState
     let frame: Int
-    var codingPath: [CodingKey] { [] }
+    var codingPath: [any CodingKey] { [] }
     var count: Int { state.counts[frame] }
 
     @inline(__always) func elem() { state.beginMember(frame) }
@@ -251,7 +251,7 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
 
     mutating func encode<T: Encodable>(_ v: T) throws {
         elem()
-        if let fast = v as? ADJSONFastEncodable {
+        if let fast = v as? any ADJSONFastEncodable {
             try state.encodeFast(fast)
         } else {
             try v.encode(to: TapeEncoder(state: state))
@@ -264,13 +264,13 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
         return KeyedEncodingContainer(KeyedTapeEncodingContainer<NK>(state: state, frame: f))
     }
 
-    mutating func nestedUnkeyedContainer() -> UnkeyedEncodingContainer {
+    mutating func nestedUnkeyedContainer() -> any UnkeyedEncodingContainer {
         elem()
         let f = state.open(object: false)
         return UnkeyedTapeEncodingContainer(state: state, frame: f)
     }
 
-    mutating func superEncoder() -> Encoder {
+    mutating func superEncoder() -> any Encoder {
         elem()
         return TapeEncoder(state: state)
     }
@@ -280,7 +280,7 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
 
 private struct SingleValueTapeEncodingContainer: SingleValueEncodingContainer {
     let state: EncodeState
-    var codingPath: [CodingKey] { [] }
+    var codingPath: [any CodingKey] { [] }
 
     mutating func encodeNil() { state.w.writeNull() }
     mutating func encode(_ v: Bool) { state.w.writeBool(v) }
@@ -305,7 +305,7 @@ private struct SingleValueTapeEncodingContainer: SingleValueEncodingContainer {
     mutating func encode(_ v: UInt64) { state.w.writeInteger(v) }
 
     mutating func encode<T: Encodable>(_ v: T) throws {
-        if let fast = v as? ADJSONFastEncodable {
+        if let fast = v as? any ADJSONFastEncodable {
             return try state.encodeFast(fast)
         }
         try v.encode(to: TapeEncoder(state: state))

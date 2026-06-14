@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// RFC 6902 JSON Patch: an ordered sequence of operations applied to a `JSONValue`.
 public struct JSONPatch: Sendable {

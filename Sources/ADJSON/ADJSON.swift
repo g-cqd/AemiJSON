@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// Namespace for the ADJSON library. Use `ADJSON.JSONDecoder` / `ADJSON.JSONEncoder`
 /// / `ADJSON.JSONSerialization` where Foundation's same-named types are also in scope.

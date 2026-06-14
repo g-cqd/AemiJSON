@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// A single validation failure, located by JSON Pointer into the instance.
 public struct ValidationError: Sendable, Equatable {

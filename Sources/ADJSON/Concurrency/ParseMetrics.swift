@@ -3,8 +3,8 @@ import Synchronization
 /// Process-wide, lock-free parse metrics using `Synchronization.Atomic`.
 /// Sendable and never touches the main actor.
 public enum ADJSONMetrics {
-    public static let documentsParsed = Atomic<Int>(0)
-    public static let bytesParsed = Atomic<Int>(0)
+    private static let documentsParsed = Atomic<Int>(0)
+    private static let bytesParsed = Atomic<Int>(0)
 
     @inline(__always)
     static func record(bytes count: Int) {

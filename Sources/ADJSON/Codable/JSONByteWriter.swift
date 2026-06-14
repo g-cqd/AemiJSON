@@ -75,7 +75,7 @@ public struct JSONByteWriter {
     }
 
     @inlinable public mutating func encode<T: Encodable>(_ v: T) throws {
-        if let fast = v as? ADJSONFastEncodable {
+        if let fast = v as? any ADJSONFastEncodable {
             try fast.__adjsonEncode(into: &self)
         } else {
             try encodeGeneric(v)

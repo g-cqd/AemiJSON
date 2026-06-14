@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 extension JSONDocument {
     /// Tape indices of each top-level array element (single pass), or nil if the

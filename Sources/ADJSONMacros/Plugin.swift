@@ -6,7 +6,7 @@ import SwiftSyntaxMacros
 
 @main
 struct ADJSONMacrosPlugin: CompilerPlugin {
-    let providingMacros: [Macro.Type] = [JSONCodableMacro.self]
+    let providingMacros: [any Macro.Type] = [JSONCodableMacro.self]
 }
 
 private struct Property {
@@ -16,8 +16,8 @@ private struct Property {
     let wrapped: String  // element type when optional, else == type
 }
 
-public struct JSONCodableMacro: ExtensionMacro {
-    public static func expansion(
+struct JSONCodableMacro: ExtensionMacro {
+    static func expansion(
         of node: AttributeSyntax,
         attachedTo declaration: some DeclGroupSyntax,
         providingExtensionsOf type: some TypeSyntaxProtocol,

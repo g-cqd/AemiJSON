@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// A fully-materialized, mutable JSON value tree. The lazy `JSON` view is read-only
 /// over a parsed document; `JSONValue` is the editable counterpart used by JSON Patch
