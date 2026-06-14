@@ -3,9 +3,10 @@ import Testing
 
 @testable import ADJSON
 
-// RFC 9535 JSONPath Compliance Test Suite. Our engine implements a documented
-// subset (no `value()`, no formal well-typedness checker, object-member order is
-// unspecified), so this reports a pass rate and asserts a floor rather than 100%.
+// RFC 9535 JSONPath Compliance Test Suite. The engine rejects every invalid selector and returns
+// the expected nodelist for all valid queries except a handful of I-Regexp (RFC 9485) edge cases
+// (`.` vs the U+2028/U+2029 line separators under Swift's regex engine), so this asserts full
+// invalid-rejection and a high valid-query floor.
 @Test func jsonPathComplianceSuite() throws {
     guard
         let url = Bundle.module.url(
@@ -48,6 +49,6 @@ import Testing
         "JSONPath CTS: valid \(validOK)/\(validTotal) (\(Int(rate * 100))%), "
             + "invalid rejected \(invalidRejected)/\(invalidTotal)")
     #expect(validTotal > 100)
-    #expect(invalidRejected > 0)
-    #expect(rate >= 0.5, "JSONPath CTS pass rate regressed below the documented subset floor")
+    #expect(invalidRejected == invalidTotal, "every invalid selector must be rejected")
+    #expect(rate >= 0.98, "JSONPath CTS valid-query pass rate regressed")
 }

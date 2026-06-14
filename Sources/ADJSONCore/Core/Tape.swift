@@ -16,8 +16,7 @@
 // at 4 GiB; a document exceeding either is rejected as `JSONError.documentTooLarge`
 // (see `TapeBuilder.closeContainer`).
 
-@usableFromInline
-enum JSONKind: UInt8 {
+public enum JSONKind: UInt8 {
     case null = 0
     case boolFalse = 1
     case boolTrue = 2
@@ -27,39 +26,36 @@ enum JSONKind: UInt8 {
     case array = 6
 }
 
-@usableFromInline
-enum Slot {
-    @usableFromInline static let auxMask: UInt64 = 0x0FFF_FFFF
-    @usableFromInline static let maxLength = 0x3FF_FFFF  // 2^26 - 1, fits length << 2 in 28 bits
+public enum Slot {
+    public static let auxMask: UInt64 = 0x0FFF_FFFF
+    public static let maxLength = 0x3FF_FFFF  // 2^26 - 1, fits length << 2 in 28 bits
 
     @inline(__always)
-    @usableFromInline
-    static func scalar(_ tag: UInt8, offset: Int, length: Int, flags: UInt64) -> UInt64 {
+    public static func scalar(_ tag: UInt8, offset: Int, length: Int, flags: UInt64) -> UInt64 {
         (UInt64(tag) << 60)
             | ((((UInt64(length) << 2) | flags) & auxMask) << 32)
             | UInt64(UInt32(truncatingIfNeeded: offset))
     }
 
     @inline(__always)
-    @usableFromInline
-    static func container(_ tag: UInt8, count: Int, next: Int) -> UInt64 {
+    public static func container(_ tag: UInt8, count: Int, next: Int) -> UInt64 {
         (UInt64(tag) << 60)
             | ((UInt64(count) & auxMask) << 32)
             | UInt64(UInt32(truncatingIfNeeded: next))
     }
 
-    @inline(__always) @usableFromInline static func tag(_ s: UInt64) -> UInt8 { UInt8(s >> 60) }
-    @inline(__always) @usableFromInline static func low(_ s: UInt64) -> Int { Int(s & 0xFFFF_FFFF) }
-    @inline(__always) @usableFromInline static func aux(_ s: UInt64) -> Int { Int((s >> 32) & auxMask) }
-    @inline(__always) @usableFromInline static func length(_ s: UInt64) -> Int { aux(s) >> 2 }
-    @inline(__always) @usableFromInline static func flags(_ s: UInt64) -> Int { aux(s) & 0x3 }
-    @inline(__always) @usableFromInline static func count(_ s: UInt64) -> Int { aux(s) }
+    @inline(__always) public static func tag(_ s: UInt64) -> UInt8 { UInt8(s >> 60) }
+    @inline(__always) public static func low(_ s: UInt64) -> Int { Int(s & 0xFFFF_FFFF) }
+    @inline(__always) public static func aux(_ s: UInt64) -> Int { Int((s >> 32) & auxMask) }
+    @inline(__always) public static func length(_ s: UInt64) -> Int { aux(s) >> 2 }
+    @inline(__always) public static func flags(_ s: UInt64) -> Int { aux(s) & 0x3 }
+    @inline(__always) public static func count(_ s: UInt64) -> Int { aux(s) }
 
     /// Index of the slot immediately after the value at `node`, given that value's slot `s`:
     /// containers store their post-subtree index in `low` (O(1) skip); scalars/keys advance by one.
     /// The single definition of forward tape navigation, shared by `JSON` and `DecodeContext`.
-    @inline(__always) @usableFromInline
-    static func next(after node: Int, _ s: UInt64) -> Int {
+    @inline(__always)
+    public static func next(after node: Int, _ s: UInt64) -> Int {
         let t = tag(s)
         return (t == JSONKind.object.rawValue || t == JSONKind.array.rawValue) ? low(s) : node + 1
     }

@@ -1,5 +1,3 @@
-import Foundation
-
 /// Relative JSON Pointer (IETF draft): a non-negative integer of levels to ascend,
 /// an optional `+N`/`-N` array-index adjustment, then either `#` (yield the key or
 /// index name) or a JSON Pointer to follow. Resolved against a base location.

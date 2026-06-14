@@ -1,5 +1,3 @@
-public import Foundation
-
 /// A fully-materialized, mutable JSON value tree. The lazy `JSON` view is read-only
 /// over a parsed document; `JSONValue` is the editable counterpart used by JSON Patch
 /// (RFC 6902) and JSON Merge Patch (RFC 7396).
@@ -39,10 +37,6 @@ extension JSONValue {
         }
     }
 
-    public init(parsing data: Data, options: JSONParseOptions = .strict) throws(JSONError) {
-        self.init(try ADJSON.parse(data, options: options).root)
-    }
-
     public init(parsing string: String, options: JSONParseOptions = .strict) throws(JSONError) {
         self.init(try ADJSON.parse(string, options: options).root)
     }
@@ -51,14 +45,15 @@ extension JSONValue {
     /// the parser's `maxDepth` so a value that round-trips through parse always re-encodes.
     static let maxEncodingDepth = 512
 
-    /// Serialize to compact UTF-8 JSON using the given profile. The default (`.rfc8259`) is strict
-    /// and throws `EncodingError.invalidValue` on a non-finite number; pass `.javaScript` for
-    /// `JSON.stringify` byte-parity (non-finite → `null`, ECMA-262 number formatting). Also throws
-    /// if the tree nests beyond `maxEncodingDepth`.
-    public func encoded(options: JSONEncodingOptions = .rfc8259) throws -> Data {
+    /// Serialize to compact UTF-8 JSON bytes using the given profile. The default (`.rfc8259`) is
+    /// strict and throws `EncodingError.invalidValue` on a non-finite number; pass `.javaScript`
+    /// for `JSON.stringify` byte-parity (non-finite → `null`, ECMA-262 number formatting). Also
+    /// throws if the tree nests beyond `maxEncodingDepth`. The umbrella `ADJSON` module adds a
+    /// `Data`-returning `encoded()` overload for Foundation interop.
+    public func encodedBytes(options: JSONEncodingOptions = .rfc8259) throws -> [UInt8] {
         let writer = JSONWriter(capacity: 256)
         try write(into: writer, depth: 0, options: options)
-        return Data(writer.bytes)
+        return writer.bytes
     }
 
     func write(into writer: JSONWriter, depth: Int, options: JSONEncodingOptions) throws {

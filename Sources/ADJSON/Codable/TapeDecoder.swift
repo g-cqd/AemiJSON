@@ -1,3 +1,4 @@
+import ADJSONCore
 import Foundation
 
 // A value-type `Decoder` over the tape. No eager dictionary, no key-String

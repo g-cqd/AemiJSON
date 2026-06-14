@@ -3,12 +3,11 @@
 // Namespaced under `JSONKey` to match the other byte helpers (`JSONString`/`JSONNumber`/`JSONUTF8`/
 // `JSONOutput`). Pure stdlib (no C `memcmp`), so it stays `@inlinable` under
 // `InternalImportsByDefault` while the optimizer lowers it to a bulk compare.
-@usableFromInline
-enum JSONKey {
+public enum JSONKey {
     // Compares 8 bytes per step and then the `< 8`-byte remainder, so it never reads past `count`;
     // equality is endianness-agnostic (both sides load identically), so no byte-swapping is needed.
     @inlinable
-    static func bytesEqual(_ a: UnsafePointer<UInt8>, _ b: UnsafePointer<UInt8>, _ count: Int) -> Bool {
+    public static func bytesEqual(_ a: UnsafePointer<UInt8>, _ b: UnsafePointer<UInt8>, _ count: Int) -> Bool {
         var i = 0
         while i &+ 8 <= count {
             let wa = UnsafeRawPointer(a + i).loadUnaligned(as: UInt64.self)
@@ -26,7 +25,7 @@ enum JSONKey {
     // Compares a Swift `String` key's UTF-8 against a raw key buffer (the sites where one side is a
     // `String` rather than a tape/`StaticString` byte range).
     @inlinable
-    static func bytesEqual(_ key: String, _ b: UnsafePointer<UInt8>, _ count: Int) -> Bool {
+    public static func bytesEqual(_ key: String, _ b: UnsafePointer<UInt8>, _ count: Int) -> Bool {
         var k = key
         return k.withUTF8 { kb in
             guard kb.count == count else { return false }
@@ -39,7 +38,7 @@ enum JSONKey {
     // tape's hasEscape flag). This owns the escape branch that the lazy-navigation, generic-decode,
     // and `@JSONCodable` fast-path lookups all share, so the policy lives in exactly one place.
     @inlinable
-    static func matches(
+    public static func matches(
         _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, _ key: String
     ) -> Bool {
         if escaped { return JSONString.unescape(p, off, len) == key }
@@ -47,7 +46,7 @@ enum JSONKey {
     }
 
     @inlinable
-    static func matches(
+    public static func matches(
         _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, _ key: StaticString
     ) -> Bool {
         if escaped { return JSONString.unescape(p, off, len) == key.description }

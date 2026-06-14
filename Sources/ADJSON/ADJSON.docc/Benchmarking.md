@@ -62,27 +62,27 @@ source. Your numbers will vary with hardware, OS, and payload; treat these as ra
 
 | Workload | ADJSON | Foundation | Ratio |
 |---|---|---|---|
-| Tape parse — `twitter.json` | 959 MB/s | 176 MB/s | **5.4×** |
-| Tape parse — `citm_catalog.json` | 1274 MB/s | 318 MB/s | **4.0×** |
-| Tape parse — `canada.json` | 842 MB/s | 128 MB/s | **6.6×** |
-| Codable decode — generic | 79 MB/s | 43 MB/s | **1.8×** |
-| Codable decode — `@JSONCodable` | 183 MB/s | 43 MB/s | **4.2×** |
-| Codable encode — generic | 90 MB/s | 47 MB/s | **1.9×** |
-| Codable encode — `@JSONCodable` | 387 MB/s | 47 MB/s | **8.2×** |
-| `[Double]` decode | 176 MB/s | 79 MB/s | **2.2×** |
-| `JSONValue` materialize — `twitter.json` | 216 MB/s | 176 MB/s | **1.2×** |
-| `JSONValue` materialize — `citm_catalog.json` | 326 MB/s | 318 MB/s | **1.0×** |
-| `JSONValue` materialize — `canada.json` | 134 MB/s | 128 MB/s | **1.05×** |
+| Tape parse — `twitter.json` | 818 MB/s | 168 MB/s | **4.9×** |
+| Tape parse — `citm_catalog.json` | 1146 MB/s | 302 MB/s | **3.8×** |
+| Tape parse — `canada.json` | 743 MB/s | 114 MB/s | **6.5×** |
+| Codable decode — generic | 66 MB/s | 40 MB/s | **1.6×** |
+| Codable decode — `@JSONCodable` | 182 MB/s | 40 MB/s | **4.5×** |
+| Codable encode — generic | 60 MB/s | 45 MB/s | **1.3×** |
+| Codable encode — `@JSONCodable` | 358 MB/s | 45 MB/s | **8.0×** |
+| `[Double]` decode | 161 MB/s | 72 MB/s | **2.2×** |
+| `JSONValue` materialize — `twitter.json` | 199 MB/s | 168 MB/s | **1.2×** |
+| `JSONValue` materialize — `citm_catalog.json` | 324 MB/s | 302 MB/s | **1.07×** |
+| `JSONValue` materialize — `canada.json` | 131 MB/s | 114 MB/s | **1.1×** |
 
 **ADJSON-only** (features Foundation has no equivalent for):
 
 | Feature | Throughput |
 |---|---|
-| JSONPath wildcard — `$[*].profile.bio` | 2125 MB/s |
-| JSONPath filter — `$[?(@.followers > N)]` | 927 MB/s |
-| JSON Schema validate (pre-parsed, full structural) | 105 MB/s |
-| JSON Patch apply (3 ops over a 2000-element tree) | 46 µs |
-| Concurrent decode | 227 MB/s (**2.5×** serial) |
+| JSONPath wildcard — `$[*].profile.bio` | 2608 MB/s |
+| JSONPath filter — `$[?(@.followers > N)]` | 917 MB/s |
+| JSON Schema validate (pre-parsed, full structural) | 123 MB/s |
+| JSON Patch apply (3 ops over a 2000-element tree) | 48 µs |
+| Concurrent decode | 165 MB/s (**2.2×** serial) |
 
 Tape parsing runs at roughly **1 GB/s**; partial/lazy access is faster still, since it skips
 subtrees it never reads. Full `JSONValue` materialization now edges past `JSONSerialization`

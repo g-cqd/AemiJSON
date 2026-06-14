@@ -1,3 +1,4 @@
+import ADJSONCore
 import Foundation
 
 // Direct-streaming Encoder: writes JSON straight into one shared JSONWriter as

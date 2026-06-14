@@ -7,7 +7,7 @@
 /// chains never trap — `json.a.b.c.string` returns `nil` if any link is absent.
 @dynamicMemberLookup
 public struct JSON: Sendable {
-    let doc: JSONDocument
+    package let doc: JSONDocument
     let index: Int
 
     init(doc: JSONDocument, index: Int) {

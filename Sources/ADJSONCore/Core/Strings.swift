@@ -1,9 +1,7 @@
-@usableFromInline
-enum JSONString {
+public enum JSONString {
     // Decode a JSON string body (between quotes) that contains escape sequences.
     // The no-escape fast path is handled by the caller via `String(decoding:)`.
-    @usableFromInline
-    static func unescape(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> String {
+    public static func unescape(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> String {
         var out = [UInt8]()
         out.reserveCapacity(length)
         var j = offset

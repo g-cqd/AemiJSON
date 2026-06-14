@@ -1,5 +1,3 @@
-import Foundation
-
 enum JSONPathEvaluator {
     static func evaluate(_ segments: [PathSegment], start: JSON, root: JSON) -> [JSON] {
         var nodes = [start]
@@ -140,15 +138,17 @@ enum JSONPathEvaluator {
         case .query(let q):
             let r = evalQuery(q, current: current, root: root)
             return r.count == 1 ? coerce(r[0]) : .nothing
-        case .length(let q):
-            let r = evalQuery(q, current: current, root: root)
-            guard r.count == 1 else { return .nothing }
-            let n = r[0]
-            if let s = n.string { return .number(Double(s.unicodeScalars.count)) }
-            if n.isArray || n.isObject { return .number(Double(n.count)) }
-            return .nothing
+        case .length(let arg):
+            switch evalComparand(arg, current: current, root: root) {
+            case .string(let s): return .number(Double(s.unicodeScalars.count))
+            case .structural(let j) where j.isArray || j.isObject: return .number(Double(j.count))
+            default: return .nothing
+            }
         case .count(let q):
             return .number(Double(evalQuery(q, current: current, root: root).count))
+        case .value(let q):
+            let r = evalQuery(q, current: current, root: root)
+            return r.count == 1 ? coerce(r[0]) : .nothing
         }
     }
 
@@ -156,21 +156,20 @@ enum JSONPathEvaluator {
         switch op {
         case .eq: return valueEqual(l, r)
         case .ne: return !valueEqual(l, r)
-        case .lt, .le, .gt, .ge:
-            if case let .number(a) = l, case let .number(b) = r { return ordered(a, b, op) }
-            if case let .string(a) = l, case let .string(b) = r { return ordered(a, b, op) }
-            return false
+        case .lt: return lessThan(l, r)
+        case .le: return lessThan(l, r) || valueEqual(l, r)
+        case .gt: return lessThan(r, l)
+        case .ge: return lessThan(r, l) || valueEqual(l, r)
         }
     }
 
-    static func ordered<T: Comparable>(_ a: T, _ b: T, _ op: CompOp) -> Bool {
-        switch op {
-        case .lt: return a < b
-        case .le: return a <= b
-        case .gt: return a > b
-        case .ge: return a >= b
-        default: return false
-        }
+    // RFC 9535 §2.3.5.2.2: `<` is defined only for two numbers or two strings; every other operand
+    // pairing (booleans, null, mismatched types, missing/`Nothing`) is unordered and compares false.
+    // `<=`/`>=` therefore reduce to `< || ==` and `> || ==`.
+    static func lessThan(_ l: QueryValue, _ r: QueryValue) -> Bool {
+        if case let .number(a) = l, case let .number(b) = r { return a < b }
+        if case let .string(a) = l, case let .string(b) = r { return a < b }
+        return false
     }
 
     static func valueEqual(_ l: QueryValue, _ r: QueryValue) -> Bool {
@@ -188,10 +187,45 @@ enum JSONPathEvaluator {
     static func evalRegex(_ sc: Comparand, _ pc: Comparand, _ anchored: Bool, current: JSON, root: JSON) -> Bool {
         guard case let .string(s) = evalComparand(sc, current: current, root: root),
             case let .string(pat) = evalComparand(pc, current: current, root: root),
-            let re = try? NSRegularExpression(pattern: pat)
+            let re = try? Regex(iRegexpToSwift(pat))
         else { return false }
-        let range = NSRange(s.startIndex..., in: s)
-        guard let match = re.firstMatch(in: s, range: range) else { return false }
-        return anchored ? match.range == range : true
+        // RFC 9535: `match()` is a full (anchored) match; `search()` finds a substring. Swift's
+        // standard-library `Regex` (not Foundation) provides both via `wholeMatch` / `firstMatch`.
+        // `try?` flattens the optional `Match`, so a `nil` result already means "no match".
+        if anchored {
+            return (try? re.wholeMatch(in: s)) != nil
+        }
+        return (try? re.firstMatch(in: s)) != nil
+    }
+
+    // RFC 9485 I-Regexp `.` matches any character except U+000A (LF). Swift's `Regex` `.` also
+    // excludes the other line separators (CR, U+2028, U+2029, U+0085…), so rewrite each unescaped,
+    // outside-a-class `.` to `[^\n]` to recover I-Regexp semantics. Other I-Regexp constructs map to
+    // the Swift engine directly.
+    static func iRegexpToSwift(_ pattern: String) -> String {
+        var out = ""
+        out.reserveCapacity(pattern.count + 4)
+        var inClass = false
+        var escaped = false
+        for c in pattern {
+            if escaped {
+                out.append(c)
+                escaped = false
+            } else if c == "\\" {
+                out.append(c)
+                escaped = true
+            } else if c == "[" {
+                inClass = true
+                out.append(c)
+            } else if c == "]" {
+                inClass = false
+                out.append(c)
+            } else if c == "." && !inClass {
+                out.append("[^\n]")
+            } else {
+                out.append(c)
+            }
+        }
+        return out
     }
 }

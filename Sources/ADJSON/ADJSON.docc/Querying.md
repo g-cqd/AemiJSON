@@ -30,11 +30,14 @@ let titles = try doc.root.query("$.store.book[?(@.price < 10)].title")
 
 Supported: root `$`, child and descendant (`..`) segments; name, wildcard `*`, index
 (including negative), slice `start:end:step`, and filter `?(…)` selectors; filter logic
-`&&`/`||`/`!` with parentheses; comparisons against literals and relative/absolute queries;
-existence tests; and `length()`, `count()`, `match()`, `search()`. The parser bounds nesting
-depth to reject pathological expressions. It currently passes ~88% of the JSONPath Compliance
-Test Suite; `value()`, full I-Regexp semantics, and the formal well-typedness checker are not
-yet implemented. Parse errors are typed ``JSONPathError``.
+`&&`/`||`/`!` with parentheses; comparisons against literals and singular relative/absolute
+queries; existence tests; the `length()`, `count()`, `value()`, `match()`, and `search()`
+functions; and the RFC 9535 well-typedness rules (singular-query operands, function argument
+types). The parser bounds nesting depth to reject pathological expressions. Against the JSONPath
+Compliance Test Suite it **rejects every invalid selector** (247/247) and returns the expected
+result for **99%** of valid queries; the remainder are I-Regexp (RFC 9485) edge cases, because
+`match()`/`search()` run on Swift's standard regex engine, whose `.` diverges from I-Regexp on
+the U+2028/U+2029 line separators. Parse errors are typed ``JSONPathError``.
 
 ## JSON Patch (RFC 6902)
 

@@ -1,14 +1,11 @@
-import Foundation
-
 // Single source of truth for low-level JSON byte emission. Shared by the class
 // `JSONWriter` (generic streaming encoder), the value-type `_JSONByteWriter` (the
 // `@JSONCodable` fast path), and schema rendering — so string escaping and integer
 // formatting exist in exactly one place rather than drifting across copies. The routines
 // are `@inlinable` so the fast path still inlines them across the module boundary.
-@usableFromInline
-enum JSONOutput {
+public enum JSONOutput {
     @inlinable
-    static func appendNull(to bytes: inout [UInt8]) {
+    public static func appendNull(to bytes: inout [UInt8]) {
         bytes.append(0x6E)
         bytes.append(0x75)
         bytes.append(0x6C)
@@ -16,7 +13,7 @@ enum JSONOutput {
     }
 
     @inlinable
-    static func appendBool(_ v: Bool, to bytes: inout [UInt8]) {
+    public static func appendBool(_ v: Bool, to bytes: inout [UInt8]) {
         if v {
             bytes.append(0x74)
             bytes.append(0x72)
@@ -32,7 +29,7 @@ enum JSONOutput {
     }
 
     @inlinable
-    static func appendInteger<T: FixedWidthInteger>(_ v: T, to bytes: inout [UInt8]) {
+    public static func appendInteger<T: FixedWidthInteger>(_ v: T, to bytes: inout [UInt8]) {
         if v == 0 {
             bytes.append(0x30)
             return
@@ -42,7 +39,7 @@ enum JSONOutput {
     }
 
     @inlinable
-    static func appendMagnitude<U: UnsignedInteger & FixedWidthInteger>(_ value: U, to bytes: inout [UInt8]) {
+    public static func appendMagnitude<U: UnsignedInteger & FixedWidthInteger>(_ value: U, to bytes: inout [UInt8]) {
         withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 40) { buf in
             var n = value
             var idx = 40
@@ -59,7 +56,7 @@ enum JSONOutput {
     /// (`\n \r \t \b \f` short forms, everything else `\u00XX`). Bytes ≥ 0x20 other than
     /// `"`/`\` are copied verbatim in runs, so well-formed UTF-8 passes through untouched.
     @inlinable
-    static func appendString(_ s: String, to bytes: inout [UInt8], escapeSlashes: Bool = false) {
+    public static func appendString(_ s: String, to bytes: inout [UInt8], escapeSlashes: Bool = false) {
         bytes.append(0x22)
         var str = s
         str.withUTF8 { buf in
@@ -88,7 +85,7 @@ enum JSONOutput {
     }
 
     @inlinable
-    static func appendEscape(_ b: UInt8, to bytes: inout [UInt8]) {
+    public static func appendEscape(_ b: UInt8, to bytes: inout [UInt8]) {
         bytes.append(0x5C)
         switch b {
         case 0x22: bytes.append(0x22)
@@ -109,7 +106,7 @@ enum JSONOutput {
     }
 
     @inlinable
-    static func hexDigit(_ v: UInt8) -> UInt8 {
+    public static func hexDigit(_ v: UInt8) -> UInt8 {
         v < 10 ? 0x30 + v : 0x61 + (v - 10)
     }
 
@@ -119,8 +116,7 @@ enum JSONOutput {
     /// decimal↔exponential threshold is `n > 21` / `n ≤ -6`). It reuses Swift's shortest
     /// round-trippable digits (from `description`) and only re-renders their placement. The caller
     /// must have already handled non-finite values.
-    @usableFromInline
-    static func appendECMANumber(_ v: Double, to bytes: inout [UInt8]) {
+    public static func appendECMANumber(_ v: Double, to bytes: inout [UInt8]) {
         let d = Array(v.description.utf8)  // shortest round-trippable, ASCII
         var pos = 0
         let negative = d.first == 0x2D
@@ -218,8 +214,7 @@ enum JSONOutput {
     /// (`Double.description`) vs ECMA-262, and `nonFinite` chooses throw / `null` / string-literal.
     /// The single source of truth for the Codable encode paths (matches their current
     /// `Double.description` output under the `.rfc8259` default).
-    @usableFromInline
-    static func appendDouble(_ v: Double, options: JSONEncodingOptions, to bytes: inout [UInt8]) throws {
+    public static func appendDouble(_ v: Double, options: JSONEncodingOptions, to bytes: inout [UInt8]) throws {
         guard v.isFinite else {
             switch options.nonFinite {
             case .throw:

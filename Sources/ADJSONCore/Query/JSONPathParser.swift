@@ -1,5 +1,3 @@
-import Foundation
-
 /// An error from parsing an RFC 9535 JSONPath expression, located by character `position`.
 public struct JSONPathError: Error, Sendable, Equatable {
     public let message: String
@@ -37,11 +35,11 @@ struct JSONPathParser {
     }
 
     mutating func parseRoot() throws(JSONPathError) -> [PathSegment] {
-        skipWS()
+        // RFC 9535: `jsonpath-query = root-identifier segments` — no leading or trailing whitespace
+        // around the whole query (inter-segment whitespace is handled in `parseSegments`).
         guard peek() == "$" else { throw err("path must start with $") }
         i += 1
         let segs = try parseSegments()
-        skipWS()
         guard atEnd else { throw err("unexpected trailing characters") }
         return segs
     }
@@ -50,7 +48,15 @@ struct JSONPathParser {
         try enter()
         defer { depth -= 1 }
         var segs: [PathSegment] = []
-        loop: while let c = peek() {
+        // `segments = *(S segment)`: whitespace may precede a segment but is not consumed when no
+        // segment follows, so a trailing run of whitespace is left for `parseRoot` to reject.
+        while true {
+            let save = i
+            skipWS()
+            guard let c = peek() else {
+                i = save
+                break
+            }
             switch c {
             case ".":
                 if peek2() == "." {
@@ -63,7 +69,8 @@ struct JSONPathParser {
             case "[":
                 segs.append(.child(try parseBracket()))
             default:
-                break loop
+                i = save
+                return segs
             }
         }
         return segs
@@ -88,13 +95,19 @@ struct JSONPathParser {
         return .name(try parseMemberName())
     }
 
+    // RFC 9535 member-name-shorthand: name-first = ALPHA / "_" / non-ASCII (NOT a digit);
+    // subsequent name-char additionally allows DIGIT.
     mutating func parseMemberName() throws(JSONPathError) -> String {
-        var name = ""
-        while let c = peek(), c.isLetter || c.isNumber || c == "_" || (c.unicodeScalars.first?.value ?? 0) > 0x7F {
+        func isNameFirst(_ c: Character) -> Bool {
+            c.isLetter || c == "_" || (c.unicodeScalars.first?.value ?? 0) > 0x7F
+        }
+        guard let first = peek(), isNameFirst(first) else { throw err("invalid member name") }
+        var name = String(first)
+        i += 1
+        while let c = peek(), isNameFirst(c) || c.isNumber {
             name.append(c)
             i += 1
         }
-        guard !name.isEmpty else { throw err("empty member name") }
         return name
     }
 
@@ -134,19 +147,25 @@ struct JSONPathParser {
         return try parseIndexOrSlice()
     }
 
+    // A number component is parsed only when one is actually present (starts with `-`/digit); when
+    // present it must be a valid RFC 9535 `int`, so e.g. `[01]` or `[::01]` is rejected rather than
+    // silently treated as a default.
     mutating func parseIndexOrSlice() throws(JSONPathError) -> Selector {
-        let first = try? parseInt()
+        skipWS()
+        var first: Int? = nil
+        if isIntStart(peek()) { first = try parseInt() }
         skipWS()
         if peek() == ":" {
             i += 1
             skipWS()
-            let end = try? parseInt()
+            var end: Int? = nil
+            if isIntStart(peek()) { end = try parseInt() }
             skipWS()
             var step = 1
             if peek() == ":" {
                 i += 1
                 skipWS()
-                step = (try? parseInt()) ?? 1
+                if isIntStart(peek()) { step = try parseInt() }
             }
             return .slice(start: first, end: end, step: step)
         }
@@ -154,54 +173,103 @@ struct JSONPathParser {
         return .index(idx)
     }
 
-    mutating func parseInt() throws(JSONPathError) -> Int {
-        skipWS()
-        var s = ""
-        if peek() == "-" {
-            s.append("-")
-            i += 1
-        }
-        while let c = peek(), c.isNumber {
-            s.append(c)
-            i += 1
-        }
-        guard let v = Int(s) else { throw err("invalid integer") }
-        return v
+    func isIntStart(_ c: Character?) -> Bool {
+        guard let c else { return false }
+        return c == "-" || ("0"..."9").contains(c)
     }
 
+    // RFC 9535 `int = "0" / (["-"] DIGIT1 *DIGIT)`: no leading zeros, no `-0`, and the I-JSON range
+    // [-(2^53-1), 2^53-1]. Out-of-range or malformed digits are rejected.
+    mutating func parseInt() throws(JSONPathError) -> Int {
+        func isDigit(_ c: Character?) -> Bool { c.map { ("0"..."9").contains($0) } ?? false }
+        var neg = false
+        if peek() == "-" {
+            neg = true
+            i += 1
+        }
+        guard let first = peek(), isDigit(first) else { throw err("expected digit in index") }
+        if first == "0" {
+            i += 1
+            if neg { throw err("negative zero index") }
+            if isDigit(peek()) { throw err("leading zero in index") }
+            return 0
+        }
+        var digits = String(first)
+        i += 1
+        while let c = peek(), isDigit(c) {
+            digits.append(c)
+            i += 1
+        }
+        guard let v = Int(digits), v <= 9_007_199_254_740_991 else { throw err("index out of range") }
+        return neg ? -v : v
+    }
+
+    // RFC 9535 §2.3.1.1 string-literal: the active quote closes; `\` introduces an escape; bare
+    // control characters (< U+0020) are rejected; only the documented escapes are allowed (the
+    // opposite quote may NOT be backslash-escaped). `\u` requires exactly four hex digits with
+    // correct surrogate pairing.
     mutating func parseQuotedString() throws(JSONPathError) -> String {
-        let quote = chars[i]
+        let quote = chars[i]  // ' or "
         i += 1
         var s = ""
         while let c = peek() {
-            i += 1
+            if c == quote {
+                i += 1
+                return s
+            }
             if c == "\\" {
-                guard let e = peek() else { break }
+                i += 1
+                guard let e = peek() else { throw err("unterminated escape") }
                 i += 1
                 switch e {
+                case "b": s.append("\u{08}")
+                case "f": s.append("\u{0C}")
                 case "n": s.append("\n")
-                case "t": s.append("\t")
                 case "r": s.append("\r")
-                case "\\": s.append("\\")
+                case "t": s.append("\t")
                 case "/": s.append("/")
-                case "'": s.append("'")
-                case "\"": s.append("\"")
-                case "u":
-                    var hex = ""
-                    for _ in 0..<4 where peek() != nil {
-                        hex.append(chars[i])
-                        i += 1
-                    }
-                    if let v = UInt32(hex, radix: 16), let us = Unicode.Scalar(v) { s.unicodeScalars.append(us) }
-                default: s.append(e)
+                case "\\": s.append("\\")
+                case quote: s.append(quote)  // \" only in "…", \' only in '…'
+                case "u": s.unicodeScalars.append(try parseUnicodeEscape())
+                default: throw err("invalid escape '\\\(e)'")
                 }
-            } else if c == quote {
-                return s
-            } else {
-                s.append(c)
+                continue
             }
+            if let a = c.asciiValue, a < 0x20 {  // unescaped control character
+                throw err("unescaped control character")
+            }
+            s.append(c)
+            i += 1
         }
         throw err("unterminated string")
+    }
+
+    // `\uXXXX`, combining a high+low surrogate pair into one scalar; lone/!mismatched surrogates
+    // are rejected. The leading `u` has already been consumed.
+    mutating func parseUnicodeEscape() throws(JSONPathError) -> Unicode.Scalar {
+        let hi = try hex4()
+        if (0xD800...0xDBFF).contains(hi) {
+            guard peek() == "\\", peek2() == "u" else { throw err("lone high surrogate") }
+            i += 2
+            let lo = try hex4()
+            guard (0xDC00...0xDFFF).contains(lo) else { throw err("invalid low surrogate") }
+            let combined = 0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00)
+            guard let us = Unicode.Scalar(combined) else { throw err("invalid code point") }
+            return us
+        }
+        if (0xDC00...0xDFFF).contains(hi) { throw err("lone low surrogate") }
+        guard let us = Unicode.Scalar(hi) else { throw err("invalid code point") }
+        return us
+    }
+
+    mutating func hex4() throws(JSONPathError) -> UInt32 {
+        var v: UInt32 = 0
+        for _ in 0..<4 {
+            guard let c = peek(), let d = c.hexDigitValue else { throw err("invalid \\u escape") }
+            v = (v << 4) | UInt32(d)
+            i += 1
+        }
+        return v
     }
 
     // MARK: - Filter expressions
@@ -257,16 +325,20 @@ struct JSONPathParser {
         }
         if let fn = peekIdentifier(), fn == "match" || fn == "search" {
             consumeIdentifier(fn)
-            try expect("(")
+            try expectFunctionParen()
             let a = try parseComparand()
             try expect(",")
             let b = try parseComparand()
             try expect(")")
+            guard a.isValueType, b.isValueType else { throw err("match()/search() require value-type arguments") }
             return .regex(a, pattern: b, anchored: fn == "match")
         }
         let left = try parseComparand()
         if let op = parseCompOp() {
             let right = try parseComparand()
+            guard left.isValueType, right.isValueType else {
+                throw err("comparison operand must be a literal, singular query, or function")
+            }
             return .comparison(left, op, right)
         }
         if case let .query(q) = left { return .existence(q) }
@@ -287,6 +359,12 @@ struct JSONPathParser {
     mutating func consumeIdentifier(_ s: String) {
         skipWS()
         i += s.count
+    }
+
+    // RFC 9535: a function name is immediately followed by `(` — no whitespace between.
+    mutating func expectFunctionParen() throws(JSONPathError) {
+        guard peek() == "(" else { throw err("no whitespace allowed before '('") }
+        i += 1
     }
 
     mutating func parseCompOp() -> CompOp? {
@@ -324,15 +402,25 @@ struct JSONPathParser {
         skipWS()
         guard let c = peek() else { throw err("expected comparand") }
         if c == "@" || c == "$" { return .query(try parseRelQuery()) }
-        if let fn = peekIdentifier(), fn == "length" || fn == "count" {
+        if let fn = peekIdentifier(), fn == "length" || fn == "count" || fn == "value" {
             consumeIdentifier(fn)
-            try expect("(")
-            let q = try parseRelQuery()
+            try expectFunctionParen()
+            let result: Comparand
+            if fn == "length" {
+                // length() takes a ValueType argument (literal, singular query, or function).
+                let arg = try parseComparand()
+                guard arg.isValueType else { throw err("length() requires a value-type argument") }
+                result = .length(arg)
+            } else {
+                // count()/value() take a NodesType argument: any query.
+                let q = try parseRelQuery()
+                result = fn == "count" ? .count(q) : .value(q)
+            }
             try expect(")")
-            return fn == "length" ? .length(q) : .count(q)
+            return result
         }
         if c == "'" || c == "\"" { return .literal(.string(try parseQuotedString())) }
-        if c == "-" || c.isNumber { return .literal(.number(try parseNumber())) }
+        if c == "-" || ("0"..."9").contains(c) { return .literal(.number(try parseNumber())) }
         if let id = peekIdentifier() {
             switch id {
             case "true":
@@ -359,16 +447,49 @@ struct JSONPathParser {
         return RelQuery(fromRoot: fromRoot, segments: segs)
     }
 
+    // RFC 9535 `number = (int / "-0") [ frac ] [ exp ]`: a leading-zero-free integer part (but `-0`
+    // is allowed for numbers), an optional fraction with at least one digit, and an optional
+    // exponent with at least one digit. `00`, `01`, `1.`, `1.e1`, `-.1` are all rejected.
     mutating func parseNumber() throws(JSONPathError) -> Double {
         skipWS()
+        func isDigit(_ c: Character?) -> Bool { c.map { ("0"..."9").contains($0) } ?? false }
         var s = ""
         if peek() == "-" {
             s.append("-")
             i += 1
         }
-        while let c = peek(), c.isNumber || c == "." || c == "e" || c == "E" || c == "+" || c == "-" {
-            s.append(c)
+        guard let first = peek(), isDigit(first) else { throw err("expected digit in number") }
+        if first == "0" {
+            s.append("0")
             i += 1
+            if isDigit(peek()) { throw err("leading zero in number") }
+        } else {
+            while let c = peek(), isDigit(c) {
+                s.append(c)
+                i += 1
+            }
+        }
+        if peek() == "." {
+            s.append(".")
+            i += 1
+            guard isDigit(peek()) else { throw err("missing fraction digits") }
+            while let c = peek(), isDigit(c) {
+                s.append(c)
+                i += 1
+            }
+        }
+        if peek() == "e" || peek() == "E" {
+            s.append("e")
+            i += 1
+            if let sign = peek(), sign == "+" || sign == "-" {
+                s.append(sign)
+                i += 1
+            }
+            guard isDigit(peek()) else { throw err("missing exponent digits") }
+            while let c = peek(), isDigit(c) {
+                s.append(c)
+                i += 1
+            }
         }
         guard let v = Double(s) else { throw err("invalid number") }
         return v

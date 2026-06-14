@@ -1,5 +1,3 @@
-import Foundation
-
 // MARK: - AST
 
 enum PathSegment: Sendable {
@@ -26,11 +24,12 @@ indirect enum FilterExpr: Sendable {
 
 enum CompOp: Sendable { case eq, ne, lt, le, gt, ge }
 
-enum Comparand: Sendable {
+indirect enum Comparand: Sendable {
     case literal(Literal)
     case query(RelQuery)
-    case length(RelQuery)
-    case count(RelQuery)
+    case length(Comparand)  // ValueType arg
+    case count(RelQuery)  // NodesType arg
+    case value(RelQuery)  // NodesType arg
 }
 
 enum Literal: Sendable {
@@ -43,6 +42,31 @@ enum Literal: Sendable {
 struct RelQuery: Sendable {
     let fromRoot: Bool
     let segments: [PathSegment]
+
+    /// RFC 9535 singular-query: a query producing at most one node — only single name/index
+    /// selectors, no wildcards, slices, filters, multi-selectors, or descendant segments. Required
+    /// of query operands in comparisons and of `length()`/`match()`/`search()` value arguments.
+    var isSingular: Bool {
+        segments.allSatisfy { seg in
+            guard case .child(let sels) = seg, sels.count == 1 else { return false }
+            switch sels[0] {
+            case .name, .index: return true
+            default: return false
+            }
+        }
+    }
+}
+
+extension Comparand {
+    /// RFC 9535 well-typedness: a `ValueType` operand is a literal, a singular query, or a
+    /// value-returning function (`length`/`count`/`value`). Non-singular queries are `NodesType`
+    /// and may only appear as `count`/`value` arguments or as a bare existence test.
+    var isValueType: Bool {
+        switch self {
+        case .literal, .length, .count, .value: return true
+        case .query(let q): return q.isSingular
+        }
+    }
 }
 
 /// RFC 9535 JSONPath, compiled once to an AST and reusable. `Sendable`.
@@ -50,9 +74,11 @@ struct RelQuery: Sendable {
 /// Supported: root `$`, child & descendant (`..`) segments; name, wildcard `*`,
 /// index (incl. negative), slice `start:end:step`, and filter `?(...)` selectors;
 /// filter logic `&&`/`||`/`!` with parentheses; comparisons against literals and
-/// relative/absolute queries; existence tests; and `length()`, `count()`,
-/// `match()`, `search()` functions.
-/// Not yet: `value()`, full I-Regexp semantics, the formal well-typedness checker.
+/// singular relative/absolute queries; existence tests; the `length()`, `count()`,
+/// `value()`, `match()`, and `search()` functions; and the RFC 9535 well-typedness rules
+/// (singular-query operands, function argument types).
+/// Not yet: full I-Regexp (RFC 9485) semantics — `match()`/`search()` use the Swift standard
+/// regex engine, which differs from I-Regexp on a few edge cases (e.g. `.` vs line separators).
 public struct JSONPath: Sendable {
     let segments: [PathSegment]
 

@@ -1,3 +1,5 @@
+import ADJSONCore
+
 /// Value-type byte buffer for the fast encode path. Threaded `inout` through
 /// `__adjsonEncode`, so macro-generated code in the user's module writes JSON with no
 /// class indirection. `@inlinable` so those writes inline across the module boundary.

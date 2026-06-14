@@ -1,6 +1,5 @@
 // Number materialization over a byte range; to be replaced by Eisel-Lemire in a later phase.
-@usableFromInline
-enum JSONNumber {
+public enum JSONNumber {
     // `Double(_:)` parses with fixed C-locale semantics, unlike libc `strtod`, which honours the
     // host `LC_NUMERIC` and would misread "1.5" as 1.0 under a comma-decimal locale (set by the
     // process or an interop library via `setlocale`). The scanner has already validated the
@@ -8,8 +7,7 @@ enum JSONNumber {
     // as `strtod` did. Short numbers (≤15 UTF-8 bytes — the common case) use the inline
     // small-string buffer, so no heap allocation occurs on the hot path.
     @inline(__always)
-    @usableFromInline
-    static func parseDouble(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Double {
+    public static func parseDouble(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Double {
         let s = String(decoding: UnsafeBufferPointer(start: p + offset, count: length), as: UTF8.self)
         return Double(s) ?? .nan
     }
@@ -17,8 +15,7 @@ enum JSONNumber {
     // Generic integer parse with correct overflow handling for any width, signed or
     // unsigned (negatives accumulate downward so Int.min and UInt.max both work).
     @inline(__always)
-    @usableFromInline
-    static func parseInteger<T: FixedWidthInteger>(
+    public static func parseInteger<T: FixedWidthInteger>(
         _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, _ type: T.Type
     ) -> T? {
         var idx = offset

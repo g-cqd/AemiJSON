@@ -1,3 +1,4 @@
+import ADJSONCore
 import Foundation
 
 // Accumulates observed shape across samples. `required` = keys present in every

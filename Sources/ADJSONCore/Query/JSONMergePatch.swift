@@ -1,5 +1,3 @@
-public import Foundation
-
 /// RFC 7396 JSON Merge Patch. A patch that is an object recursively merges into the
 /// target; a member whose patch value is `null` removes that key; a non-object patch
 /// replaces the target outright.
@@ -16,9 +14,5 @@ public enum JSONMergePatch {
             }
         }
         return .object(result)
-    }
-
-    public static func apply(_ patchData: Data, toData targetData: Data) throws -> Data {
-        try apply(try JSONValue(parsing: patchData), to: try JSONValue(parsing: targetData)).encoded()
     }
 }

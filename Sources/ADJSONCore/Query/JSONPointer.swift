@@ -1,5 +1,3 @@
-import Foundation
-
 /// Errors from parsing or resolving a JSON Pointer (RFC 6901) or Relative JSON Pointer.
 /// Distinct from `JSONPatchError` so the addressing layer doesn't depend on the patch layer.
 public enum JSONPointerError: Error, Sendable, Equatable {
@@ -24,7 +22,27 @@ public struct JSONPointer: Sendable, Equatable {
     }
 
     static func unescape(_ s: Substring) -> String {
-        s.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+        // RFC 6901 §4: `~1` → `/`, `~0` → `~`. A single left-to-right pass (escape last)
+        // avoids Foundation's `replacingOccurrences` so this stays dependency-free.
+        guard s.contains("~") else { return String(s) }
+        var out = String()
+        out.reserveCapacity(s.count)
+        var it = s.makeIterator()
+        while let c = it.next() {
+            guard c == "~" else {
+                out.append(c)
+                continue
+            }
+            switch it.next() {
+            case "1": out.append("/")
+            case "0": out.append("~")
+            case let other?:
+                out.append("~")
+                out.append(other)
+            case nil: out.append("~")
+            }
+        }
+        return out
     }
 
     /// Parse an RFC 6901 §4 array-index token: exactly `0` or `[1-9][0-9]*`. Rejects a

@@ -1,3 +1,4 @@
+import ADJSONCore
 import Foundation
 
 // The fast-path object reader handed to `@JSONCodable`-generated `__adjsonDecode`.

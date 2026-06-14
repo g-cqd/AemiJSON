@@ -1,5 +1,3 @@
-import Foundation
-
 // Single-pass, iterative (explicit-stack, non-recursive) scanner that builds the tape
 // WITHOUT materializing any value. In strict mode it enforces the RFC 8259 grammar (number
 // shape, escape validity, UTF-8 well-formedness); in lenient mode it scans permissively.
@@ -168,7 +166,8 @@ struct TapeBuilder {
         }
         var bucket = stack[frame].seenKeys[hash] ?? []
         for previous in bucket
-        where previous.length == length && (length == 0 || memcmp(p + previous.offset, p + offset, length) == 0) {
+        where previous.length == length && (length == 0 || JSONKey.bytesEqual(p + previous.offset, p + offset, length))
+        {
             throw JSONError.duplicateKey(at: keyStart)
         }
         bucket.append((offset, length))
@@ -331,7 +330,7 @@ struct TapeBuilder {
 
     @inline(__always) mutating func expectLiteral(_ lit: StaticString) throws(JSONError) {
         let len = lit.utf8CodeUnitCount
-        guard i + len <= n, memcmp(p + i, lit.utf8Start, len) == 0 else {
+        guard i + len <= n, JSONKey.bytesEqual(p + i, lit.utf8Start, len) else {
             throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i)
         }
         i += len

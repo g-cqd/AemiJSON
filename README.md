@@ -26,6 +26,8 @@ That's the whole learning curve for the common case. Everything else is opt-in.
 - **Complete** — Schema (validate, infer, or generate from a type with `@Schemable`), JSONPath,
   Pointer, Patch, and Merge Patch — all in one package.
 - **Familiar** — `ADJSON.JSONDecoder` / `ADJSON.JSONEncoder` mirror Foundation's API.
+- **Lean** — the engine ships as a separate **`ADJSONCore`** product with *no* Foundation and *no*
+  swift-syntax, for dependency-strict consumers. ([Install](#install))
 
 ## Install
 
@@ -39,6 +41,19 @@ That's the whole learning curve for the common case. Everything else is opt-in.
 ```
 
 Reference the namespaced types as `ADJSON.JSONDecoder` etc. where Foundation is also imported.
+
+### Foundation-free core
+
+Want only the engine — tape parsing, lazy navigation, `JSONValue`, and JSONPath/Pointer/Patch —
+with **no Foundation and no swift-syntax** in your dependency graph? Depend on the `ADJSONCore`
+product instead:
+
+```swift
+.target(name: "MyEngine", dependencies: [.product(name: "ADJSONCore", package: "ADJSON")])
+```
+
+`import ADJSON` re-exports `ADJSONCore`, so the full library is a strict superset: the `Data`
+conveniences, Codable, Schema, and the macros live only in the umbrella module.
 
 **Requirements:** Swift 6.3+ toolchain (developed and tested on 6.4); macOS 15+ / iOS 26 /
 tvOS 26 / watchOS 26 / visionOS 26.
@@ -97,18 +112,18 @@ Reproduce with `swift run -c release ADJSONBenchmarks`.
 
 | Workload | ADJSON vs Foundation |
 |---|---|
-| Untyped tape parse — `twitter.json` | **5.4×** `JSONSerialization` |
-| Untyped tape parse — `citm_catalog.json` | **4.0×** |
-| Untyped tape parse — `canada.json` (number-heavy) | **6.6×** |
-| Codable decode — generic (`Data` → struct) | **1.8×** `JSONDecoder` |
-| Codable decode — `@JSONCodable` fast path | **4.2×** `JSONDecoder` |
-| Codable encode — `@JSONCodable` fast path | **8.2×** `JSONEncoder` |
+| Untyped tape parse — `twitter.json` | **4.9×** `JSONSerialization` |
+| Untyped tape parse — `citm_catalog.json` | **3.8×** |
+| Untyped tape parse — `canada.json` (number-heavy) | **6.5×** |
+| Codable decode — generic (`Data` → struct) | **1.6×** `JSONDecoder` |
+| Codable decode — `@JSONCodable` fast path | **4.5×** `JSONDecoder` |
+| Codable encode — `@JSONCodable` fast path | **8.0×** `JSONEncoder` |
 | `[Double]` decode — number-heavy | **2.2×** `JSONDecoder` |
 
-Tape parsing runs at roughly **1 GB/s** (0.8–1.3 GB/s across the corpus); lazy access is faster
+Tape parsing runs at roughly **1 GB/s** (0.7–1.1 GB/s across the corpus); lazy access is faster
 still since it skips subtrees it never reads. Full untyped materialization into `JSONValue` now
 edges past `JSONSerialization` on the corpus, and compiled JSON Schema validation runs at roughly
-**105 MB/s**. Query and patch throughput, methodology, and the full table: see the **Benchmarking**
+**123 MB/s**. Query and patch throughput, methodology, and the full table: see the **Benchmarking**
 guide in the documentation.
 
 ## Standards
@@ -116,9 +131,10 @@ guide in the documentation.
 Strict by default. The grammar follows **RFC 8259** / **ECMA-404** / **ISO/IEC 21778:2017**
 with **RFC 3629** UTF-8 well-formedness (overlongs, surrogates, and code points above U+10FFFF
 rejected). Optional **RFC 7493 (I-JSON)** profile rejects duplicate keys. Query and mutation
-follow **RFC 6901** (Pointer), **RFC 9535** (JSONPath, ~88% of the compliance suite), **RFC
-6902** (Patch), **RFC 7396** (Merge Patch), and Relative JSON Pointer. Schema targets **JSON
-Schema Draft 2020-12** (subset).
+follow **RFC 6901** (Pointer), **RFC 9535** (JSONPath — rejects 100% of the compliance suite's
+invalid selectors and matches 99% of valid-query results; the remainder are I-Regexp `.`
+line-separator edge cases), **RFC 6902** (Patch), **RFC 7396** (Merge Patch), and Relative JSON
+Pointer. Schema targets **JSON Schema Draft 2020-12** (subset).
 
 > **Numbers:** under the default `.swiftShortest`, a value typed `Double(2)` encodes as `2.0`
 > through Codable, while `JSONValue` collapses it to `2` to keep integers round-tripping. Use

@@ -1,3 +1,4 @@
+import ADJSONCore
 public import Foundation
 
 /// A single validation failure, located by JSON Pointer into the instance.

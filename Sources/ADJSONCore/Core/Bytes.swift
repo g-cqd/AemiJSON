@@ -1,5 +1,3 @@
-import Foundation
-
 // Safe access to a parsed document's contiguous UTF-8 storage without force-unwrapping
 // `baseAddress`. A `JSONDocument` always owns non-empty input (`ADJSON.parse` rejects empty
 // input and every valid document has at least one tape slot), so the empty branch is
@@ -15,18 +13,13 @@ extension JSONDocument {
                 }
                 return try body(base)
             }
-        case .data(let d):
-            return try d.withUnsafeBytes { raw in
-                guard let base = raw.baseAddress else {
-                    preconditionFailure("JSONDocument input is never empty")
-                }
-                return try body(base.assumingMemoryBound(to: UInt8.self))
-            }
         }
     }
 
     @inline(__always)
-    func withBuffers<R>(_ body: (UnsafePointer<UInt8>, Int, UnsafePointer<UInt64>, Int) throws -> R) rethrows -> R {
+    package func withBuffers<R>(
+        _ body: (UnsafePointer<UInt8>, Int, UnsafePointer<UInt64>, Int) throws -> R
+    ) rethrows -> R {
         try withBytePointer { byteBase in
             try tape.withUnsafeBufferPointer { tapeBuffer in
                 guard let tapeBase = tapeBuffer.baseAddress else {

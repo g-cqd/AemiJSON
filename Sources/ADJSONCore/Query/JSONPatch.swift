@@ -1,5 +1,3 @@
-public import Foundation
-
 /// RFC 6902 JSON Patch: an ordered sequence of operations applied to a `JSONValue`.
 public struct JSONPatch: Sendable {
     public enum Operation: Sendable {
@@ -33,8 +31,6 @@ public struct JSONPatch: Sendable {
         operations = ops
     }
 
-    public init(_ data: Data) throws { try self.init(ADJSON.parse(data).root) }
-
     private static func pointer(_ item: JSON, _ key: String) throws(JSONPatchError) -> JSONPointer {
         guard let raw = item[key].string, let p = try? JSONPointer(raw) else { throw JSONPatchError.invalidOperation }
         return p
@@ -64,9 +60,5 @@ public struct JSONPatch: Sendable {
             }
         }
         return result
-    }
-
-    public func apply(toData data: Data) throws -> Data {
-        try apply(to: JSONValue(parsing: data)).encoded()
     }
 }

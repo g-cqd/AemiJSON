@@ -1,3 +1,4 @@
+import ADJSONCore
 import Foundation
 
 struct SchemaValidator {

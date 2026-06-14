@@ -1,3 +1,4 @@
+import ADJSONCore
 public import Foundation
 
 extension JSONDocument {

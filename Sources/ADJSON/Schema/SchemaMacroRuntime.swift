@@ -1,3 +1,5 @@
+import ADJSONCore
+
 // ============================================================================
 // SCHEMA MACRO RUNTIME — SPI (not API). The public-underscored symbols here exist
 // only for code emitted by `@Schemable`. A macro cannot inject an `@_spi` import

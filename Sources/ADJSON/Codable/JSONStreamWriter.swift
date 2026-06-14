@@ -1,3 +1,5 @@
+import ADJSONCore
+
 /// A low-level, value-type streaming JSON writer whose byte output matches JavaScript
 /// `JSON.stringify` (default `options: .javaScript`): no insignificant whitespace, `,`/`:`
 /// separators, JS string escaping, ECMA-262 number formatting, and JS `null` semantics.

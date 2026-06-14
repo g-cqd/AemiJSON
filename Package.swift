@@ -64,7 +64,12 @@ let package = Package(
         .visionOS(.v26),
     ],
     products: [
-        .library(name: "ADJSON", targets: ["ADJSON"])
+        // The full library: the engine plus Foundation interop, Codable, Schema, and the macros.
+        .library(name: "ADJSON", targets: ["ADJSON"]),
+        // The dependency-free engine on its own (no Foundation, no swift-syntax): tape parsing,
+        // lazy navigation, JSONValue, and JSONPath/Pointer/Patch. For consumers that want a lean,
+        // Foundation-free JSON core (e.g. zero-dependency libraries).
+        .library(name: "ADJSONCore", targets: ["ADJSONCore"]),
     ],
     dependencies: packageDependencies,
     targets: [
@@ -77,8 +82,13 @@ let package = Package(
             ],
             swiftSettings: strictSettings
         ),
+        // The Foundation-free, swift-syntax-free engine: tape parse, lazy navigation
+        // (JSONDocument/JSON/JSONValue), and query (JSONPath/Pointer/Patch). Zero
+        // dependencies, so a strict zero-dependency consumer can adopt just this.
         .target(
-            name: "ADJSON", dependencies: ["ADJSONMacros"], swiftSettings: strictSettings,
+            name: "ADJSONCore", dependencies: [], swiftSettings: strictSettings),
+        .target(
+            name: "ADJSON", dependencies: ["ADJSONCore", "ADJSONMacros"], swiftSettings: strictSettings,
             plugins: adjsonBuildPlugins),
         .executableTarget(name: "ADJSONBenchmarks", dependencies: ["ADJSON"], swiftSettings: benchSettings),
         .testTarget(
