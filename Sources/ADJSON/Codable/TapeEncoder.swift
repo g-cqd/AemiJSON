@@ -8,10 +8,18 @@ import Foundation
 // conformances); does not rely on `deinit`.
 final class EncodeState {
     let w: JSONWriter
+    let options: JSONEncodingOptions
     var kinds: [Bool] = []  // true = object, false = array
     var counts: [Int] = []
 
-    init(_ w: JSONWriter) { self.w = w }
+    init(_ w: JSONWriter, options: JSONEncodingOptions = .rfc8259) {
+        self.w = w
+        self.options = options
+    }
+
+    @inline(__always) func appendDouble(_ v: Double) throws {
+        try JSONOutput.appendDouble(v, options: options, to: &w.bytes)
+    }
 
     @inline(__always) func open(object: Bool) -> Int {
         w.byte(object ? 0x7B : 0x5B)
@@ -37,17 +45,10 @@ final class EncodeState {
     /// Bridge a fast-path value nested inside a generic encode: move the shared buffer
     /// into a value `JSONByteWriter` (so its appends don't trigger CoW), then move back.
     @inline(__always) func encodeFast(_ fast: any ADJSONFastEncodable) throws {
-        var bw = JSONByteWriter(adopting: w.bytes)
+        var bw = JSONByteWriter(adopting: w.bytes, options: options)
         w.bytes = []
         try fast.__adjsonEncode(into: &bw)
         w.bytes = bw.bytes
-    }
-}
-
-@inline(__always) private func checkFinite(_ v: Double, _ path: [any CodingKey]) throws {
-    if !v.isFinite {
-        throw EncodingError.invalidValue(
-            v, .init(codingPath: path, debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
     }
 }
 
@@ -96,14 +97,12 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
         state.w.writeString(v)
     }
     mutating func encode(_ v: Double, forKey key: Key) throws {
-        try checkFinite(v, [])
         member(key)
-        state.w.writeDouble(v)
+        try state.appendDouble(v)
     }
     mutating func encode(_ v: Float, forKey key: Key) throws {
-        try checkFinite(Double(v), [])
         member(key)
-        state.w.writeFloat(v)
+        try state.appendDouble(Double(v))
     }
     mutating func encode(_ v: Int, forKey key: Key) {
         member(key)
@@ -199,14 +198,12 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
         state.w.writeString(v)
     }
     mutating func encode(_ v: Double) throws {
-        try checkFinite(v, [])
         elem()
-        state.w.writeDouble(v)
+        try state.appendDouble(v)
     }
     mutating func encode(_ v: Float) throws {
-        try checkFinite(Double(v), [])
         elem()
-        state.w.writeFloat(v)
+        try state.appendDouble(Double(v))
     }
     mutating func encode(_ v: Int) {
         elem()
@@ -286,12 +283,10 @@ private struct SingleValueTapeEncodingContainer: SingleValueEncodingContainer {
     mutating func encode(_ v: Bool) { state.w.writeBool(v) }
     mutating func encode(_ v: String) { state.w.writeString(v) }
     mutating func encode(_ v: Double) throws {
-        try checkFinite(v, [])
-        state.w.writeDouble(v)
+        try state.appendDouble(v)
     }
     mutating func encode(_ v: Float) throws {
-        try checkFinite(Double(v), [])
-        state.w.writeFloat(v)
+        try state.appendDouble(Double(v))
     }
     mutating func encode(_ v: Int) { state.w.writeInteger(v) }
     mutating func encode(_ v: Int8) { state.w.writeInteger(v) }

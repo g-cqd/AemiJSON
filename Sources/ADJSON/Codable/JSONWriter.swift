@@ -31,7 +31,6 @@ final class JSONWriter {
     }
 
     func writeDouble(_ v: Double) { bytes.append(contentsOf: v.description.utf8) }
-    func writeFloat(_ v: Float) { bytes.append(contentsOf: v.description.utf8) }
 
     // "key":
     func writeKey(_ s: String) {

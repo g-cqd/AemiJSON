@@ -1,3 +1,5 @@
+import Foundation
+
 // Single source of truth for low-level JSON byte emission. Shared by the class
 // `JSONWriter` (generic streaming encoder), the value-type `JSONByteWriter` (the
 // `@JSONCodable` fast path), and schema rendering — so string escaping and integer
@@ -209,6 +211,30 @@ enum JSONOutput {
             let e = n - 1
             bytes.append(e >= 0 ? 0x2B : 0x2D)
             appendInteger(abs(e), to: &bytes)
+        }
+    }
+
+    /// Emits a `Double` per the encoding `options`: `numberFormat` chooses Swift-shortest
+    /// (`Double.description`) vs ECMA-262, and `nonFinite` chooses throw / `null` / string-literal.
+    /// The single source of truth for the Codable encode paths (matches their current
+    /// `Double.description` output under the `.rfc8259` default).
+    @usableFromInline
+    static func appendDouble(_ v: Double, options: JSONEncodingOptions, to bytes: inout [UInt8]) throws {
+        guard v.isFinite else {
+            switch options.nonFinite {
+            case .throw:
+                throw EncodingError.invalidValue(
+                    v, .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
+            case .null:
+                appendNull(to: &bytes)
+            case .stringLiterals(let pos, let neg, let nan):
+                appendString(v.isNaN ? nan : (v > 0 ? pos : neg), to: &bytes, escapeSlashes: options.escapeSlashes)
+            }
+            return
+        }
+        switch options.numberFormat {
+        case .ecma262: appendECMANumber(v, to: &bytes)
+        case .swiftShortest: bytes.append(contentsOf: v.description.utf8)
         }
     }
 }

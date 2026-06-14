@@ -1,17 +1,20 @@
-import Foundation
-
 /// Value-type byte buffer for the fast encode path. Threaded `inout` through
 /// `__adjsonEncode`, so macro-generated code in the user's module writes JSON with no
 /// class indirection. `@inlinable` so those writes inline across the module boundary.
 public struct JSONByteWriter {
     @usableFromInline var bytes: [UInt8]
+    @usableFromInline var options: JSONEncodingOptions
 
-    @inlinable public init(capacity: Int = 0) {
+    @inlinable public init(capacity: Int = 0, options: JSONEncodingOptions = .rfc8259) {
         bytes = []
         if capacity > 0 { bytes.reserveCapacity(capacity) }
+        self.options = options
     }
 
-    init(adopting buffer: [UInt8]) { bytes = buffer }
+    init(adopting buffer: [UInt8], options: JSONEncodingOptions = .rfc8259) {
+        bytes = buffer
+        self.options = options
+    }
 
     @inlinable public mutating func beginObject() { bytes.append(0x7B) }
     @inlinable public mutating func endObject() { bytes.append(0x7D) }
@@ -44,11 +47,7 @@ public struct JSONByteWriter {
     }
 
     @inlinable public mutating func double(_ v: Double) throws {
-        guard v.isFinite else {
-            throw EncodingError.invalidValue(
-                v, .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
-        }
-        bytes.append(contentsOf: v.description.utf8)
+        try JSONOutput.appendDouble(v, options: options, to: &bytes)
     }
 
     @inlinable public mutating func encode<T: Encodable>(_ v: T) throws {
@@ -65,7 +64,7 @@ public struct JSONByteWriter {
     @usableFromInline mutating func encodeGeneric<T: Encodable>(_ v: T) throws {
         let writer = JSONWriter(adopting: bytes)
         bytes = []
-        let state = EncodeState(writer)
+        let state = EncodeState(writer, options: options)
         try v.encode(to: TapeEncoder(state: state))
         state.closeDownTo(0)
         bytes = writer.bytes

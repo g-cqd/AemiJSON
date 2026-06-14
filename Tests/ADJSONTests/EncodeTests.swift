@@ -99,3 +99,17 @@ private let samples: [E] = [
     // The default profile stays strict.
     #expect(throws: EncodingError.self) { try JSONValue.number(.nan).encoded() }
 }
+
+@Test func codableEncoderHonorsOptionsProfile() throws {
+    struct F: Encodable {
+        var a: Double
+        var b: Double
+    }
+    var enc = ADJSON.JSONEncoder()
+    enc.options = .javaScript
+    // ECMA numbers + non-finite -> null, via the Codable path.
+    #expect(String(decoding: try enc.encode(F(a: 5.0, b: .infinity)), as: UTF8.self) == #"{"a":5,"b":null}"#)
+    // Default profile stays strict (rejects non-finite, keeps Double.description form).
+    #expect(throws: EncodingError.self) { try ADJSON.JSONEncoder().encode(F(a: 1, b: .nan)) }
+    #expect(String(decoding: try ADJSON.JSONEncoder().encode(F(a: 1.5, b: 2)), as: UTF8.self) == #"{"a":1.5,"b":2.0}"#)
+}
