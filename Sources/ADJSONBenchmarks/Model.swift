@@ -22,17 +22,6 @@ struct User: Codable, Equatable {
     var profile: Profile
 }
 
-// MARK: - Untyped value tree (for the JSONSerialization comparison)
-
-indirect enum JSONValue {
-    case null
-    case bool(Bool)
-    case number(Double)
-    case string(String)
-    case array([JSONValue])
-    case object([String: JSONValue])
-}
-
 // MARK: - Deterministic generator (no Foundation RNG variance, reproducible)
 
 struct LCG {

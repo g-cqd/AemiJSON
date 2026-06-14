@@ -53,80 +53,59 @@ func f1(_ x: Double) -> String { String(format: "%.1f", x) }
 func f2(_ x: Double) -> String { String(format: "%.2f", x) }
 
 func report(_ r: BenchResult, vs base: BenchResult?) {
-    var line = pad(r.name, 30)
-    line += padL(f1(r.medNs / 1000.0) + " us", 14)
-    line += padL(f1(r.mbPerSec) + " MB/s", 16)
+    var line = pad(r.name, 34)
+    line += padL(f1(r.medNs / 1000.0) + " us", 13)
+    line += padL(f1(r.mbPerSec) + " MB/s", 15)
     if let b = base {
         let sp = b.medNs / r.medNs
-        line += padL(f2(sp) + "x", 10)
-        line += sp >= 1.0 ? "  (faster)" : "  (slower)"
+        line += padL(f2(sp) + "x", 9)
+        line += sp >= 1.0 ? "  faster" : "  slower"
     }
     print(line)
 }
 
-// MARK: - Setup
+func section(_ title: String) { print("\n== \(title) ==") }
 
-print("ADJSON spike — Apple M2 Pro, \(ProcessInfo.processInfo.operatingSystemVersionString)")
-print("Swift release build. Foundation instances reused across iterations.\n")
+func sysctlString(_ name: String) -> String? {
+    var size = 0
+    guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+    var buf = [UInt8](repeating: 0, count: size)
+    guard sysctlbyname(name, &buf, &size, nil, 0) == 0 else { return nil }
+    if buf.last == 0 { buf.removeLast() }
+    return String(decoding: buf, as: UTF8.self)
+}
 
-let users = makeUsers(2000)
+// MARK: - Machine + payloads
+
+let chip = sysctlString("machdep.cpu.brand_string") ?? "unknown CPU"
+print("ADJSON benchmarks — \(chip), \(ProcessInfo.processInfo.operatingSystemVersionString)")
+print("Swift release build. Each row: median of 60 iters; MB/s = payload / median; xN vs baseline.")
+print("Foundation coder/serialization instances are reused across iterations.\n")
+
 let encoder = JSONEncoder()
 let decoder = JSONDecoder()
+
+let users = makeUsers(2000)
 let userData = try! encoder.encode(users)
-print("users payload : \(userData.count) bytes, \(users.count) objects")
+let usersDoc = try! ADJSON.parse(userData)
+print("users payload  : \(userData.count) bytes, \(users.count) objects (nested, keyed-object-heavy)")
 
-// Correctness gates (no point benchmarking a parser that skips work)
-let miniUsers: [User] = userData.withUnsafeBytes { raw in
-    var prs = JSONByteParser(raw.bindMemory(to: UInt8.self).baseAddress!, raw.count)
-    return prs.parseUsers()
-}
-let fUsers = try! decoder.decode([User].self, from: userData)
-print("verify decode : mini == foundation -> \(miniUsers == fUsers && fUsers == users)")
+let doubles = makeDoubles(200_000)
+let dData = try! encoder.encode(doubles)
+print("doubles payload: \(dData.count) bytes, \(doubles.count) values (number-heavy)\n")
 
-let miniEncoded = MiniEncoder.encode(users)
-let reDecoded = try! decoder.decode([User].self, from: Data(miniEncoded))
-print("verify encode : mini round-trips    -> \(reDecoded == users)  (\(miniEncoded.count) bytes)\n")
+// MARK: - Correctness gates (no point timing a path that skips work)
 
-// MARK: - Decode (typed)
+let adUsers = try! ADJSON.JSONDecoder().decode([User].self, from: userData)
+let macroUsers = try! ADJSON.JSONDecoder().decode([MacroUser].self, from: userData)
+let adEncoded = try! ADJSON.JSONEncoder().encode(users)
+let userArraySchema = try! JSONSchema(parsing: "{\"type\":\"array\",\"items\":\(MacroUser.__adjsonSchemaText)}")
+print("verify decode  : ADJSON [User] == Foundation -> \(adUsers == users)")
+print("verify macro   : ADJSON [MacroUser] count -> \(macroUsers.count == users.count)")
+print("verify encode  : ADJSON round-trips -> \(try! decoder.decode([User].self, from: adEncoded) == users)")
+print("verify schema  : @Schemable validates users -> \(userArraySchema.isValid(usersDoc.root))")
 
-print("== DECODE typed  Data -> [User]  (keyed-object-heavy) ==")
-let fd = bench("Foundation JSONDecoder", bytes: userData.count) {
-    blackHole(try! decoder.decode([User].self, from: userData))
-}
-let md = bench("Mini targeted decoder", bytes: userData.count) {
-    userData.withUnsafeBytes { raw in
-        var prs = JSONByteParser(raw.bindMemory(to: UInt8.self).baseAddress!, raw.count)
-        blackHole(prs.parseUsers())
-    }
-}
-report(fd, vs: nil)
-report(md, vs: fd)
-
-let adDecoder = ADJSON.JSONDecoder()
-let adUsers = try! adDecoder.decode([User].self, from: userData)
-print("verify       : ADJSON.JSONDecoder == foundation -> \(adUsers == fUsers)")
-let add = bench("ADJSON.JSONDecoder (Codable)", bytes: userData.count) {
-    blackHole(try! adDecoder.decode([User].self, from: userData))
-}
-report(add, vs: fd)
-
-// MARK: - Parse (untyped)
-
-print("\n== PARSE untyped  Data -> tree ==")
-let fs = bench("Foundation JSONSerialization", bytes: userData.count) {
-    blackHole(try! JSONSerialization.jsonObject(with: userData))
-}
-let ms = bench("Mini JSONValue parser", bytes: userData.count) {
-    userData.withUnsafeBytes { raw in
-        var prs = JSONByteParser(raw.bindMemory(to: UInt8.self).baseAddress!, raw.count)
-        blackHole(prs.parseValue())
-    }
-}
-report(fs, vs: nil)
-report(ms, vs: fs)
-
-// MARK: - ADJSON untyped (tape + lazy materialization)
-
+// Full lazy walk used by the untyped/corpus sections.
 func adWalk(_ j: JSON) -> Int {
     if let o = j.object {
         var s = 0
@@ -145,11 +124,16 @@ func adWalk(_ j: JSON) -> Int {
     return 0
 }
 
-print("\n== ADJSON untyped  (tape + lazy) ==")
-let adParse = bench("ADJSON parse (tape only)", bytes: userData.count) {
+// MARK: - Untyped parse (Data -> tree)
+
+section("PARSE untyped  Data -> tree  (ADJSON vs Foundation JSONSerialization)")
+let serBase = bench("Foundation JSONSerialization", bytes: userData.count) {
+    blackHole(try! JSONSerialization.jsonObject(with: userData))
+}
+let tapeParse = bench("ADJSON parse (tape only)", bytes: userData.count) {
     blackHole(try! ADJSON.parse(userData))
 }
-let adLazy = bench("ADJSON parse + read 2 fields", bytes: userData.count) {
+let lazyTwo = bench("ADJSON parse + read 2 fields", bytes: userData.count) {
     let root = try! ADJSON.parse(userData).root
     var acc = 0
     for u in root.arrayValue {
@@ -158,103 +142,123 @@ let adLazy = bench("ADJSON parse + read 2 fields", bytes: userData.count) {
     }
     blackHole(acc)
 }
-let adFull = bench("ADJSON parse + full walk", bytes: userData.count) {
+let fullWalk = bench("ADJSON parse + full walk", bytes: userData.count) {
     blackHole(adWalk(try! ADJSON.parse(userData).root))
 }
-report(fs, vs: nil)
-report(adParse, vs: fs)
-report(adLazy, vs: fs)
-report(adFull, vs: fs)
+let valueTree = bench("ADJSON JSONValue (full tree)", bytes: userData.count) {
+    blackHole(try! JSONValue(parsing: userData))
+}
+report(serBase, vs: nil)
+report(tapeParse, vs: serBase)
+report(lazyTwo, vs: serBase)
+report(fullWalk, vs: serBase)
+report(valueTree, vs: serBase)
 
-// MARK: - Encode (typed)
+// MARK: - Typed decode (Data -> [User])
 
-print("\n== ENCODE typed  [User] -> Data ==")
-let fe = bench("Foundation JSONEncoder", bytes: userData.count) {
+section("DECODE typed  Data -> [User]  (ADJSON vs Foundation JSONDecoder)")
+let fDec = bench("Foundation JSONDecoder", bytes: userData.count) {
+    blackHole(try! decoder.decode([User].self, from: userData))
+}
+let adGenericDec = ADJSON.JSONDecoder()
+let adDec = bench("ADJSON JSONDecoder (Codable)", bytes: userData.count) {
+    blackHole(try! adGenericDec.decode([User].self, from: userData))
+}
+let adMacroDecoder = ADJSON.JSONDecoder()
+let adMacroDec = bench("ADJSON @JSONCodable (fast path)", bytes: userData.count) {
+    blackHole(try! adMacroDecoder.decode([MacroUser].self, from: userData))
+}
+report(fDec, vs: nil)
+report(adDec, vs: fDec)
+report(adMacroDec, vs: fDec)
+
+// MARK: - Typed encode ([User] -> Data)
+
+section("ENCODE typed  [User] -> Data  (ADJSON vs Foundation JSONEncoder)")
+let fEnc = bench("Foundation JSONEncoder", bytes: userData.count) {
     blackHole(try! encoder.encode(users))
 }
-let me_ = bench("Mini direct encoder", bytes: userData.count) {
-    blackHole(MiniEncoder.encode(users))
+let adGenericEnc = ADJSON.JSONEncoder()
+let adEnc = bench("ADJSON JSONEncoder (Codable)", bytes: userData.count) {
+    blackHole(try! adGenericEnc.encode(users))
 }
-report(fe, vs: nil)
-report(me_, vs: fe)
-
-let adEncoder = ADJSON.JSONEncoder()
-let adEncoded = try! adEncoder.encode(users)
-print(
-    "verify       : ADJSON.JSONEncoder round-trips -> \(try! JSONDecoder().decode([User].self, from: adEncoded) == users)"
-)
-let ade = bench("ADJSON.JSONEncoder (Codable)", bytes: userData.count) {
-    blackHole(try! adEncoder.encode(users))
+let adMacroEncoder = ADJSON.JSONEncoder()
+let adMacroEnc = bench("ADJSON @JSONCodable (fast path)", bytes: userData.count) {
+    blackHole(try! adMacroEncoder.encode(macroUsers))
 }
-report(ade, vs: fe)
+report(fEnc, vs: nil)
+report(adEnc, vs: fEnc)
+report(adMacroEnc, vs: fEnc)
 
-let anyObj = try! JSONSerialization.jsonObject(with: userData)
-let fser = bench("Foundation JSONSerialization data", bytes: userData.count) {
-    blackHole(try! JSONSerialization.data(withJSONObject: anyObj))
-}
-report(fser, vs: nil)
+// MARK: - Number-heavy decode ([Double])
 
-// MARK: - Number-heavy (hard case for us)
-
-print("\n== DECODE [Double]  (number-heavy, HARD case) ==")
-let doubles = makeDoubles(200_000)
-let dData = try! encoder.encode(doubles)
-print("doubles payload: \(dData.count) bytes")
-let miniDoubles: [Double] = dData.withUnsafeBytes { raw in
-    var prs = JSONByteParser(raw.bindMemory(to: UInt8.self).baseAddress!, raw.count)
-    return prs.parseDoubleArray()
-}
-print("verify decode : mini == foundation -> \(miniDoubles == doubles)")
-let fdd = bench("Foundation JSONDecoder", bytes: dData.count) {
+section("DECODE [Double]  number-heavy  (ADJSON vs Foundation JSONDecoder)")
+let fDoubles = bench("Foundation JSONDecoder", bytes: dData.count) {
     blackHole(try! decoder.decode([Double].self, from: dData))
 }
-let mdd = bench("Mini double-array parser", bytes: dData.count) {
-    dData.withUnsafeBytes { raw in
-        var prs = JSONByteParser(raw.bindMemory(to: UInt8.self).baseAddress!, raw.count)
-        blackHole(prs.parseDoubleArray())
-    }
+let adDoublesDecoder = ADJSON.JSONDecoder()
+let adDoubles = bench("ADJSON JSONDecoder", bytes: dData.count) {
+    blackHole(try! adDoublesDecoder.decode([Double].self, from: dData))
 }
-report(fdd, vs: nil)
-report(mdd, vs: fdd)
+report(fDoubles, vs: nil)
+report(adDoubles, vs: fDoubles)
 
-print("\n== RAW STRUCTURAL SCAN (ceiling for a lazy tape-backed untyped value) ==")
-var tapeU = [Int32]()
-tapeU.reserveCapacity(userData.count / 2)
-let scU = bench("SWAR scan (users)", bytes: userData.count) {
-    userData.withUnsafeBytes { raw in scanScalar(raw.bindMemory(to: UInt8.self).baseAddress!, raw.count, &tapeU) }
-}
-let scSU = bench("SIMD16 scan (users)", bytes: userData.count) {
-    userData.withUnsafeBytes { raw in scanSIMD(raw.bindMemory(to: UInt8.self).baseAddress!, raw.count, &tapeU) }
-}
-report(scU, vs: nil)
-report(scSU, vs: scU)
-blackHole(tapeU.count)
+// MARK: - Query (JSONPath, RFC 9535) — pre-parsed root, no Foundation equivalent
 
-var tapeD = [Int32]()
-tapeD.reserveCapacity(dData.count / 4)
-let scD = bench("SWAR scan (doubles)", bytes: dData.count) {
-    dData.withUnsafeBytes { raw in scanScalar(raw.bindMemory(to: UInt8.self).baseAddress!, raw.count, &tapeD) }
+section("QUERY  JSONPath over pre-parsed [User]  (ADJSON only)")
+let pathFilter = "$[?(@.followers > 50000)].login"
+let pathWildcard = "$[*].profile.bio"
+let filterHits = (try? usersDoc.root.query(pathFilter))?.count ?? -1
+let wildcardHits = (try? usersDoc.root.query(pathWildcard))?.count ?? -1
+print("verify query   : \(pathFilter) -> \(filterHits) hits; \(pathWildcard) -> \(wildcardHits) hits")
+let queryFilter = bench("filter  \(pathFilter)", bytes: userData.count) {
+    blackHole((try? usersDoc.root.query(pathFilter)) ?? [])
 }
-let scSD = bench("SIMD16 scan (doubles)", bytes: dData.count) {
-    dData.withUnsafeBytes { raw in scanSIMD(raw.bindMemory(to: UInt8.self).baseAddress!, raw.count, &tapeD) }
+let queryWildcard = bench("wildcard  \(pathWildcard)", bytes: userData.count) {
+    blackHole((try? usersDoc.root.query(pathWildcard)) ?? [])
 }
-report(scD, vs: nil)
-report(scSD, vs: scD)
-blackHole(tapeD.count)
+report(queryFilter, vs: nil)
+report(queryWildcard, vs: nil)
 
-print("\n== CONCURRENT decode [User] (pre-parsed, off main actor) ==")
-let docConc = try! ADJSON.parse(userData)
-let adDec3 = ADJSON.JSONDecoder()
+// MARK: - Schema validation (Draft 2020-12 subset) — compile once, validate many
+
+section("VALIDATE  JSON Schema over pre-parsed [User]  (ADJSON only)")
+let schemaValidate = bench("JSONSchema.validate (pre-parsed)", bytes: userData.count) {
+    blackHole(userArraySchema.isValid(usersDoc.root))
+}
+let schemaParseValidate = bench("parse + validate", bytes: userData.count) {
+    blackHole(userArraySchema.isValid(try! ADJSON.parse(userData).root))
+}
+report(schemaValidate, vs: nil)
+report(schemaParseValidate, vs: nil)
+
+// MARK: - Mutation (JSON Patch, RFC 6902) — apply to a materialized tree
+
+section("MUTATE  JSON Patch apply over [User] tree  (ADJSON only)")
+let patchJSON = #"""
+    [{"op":"replace","path":"/0/login","value":"patched"},
+     {"op":"add","path":"/0/flagged","value":true},
+     {"op":"remove","path":"/1/following"}]
+    """#
+let patch = try! JSONPatch(Data(patchJSON.utf8))
+let usersValue = try! JSONValue(parsing: userData)
+blackHole(try! patch.apply(to: usersValue))
+let patchApply = bench("JSONPatch.apply (3 ops)", bytes: userData.count) {
+    blackHole(try! patch.apply(to: usersValue))
+}
+report(patchApply, vs: nil)
+
+// MARK: - Concurrent decode (off the main actor, across cores)
+
+section("CONCURRENT decode [User] from a pre-parsed document  (ADJSON)")
 let serialDec = bench("serial decode", bytes: userData.count) {
-    blackHole(try! adDec3.decode([User].self, from: docConc))
+    blackHole(try! ADJSON.JSONDecoder().decode([User].self, from: usersDoc))
 }
 let concDec = await benchAsync("concurrent decode", bytes: userData.count) {
-    blackHole(try! await ADJSON.decodeArrayConcurrently(User.self, from: docConc, minimumBatch: 256))
+    blackHole(try! await ADJSON.decodeArrayConcurrently(User.self, from: usersDoc, minimumBatch: 256))
 }
 report(serialDec, vs: nil)
 report(concDec, vs: serialDec)
-let metrics = ADJSON.Metrics.snapshot()
-print("Synchronization metrics: documents=\(metrics.documents) bytes=\(metrics.bytes)")
 
 // MARK: - Standard corpus (untyped) vs Foundation JSONSerialization
 
@@ -266,23 +270,24 @@ func corpusURL(_ name: String) -> URL {
         .appendingPathComponent("Benchmarks/Corpus/\(name)")
 }
 
-print("\n== CORPUS untyped  (ADJSON vs Foundation JSONSerialization) ==")
+section("CORPUS untyped  (ADJSON vs Foundation JSONSerialization)")
 var corpusGatePassed = true
 for file in ["twitter.json", "citm_catalog.json", "canada.json"] {
     guard let data = try? Data(contentsOf: corpusURL(file)) else {
-        print("  (skip \(file): not found)")
+        print("  (skip \(file): not found — run `swift package ... fetch-fixtures`)")
         continue
     }
-    let bytes = data.count
-    print("-- \(file) (\(bytes) bytes) --")
-    let fs = bench("Foundation JSONSerialization", bytes: bytes) {
+    print("-- \(file) (\(data.count) bytes) --")
+    let fs = bench("Foundation JSONSerialization", bytes: data.count) {
         blackHole(try! JSONSerialization.jsonObject(with: data))
     }
-    let parse = bench("ADJSON parse (tape)", bytes: bytes) { blackHole(try! ADJSON.parse(data)) }
-    let walk = bench("ADJSON parse + full walk", bytes: bytes) { blackHole(adWalk(try! ADJSON.parse(data).root)) }
+    let parse = bench("ADJSON parse (tape)", bytes: data.count) { blackHole(try! ADJSON.parse(data)) }
+    let walk = bench("ADJSON parse + full walk", bytes: data.count) { blackHole(adWalk(try! ADJSON.parse(data).root)) }
+    let value = bench("ADJSON JSONValue (full tree)", bytes: data.count) { blackHole(try! JSONValue(parsing: data)) }
     report(fs, vs: nil)
     report(parse, vs: fs)
     report(walk, vs: fs)
+    report(value, vs: fs)
     if parse.medNs > fs.medNs {
         corpusGatePassed = false
         print("  REGRESSION: ADJSON parse slower than JSONSerialization on \(file)")
@@ -290,22 +295,5 @@ for file in ["twitter.json", "citm_catalog.json", "canada.json"] {
 }
 print(corpusGatePassed ? "corpus gate: PASS" : "corpus gate: FAIL")
 
-print("\n== @JSONCodable macro  (decode/encode [MacroUser]) ==")
-let macroDecoder = ADJSON.JSONDecoder()
-let macroEncoder = ADJSON.JSONEncoder()
-let macroUsers = try! macroDecoder.decode([MacroUser].self, from: userData)
-print("verify       : @JSONCodable decoded \(macroUsers.count) users")
-let macroDec = bench("@JSONCodable decode", bytes: userData.count) {
-    blackHole(try! macroDecoder.decode([MacroUser].self, from: userData))
-}
-let macroEnc = bench("@JSONCodable encode", bytes: userData.count) {
-    blackHole(try! macroEncoder.encode(macroUsers))
-}
-report(fd, vs: nil)
-report(macroDec, vs: fd)
-report(fe, vs: nil)
-report(macroEnc, vs: fe)
-
-print("\n(min times, for reference)")
-print(pad("decode users", 26) + "F " + f1(fd.minNs / 1000) + "us  M " + f1(md.minNs / 1000) + "us")
-print(pad("encode users", 26) + "F " + f1(fe.minNs / 1000) + "us  M " + f1(me_.minNs / 1000) + "us")
+let metrics = ADJSON.Metrics.snapshot()
+print("\nSynchronization metrics: documents=\(metrics.documents) bytes=\(metrics.bytes)")

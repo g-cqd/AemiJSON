@@ -8,7 +8,7 @@ The benchmark harness is an executable target. The standard corpus is third-part
 on demand (not redistributed):
 
 ```sh
-scripts/fetch-fixtures.sh                 # JSONTestSuite, JSONPath CTS, simdjson corpus
+swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
 swift run -c release ADJSONBenchmarks
 ```
 
@@ -34,37 +34,56 @@ The harness (`Sources/ADJSONBenchmarks`) is deliberately simple and honest:
 
 ## What is measured
 
-- **Typed decode** `Data → [User]`: Foundation `JSONDecoder` vs ADJSON `JSONDecoder` (generic
-  Codable) vs ADJSON `@JSONCodable` vs a hand-rolled "mini" targeted decoder (the practical
-  ceiling).
 - **Untyped parse** `Data → tree`: Foundation `JSONSerialization` vs ADJSON tape parse, plus
-  "parse + read two fields" (lazy) and "parse + full walk" (materialize everything).
-- **Typed encode** `[User] → Data` across the same contenders.
+  "parse + read two fields" (lazy), "parse + full walk" (touch every node), and full `JSONValue`
+  materialization (an editable tree, the closest analogue to `JSONSerialization`).
+- **Typed decode** `Data → [User]`: Foundation `JSONDecoder` vs ADJSON `JSONDecoder` on the
+  generic `Codable` path vs the `@JSONCodable` fast path.
+- **Typed encode** `[User] → Data` across the same three contenders.
 - **Number-heavy** `[Double]` decode — the hard case for any parser.
-- **Raw structural scan** (SWAR and SIMD16) — the ceiling for a tape-backed untyped value.
-- **Concurrent decode** — serial vs `ADJSON.decodeArrayConcurrently` on
-  a pre-parsed document.
+- **Query** — JSONPath (RFC 9535) filter and wildcard over a pre-parsed document.
+- **Validate** — JSON Schema (Draft 2020-12 subset) compiled once (here from `@Schemable`), run
+  over a pre-parsed document, plus parse + validate end to end.
+- **Mutate** — JSON Patch (RFC 6902) applied to a materialized `JSONValue`.
+- **Concurrent decode** — serial vs `ADJSON.decodeArrayConcurrently` on a pre-parsed document.
 - **Standard corpus** — `twitter.json`, `citm_catalog.json`, `canada.json`.
 
-The "mini" and "scan" rows exist to show the headroom between ADJSON and a bespoke,
-type-specific implementation — i.e. how much the general-purpose API costs.
+Every comparison pits the real public API against Foundation; where Foundation has no equivalent
+(query, schema, patch) the row reports ADJSON's standalone throughput.
 
 ## Reference results
 
-Apple M2 Pro, release build, strict mode. Your numbers will vary with hardware, OS, and
-payload; treat these as ratios, not absolutes.
+Apple M2 Pro (macOS 27), release build, strict mode. Median of 60 iterations. Your numbers will
+vary with hardware, OS, and payload; treat these as ratios, not absolutes.
 
-| Workload | ADJSON vs Foundation |
+**Against Foundation** (synthetic 2000-user payload ≈ 500 KB; corpus files as noted):
+
+| Workload | ADJSON | Foundation | Ratio |
+|---|---|---|---|
+| Tape parse — `twitter.json` | 1019 MB/s | 172 MB/s | **5.9×** |
+| Tape parse — `citm_catalog.json` | 1246 MB/s | 318 MB/s | **3.9×** |
+| Tape parse — `canada.json` | 847 MB/s | 125 MB/s | **6.8×** |
+| Codable decode — generic | 78 MB/s | 41 MB/s | **1.9×** |
+| Codable decode — `@JSONCodable` | 173 MB/s | 41 MB/s | **4.2×** |
+| Codable encode — generic | 86 MB/s | 47 MB/s | **1.8×** |
+| Codable encode — `@JSONCodable` | 377 MB/s | 47 MB/s | **8.0×** |
+| `[Double]` decode | 166 MB/s | 76 MB/s | **2.2×** |
+| `JSONValue` materialize — `twitter.json` | 231 MB/s | 172 MB/s | **1.3×** |
+
+**ADJSON-only** (features Foundation has no equivalent for):
+
+| Feature | Throughput |
 |---|---|
-| Untyped parse — `twitter.json` | **5.7×** `JSONSerialization` |
-| Untyped parse — `citm_catalog.json` | **4.0×** |
-| Untyped parse — `canada.json` (number-heavy) | **8.0×** |
-| Codable decode (`Data` → struct) | **~2.8×** `JSONDecoder` |
-| Codable decode (`@JSONCodable` fast path) | **~4.2×** `JSONDecoder` |
-| Codable encode (`@JSONCodable` fast path) | **~3.4×** `JSONEncoder` |
+| JSONPath wildcard — `$[*].profile.bio` | 2289 MB/s |
+| JSONPath filter — `$[?(@.followers > N)]` | 970 MB/s |
+| JSON Schema validate (pre-parsed, full structural) | 16 MB/s |
+| JSON Patch apply (3 ops over a 2000-element tree) | 46 µs |
+| Concurrent decode | 223 MB/s (**2.4×** serial) |
 
 Tape parsing runs at roughly **1 GB/s**; partial/lazy access is faster still, since it skips
-subtrees it never reads.
+subtrees it never reads. Full `JSONValue` materialization lands on par with `JSONSerialization`
+(it builds a comparable Swift tree), so the win there is small — ADJSON's leverage is the lazy
+tape and typed decode.
 
 ## Interpreting the numbers
 
@@ -73,9 +92,13 @@ subtrees it never reads.
 - **Laziness shows up as a gap** between "parse" and "parse + full walk." If your workload
   reads a few fields, the relevant row is the lazy one.
 - **The `@JSONCodable` gap** over generic Codable is the cost of the container protocols
-  (existentials, per-field `String` keys, dynamic dispatch). The remaining gap to the
-  hand-rolled "mini" ceiling is dominated by per-field key lookup.
+  (existentials, per-field `String` keys, dynamic dispatch); the macro fast path bypasses them.
 - **Number-heavy payloads** stress number materialization more than structure; `canada.json`
   is the stress test.
+- **Untyped materialization is roughly a wash.** Building a full `JSONValue` tree costs about
+  what `JSONSerialization` does; ADJSON's advantage is *not* materializing — the lazy tape and
+  typed decode are where it pulls ahead.
+- **Schema validation walks every node** (type and constraint checks), so it is heavier than a
+  bare parse; compile the schema once and reuse it across documents.
 
 See <doc:Architecture> for *why* these paths perform as they do.

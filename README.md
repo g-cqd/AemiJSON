@@ -81,20 +81,23 @@ See the [documentation](#documentation) for the full guides.
 
 ## Performance
 
-Apple M2 Pro, release build, strict mode. Treat these as ratios; reproduce with
-`swift run -c release ADJSONBenchmarks`.
+Apple M2 Pro (macOS 27), release build, strict mode. Median of 60 iterations; treat these as
+ratios, not absolutes. Reproduce with `swift run -c release ADJSONBenchmarks`.
 
 | Workload | ADJSON vs Foundation |
 |---|---|
-| Untyped parse — `twitter.json` | **5.7×** `JSONSerialization` |
-| Untyped parse — `citm_catalog.json` | **4.0×** |
-| Untyped parse — `canada.json` (number-heavy) | **8.0×** |
-| Codable decode (`Data` → struct) | **~2.8×** `JSONDecoder` |
-| Codable decode (`@JSONCodable` fast path) | **~4.2×** `JSONDecoder` |
-| Codable encode (`@JSONCodable` fast path) | **~3.4×** `JSONEncoder` |
+| Untyped tape parse — `twitter.json` | **5.9×** `JSONSerialization` |
+| Untyped tape parse — `citm_catalog.json` | **3.9×** |
+| Untyped tape parse — `canada.json` (number-heavy) | **6.8×** |
+| Codable decode — generic (`Data` → struct) | **1.9×** `JSONDecoder` |
+| Codable decode — `@JSONCodable` fast path | **4.2×** `JSONDecoder` |
+| Codable encode — `@JSONCodable` fast path | **8.0×** `JSONEncoder` |
+| `[Double]` decode — number-heavy | **2.2×** `JSONDecoder` |
 
-Methodology, what each row means, and how to read them: see the **Benchmarking** guide in the
-documentation.
+Tape parsing runs at roughly **1 GB/s** (0.85–1.25 GB/s across the corpus); lazy access is faster
+still since it skips subtrees it never reads. Full untyped materialization into `JSONValue` lands
+on par with `JSONSerialization`. Query, schema, and patch throughput, methodology, and the full
+table: see the **Benchmarking** guide in the documentation.
 
 ## Standards
 
