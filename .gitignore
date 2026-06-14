@@ -2,11 +2,31 @@
 .build/
 .swiftpm/
 *.xcodeproj
+*.xcworkspace
 Package.resolved
 DerivedData/
+.derivedData/
+xcuserdata/
+*.xcuserstate
+
+# DocC / Pages build output
+_site/
+*.doccarchive
+
+# Code coverage / profiling
+*.profraw
+*.profdata
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # macOS
 .DS_Store
+._*
 
 # Vendored third-party fixtures (fetched via scripts/fetch-fixtures.sh)
 /Benchmarks/Corpus/*.json

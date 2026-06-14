@@ -123,7 +123,8 @@ extension JSONSchema {
 
     /// Generate a JSON Schema (as schema JSON text) from a Swift value via reflection.
     /// Optional properties become non-required; nested structs/arrays recurse.
-    /// (A `@Schemable` macro would enable type-based generation without an instance.)
+    /// For compile-time, instance-free generation from a type alone, use the `@Schemable` macro,
+    /// which conforms the type to ``ADJSONSchemaProviding`` and provides `T.jsonSchema`.
     public static func describe(_ instance: Any) -> String {
         let acc = SchemaAccumulator()
         describeValue(instance, into: acc)

@@ -6,7 +6,7 @@ import SwiftSyntaxMacros
 
 @main
 struct ADJSONMacrosPlugin: CompilerPlugin {
-    let providingMacros: [any Macro.Type] = [JSONCodableMacro.self]
+    let providingMacros: [any Macro.Type] = [JSONCodableMacro.self, SchemableMacro.self]
 }
 
 private struct Property {
@@ -25,15 +25,18 @@ struct JSONCodableMacro: ExtensionMacro {
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
         guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-            context.diagnose(note(node, "@JSONCodable only supports structs; the type keeps standard Codable"))
+            context.diagnose(
+                note(node, "JSONCodable", "@JSONCodable only supports structs; the type keeps standard Codable"))
             return []
         }
         if declaresCodingKeys(structDecl) {
-            context.diagnose(note(node, "@JSONCodable skips types with custom CodingKeys; keeping standard Codable"))
+            context.diagnose(
+                note(node, "JSONCodable", "@JSONCodable skips types with custom CodingKeys; keeping standard Codable"))
             return []
         }
         guard let props = storedProperties(structDecl) else {
-            context.diagnose(note(node, "@JSONCodable needs explicit property types; keeping standard Codable"))
+            context.diagnose(
+                note(node, "JSONCodable", "@JSONCodable needs explicit property types; keeping standard Codable"))
             return []
         }
 
@@ -62,12 +65,6 @@ struct JSONCodableMacro: ExtensionMacro {
 
 // MARK: - Property extraction
 
-private func declaresCodingKeys(_ decl: StructDeclSyntax) -> Bool {
-    decl.memberBlock.members.contains { member in
-        member.decl.as(EnumDeclSyntax.self)?.name.text == "CodingKeys"
-    }
-}
-
 private func storedProperties(_ decl: StructDeclSyntax) -> [Property]? {
     var props: [Property] = []
     for member in decl.memberBlock.members {
@@ -92,22 +89,7 @@ private func storedProperties(_ decl: StructDeclSyntax) -> [Property]? {
     return props
 }
 
-private func isComputed(_ accessor: AccessorBlockSyntax?) -> Bool {
-    guard let accessor else { return false }
-    switch accessor.accessors {
-    case .getter:
-        return true
-    case .accessors(let list):
-        // willSet/didSet are stored-with-observers; a get/_read marks it computed.
-        return list.contains { $0.accessorSpecifier.tokenKind == .keyword(.get) }
-    }
-}
-
 // MARK: - Codegen helpers
-
-private let integerTypes: Set<String> = [
-    "Int", "Int8", "Int16", "Int32", "Int64", "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
-]
 
 private func decodeExpr(_ p: Property) -> String {
     let key = "\"\(p.name)\""
@@ -173,17 +155,4 @@ private func writeValue(_ expr: String, _ wrapped: String) -> String {
     case "Double": return "try w.double(\(expr))"
     default: return "try w.encode(\(expr))"
     }
-}
-
-private func note(_ node: AttributeSyntax, _ message: String) -> Diagnostic {
-    Diagnostic(
-        node: node,
-        message: SimpleDiagnostic(
-            message: message, diagnosticID: MessageID(domain: "ADJSON", id: "JSONCodable"), severity: .warning))
-}
-
-private struct SimpleDiagnostic: DiagnosticMessage {
-    let message: String
-    let diagnosticID: MessageID
-    let severity: DiagnosticSeverity
 }
