@@ -23,7 +23,8 @@ That's the whole learning curve for the common case. Everything else is opt-in.
 - **Quick** — ~1 GB/s tape parsing; lazy access skips what you don't read. ([Performance](#performance))
 - **Safe** — value-typed, `Sendable`, Swift 6 strict concurrency; parses off the main actor.
 - **Correct** — strict RFC 8259 by default; passes the full nst/JSONTestSuite (318/318).
-- **Complete** — Schema, JSONPath, Pointer, Patch, and Merge Patch, all in one package.
+- **Complete** — Schema (validate, infer, or generate from a type with `@Schemable`), JSONPath,
+  Pointer, Patch, and Merge Patch — all in one package.
 - **Familiar** — `ADJSON.JSONDecoder` / `ADJSON.JSONEncoder` mirror Foundation's API.
 
 ## Install
@@ -65,9 +66,18 @@ let rows = try await ADJSON.decodeArrayConcurrently(Row.self, from: data)
 let title  = doc.root[pointer: "/store/book/0/title"].string
 let titles = try doc.root.query("$.store.book[?(@.price < 10)].title")
 
-// 5. Validate — JSON Schema (Draft 2020-12 subset).
+// 5. Validate — JSON Schema (Draft 2020-12 subset)…
 let schema = try JSONSchema(parsing: schemaText)
 let result = schema.validate(data)               // .isValid / .errors
+
+// …or generate one from a type at compile time with @Schemable (great for LLM tool / MCP schemas).
+@Schemable(dialect: .draft7)
+struct SearchInput: Decodable {
+    /// Search terms.                             // doc comment → "description"
+    var query: String
+    @SchemaNumber(1...500) var limit: Int?        // → "minimum":1,"maximum":500
+}
+let toolSchema = SearchInput.jsonSchemaText      // draft-07 JSON, ready for tools/list
 
 // 6. Mutate — JSON Patch (RFC 6902) / Merge Patch (RFC 7396).
 let patched = try JSONPatch(patchData).apply(to: JSONValue(parsing: targetData))

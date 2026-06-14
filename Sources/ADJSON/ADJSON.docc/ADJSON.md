@@ -90,6 +90,18 @@ passes the full nst/JSONTestSuite (318/318).
 - ``ValidationError``
 - ``SchemaType``
 
+### Schema generation
+
+- ``Schemable(dialect:)``
+- ``ADJSONSchemaProviding``
+- ``SchemaDialect``
+- ``SchemaScalarKind``
+- ``SchemaNumber(minimum:maximum:exclusiveMinimum:exclusiveMaximum:multipleOf:type:)``
+- ``SchemaNumber(_:multipleOf:type:)``
+- ``SchemaString(minLength:maxLength:pattern:format:)``
+- ``SchemaEnum(_:)``
+- ``SchemaInfo(description:title:)``
+
 ### Streaming output
 
 - ``JSONStreamWriter``

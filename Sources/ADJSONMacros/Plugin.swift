@@ -6,7 +6,10 @@ import SwiftSyntaxMacros
 
 @main
 struct ADJSONMacrosPlugin: CompilerPlugin {
-    let providingMacros: [any Macro.Type] = [JSONCodableMacro.self, SchemableMacro.self]
+    let providingMacros: [any Macro.Type] = [
+        JSONCodableMacro.self, SchemableMacro.self,
+        SchemaNumberMacro.self, SchemaStringMacro.self, SchemaEnumMacro.self, SchemaInfoMacro.self,
+    ]
 }
 
 private struct Property {

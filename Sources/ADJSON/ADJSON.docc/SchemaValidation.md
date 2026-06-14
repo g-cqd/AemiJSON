@@ -38,6 +38,49 @@ Not yet implemented: `$dynamicRef`/`$dynamicAnchor`, `unevaluated*`, `$anchor`, 
 > Note: numbers are compared as `Double`, so bounds near or beyond 2^53 are subject to
 > floating-point precision.
 
+## Generating a schema from a type with `@Schemable`
+
+Attach ``Schemable(dialect:)`` to a `struct` to generate its JSON Schema at compile time — no
+instance and no reflection. The type gains ``ADJSONSchemaProviding/jsonSchema`` (a compiled
+``JSONSchema``) and ``ADJSONSchemaProviding/jsonSchemaText`` (the schema as a JSON document, ready to
+embed elsewhere — e.g. an MCP `tools/list` payload).
+
+```swift
+@Schemable(dialect: .draft7)
+struct SearchInput: Decodable {
+    /// Name or keyword; empty lists all.        ← becomes "description"
+    var query: String?
+    var scope: Scope?                            // String enum → "enum":["public","private"]
+    @SchemaNumber(1...500) var limit: Int?       // → "minimum":1,"maximum":500
+}
+
+enum Scope: String, Codable, CaseIterable { case `public`, `private` }
+
+let text = SearchInput.jsonSchemaText            // draft-07 JSON document
+let ok = SearchInput.jsonSchema.isValid(doc.root)
+```
+
+The schema is built from two layers — **inference** (the Swift type maps to a JSON type; a `///` doc
+comment becomes a `description`; a `String` & `CaseIterable` enum becomes a string `enum`) and
+**property decorators** for anything the type can't express:
+
+| Decorator | Adds |
+| --- | --- |
+| ``SchemaNumber(minimum:maximum:exclusiveMinimum:exclusiveMaximum:multipleOf:type:)`` | numeric bounds; `type:` forces `integer`/`number` |
+| ``SchemaNumber(_:multipleOf:type:)`` | bounds from a range: `1...100`, `1..<100`, `1...`, `...100`, `..<100` |
+| ``SchemaString(minLength:maxLength:pattern:format:)`` | string constraints |
+| ``SchemaEnum(_:)`` | a closed string set for a bare `String` |
+| ``SchemaInfo(description:title:)`` | a `description` (overriding the doc comment) and `title` |
+
+Ranges are the idiomatic spelling for bounds: `ClosedRange` → `minimum`/`maximum`, `Range` →
+`minimum`/`exclusiveMaximum`, and the partial ranges map to a single bound. Swift has no
+exclusive-lower range operator, so `exclusiveMinimum` is only on the labeled overload.
+
+The dialect's `$schema` is emitted on the **root only** — nested `@Schemable` types are inlined
+without it. The default, ``SchemaDialect/none``, omits `$schema` entirely. Nested custom types must
+also be `@Schemable`; types with custom `CodingKeys`, and directly self-referential types, are left
+undescribed (a warning is emitted).
+
 ## Inferring a schema from samples
 
 Generate schema text from one or more instances. `required` is the set of keys present in

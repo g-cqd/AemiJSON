@@ -3,9 +3,33 @@ public protocol ADJSONSchemaProviding {
     /// The compiled schema describing this type. Built once and cached; safe to validate concurrently.
     static var jsonSchema: JSONSchema { get }
 
-    /// SPI used by `@Schemable` to compose nested types into a parent's schema text. The double
-    /// underscore signals "do not call directly" — use ``jsonSchema``.
+    /// The schema as a rooted JSON document, carrying `$schema` when the type opts into a dialect via
+    /// `@Schemable(dialect:)`. This is the canonical text to embed in a larger document (e.g. an MCP
+    /// `tools/list` payload). Unlike ``__adjsonSchemaText`` it is API, not SPI.
+    static var jsonSchemaText: String { get }
+
+    /// SPI used by `@Schemable` to compose nested types into a parent's schema text. A *bare*
+    /// fragment that never carries `$schema` (the dialect lives on the root only). The double
+    /// underscore signals "do not call directly" — use ``jsonSchemaText`` or ``jsonSchema``.
     static var __adjsonSchemaText: String { get }
+}
+
+extension ADJSONSchemaProviding {
+    /// Safety net for hand-written conformances: a dialect-less root is just the bare fragment. The
+    /// `@Schemable` macro overrides this with the dialect-aware document when a dialect is selected.
+    public static var jsonSchemaText: String { __adjsonSchemaText }
+}
+
+/// The JSON Schema dialect a `@Schemable` type advertises via its root `$schema`. The default,
+/// ``none``, omits `$schema` entirely (byte-identical to emitting no dialect). The validator is a
+/// 2020-12 subset, so the choice only affects the emitted `$schema` literal, not validation.
+public enum SchemaDialect: Sendable {
+    /// No `$schema` keyword is emitted.
+    case none
+    /// `http://json-schema.org/draft-07/schema#` — what MCP `tools/list` expects.
+    case draft7
+    /// `https://json-schema.org/draft/2020-12/schema`.
+    case draft2020_12
 }
 
 extension JSONSchema {
@@ -37,6 +61,7 @@ extension JSONSchema {
 @attached(
     extension,
     conformances: ADJSONSchemaProviding,
-    names: named(jsonSchema), named(__adjsonSchemaText), named(__adjsonSchemaCompiled)
+    names: named(jsonSchema), named(jsonSchemaText), named(__adjsonSchemaText), named(__adjsonSchemaCompiled)
 )
-public macro Schemable() = #externalMacro(module: "ADJSONMacros", type: "SchemableMacro")
+public macro Schemable(dialect: SchemaDialect = .none) =
+    #externalMacro(module: "ADJSONMacros", type: "SchemableMacro")

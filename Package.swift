@@ -73,6 +73,7 @@ let package = Package(
             dependencies: [
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+                .product(name: "SwiftParser", package: "swift-syntax"),
             ],
             swiftSettings: strictSettings
         ),
