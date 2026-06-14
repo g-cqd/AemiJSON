@@ -43,18 +43,16 @@ struct JSONCodableMacro: ExtensionMacro {
             return []
         }
 
-        let decodeBindings = props.map { "let \($0.name) = \(decodeExpr($0))" }.joined(separator: "\n        ")
-        let ctorArgs = props.map { "\($0.name): \($0.name)" }.joined(separator: ", ")
+        let decodeBody = makeDecodeBody(props)
         let encodeBody = makeEncodeBody(props)
 
         let ext = try ExtensionDeclSyntax(
             """
             extension \(raw: type.trimmedDescription): ADJSONFastDecodable, ADJSONFastEncodable {
                 public static func __adjsonDecode(_ c: _FastDecodeCursor) throws -> Self {
-                    \(raw: decodeBindings)
-                    return Self(\(raw: ctorArgs))
+                    \(raw: decodeBody)
                 }
-                public func __adjsonEncode(into w: inout JSONByteWriter) throws {
+                public func __adjsonEncode(into w: inout _JSONByteWriter) throws {
                     w.beginObject()
                     \(raw: encodeBody)
                     w.endObject()
@@ -94,23 +92,40 @@ private func storedProperties(_ decl: StructDeclSyntax) -> [Property]? {
 
 // MARK: - Codegen helpers
 
-private func decodeExpr(_ p: Property) -> String {
+// Single-pass decode: resolve every field's value index in one `forEachMember` walk, then decode
+// each field from its index — O(K) instead of O(fields × K) repeated key scans. Last-value-wins is
+// preserved because a later duplicate key overwrites the stored index.
+private func makeDecodeBody(_ props: [Property]) -> String {
+    let ctorArgs = props.map { "\($0.name): \($0.name)" }.joined(separator: ", ")
+    if props.isEmpty { return "return Self(\(ctorArgs))" }
+    var lines = props.map { "var __vi_\($0.name) = -1" }
+    let dispatch = props.enumerated().map { index, p in
+        "\(index == 0 ? "if" : "else if") __k.matches(\"\(p.name)\") { __vi_\(p.name) = __v }"
+    }.joined(separator: " ")
+    lines.append("c.forEachMember { __k, __v in \(dispatch) }")
+    lines.append(contentsOf: props.map { "let \($0.name) = \(decodeAtExpr($0))" })
+    lines.append("return Self(\(ctorArgs))")
+    return lines.joined(separator: "\n        ")
+}
+
+private func decodeAtExpr(_ p: Property) -> String {
+    let vi = "__vi_\(p.name)"
     let key = "\"\(p.name)\""
     if p.isOptional {
-        if integerTypes.contains(p.wrapped) { return "c.integerIfPresent(\(key), \(p.wrapped).self)" }
+        if integerTypes.contains(p.wrapped) { return "c.integerIfPresentAt(\(vi), \(p.wrapped).self)" }
         switch p.wrapped {
-        case "String": return "c.stringIfPresent(\(key))"
-        case "Bool": return "c.boolIfPresent(\(key))"
-        case "Double": return "c.doubleIfPresent(\(key))"
-        default: return "try c.decodeIfPresent(\(p.wrapped).self, \(key))"
+        case "String": return "c.stringIfPresentAt(\(vi))"
+        case "Bool": return "c.boolIfPresentAt(\(vi))"
+        case "Double": return "c.doubleIfPresentAt(\(vi))"
+        default: return "try c.decodeIfPresentAt(\(p.wrapped).self, \(vi))"
         }
     }
-    if integerTypes.contains(p.wrapped) { return "try c.integer(\(key), \(p.wrapped).self)" }
+    if integerTypes.contains(p.wrapped) { return "try c.integerAt(\(vi), \(key), \(p.wrapped).self)" }
     switch p.wrapped {
-    case "String": return "try c.string(\(key))"
-    case "Bool": return "try c.bool(\(key))"
-    case "Double": return "try c.double(\(key))"
-    default: return "try c.decode(\(p.type).self, \(key))"
+    case "String": return "try c.stringAt(\(vi), \(key))"
+    case "Bool": return "try c.boolAt(\(vi), \(key))"
+    case "Double": return "try c.doubleAt(\(vi), \(key))"
+    default: return "try c.decodeAt(\(p.type).self, \(vi), \(key))"
     }
 }
 

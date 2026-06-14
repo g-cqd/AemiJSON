@@ -26,9 +26,14 @@ extension JSONValue {
         } else if let s = json.string {
             self = .string(s)
         } else if json.isArray {
-            self = .array(json.arrayValue.map(JSONValue.init))
+            var elements = [JSONValue]()
+            elements.reserveCapacity(json.count)
+            json.forEachElement { elements.append(JSONValue($0)) }
+            self = .array(elements)
         } else if json.isObject {
-            self = .object(json.objectValue.mapValues(JSONValue.init))
+            var members = [String: JSONValue](minimumCapacity: json.count)
+            json.forEachMember { members[$0] = JSONValue($1) }
+            self = .object(members)
         } else {
             self = .null
         }

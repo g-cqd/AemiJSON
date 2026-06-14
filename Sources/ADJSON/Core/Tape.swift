@@ -54,4 +54,13 @@ enum Slot {
     @inline(__always) @usableFromInline static func length(_ s: UInt64) -> Int { aux(s) >> 2 }
     @inline(__always) @usableFromInline static func flags(_ s: UInt64) -> Int { aux(s) & 0x3 }
     @inline(__always) @usableFromInline static func count(_ s: UInt64) -> Int { aux(s) }
+
+    /// Index of the slot immediately after the value at `node`, given that value's slot `s`:
+    /// containers store their post-subtree index in `low` (O(1) skip); scalars/keys advance by one.
+    /// The single definition of forward tape navigation, shared by `JSON` and `DecodeContext`.
+    @inline(__always) @usableFromInline
+    static func next(after node: Int, _ s: UInt64) -> Int {
+        let t = tag(s)
+        return (t == JSONKind.object.rawValue || t == JSONKind.array.rawValue) ? low(s) : node + 1
+    }
 }

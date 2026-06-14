@@ -14,7 +14,7 @@ extension Array: ADJSONFastDecodable where Element: ADJSONFastDecodable {
 }
 
 extension Array: ADJSONFastEncodable where Element: ADJSONFastEncodable {
-    @inlinable public func __adjsonEncode(into w: inout JSONByteWriter) throws {
+    @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) throws {
         w.beginArray()
         var first = true
         for e in self {
@@ -29,19 +29,19 @@ extension String: ADJSONFastDecodable {
     @inlinable public static func __adjsonDecode(_ c: _FastDecodeCursor) throws -> String { try c.currentString() }
 }
 extension String: ADJSONFastEncodable {
-    @inlinable public func __adjsonEncode(into w: inout JSONByteWriter) { w.string(self) }
+    @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) { w.string(self) }
 }
 extension Bool: ADJSONFastDecodable {
     @inlinable public static func __adjsonDecode(_ c: _FastDecodeCursor) throws -> Bool { try c.currentBool() }
 }
 extension Bool: ADJSONFastEncodable {
-    @inlinable public func __adjsonEncode(into w: inout JSONByteWriter) { w.bool(self) }
+    @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) { w.bool(self) }
 }
 extension Double: ADJSONFastDecodable {
     @inlinable public static func __adjsonDecode(_ c: _FastDecodeCursor) throws -> Double { try c.currentDouble() }
 }
 extension Double: ADJSONFastEncodable {
-    @inlinable public func __adjsonEncode(into w: inout JSONByteWriter) throws { try w.double(self) }
+    @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) throws { try w.double(self) }
 }
 extension Float: ADJSONFastDecodable {
     @inlinable public static func __adjsonDecode(_ c: _FastDecodeCursor) throws -> Float {
@@ -49,7 +49,7 @@ extension Float: ADJSONFastDecodable {
     }
 }
 extension Float: ADJSONFastEncodable {
-    @inlinable public func __adjsonEncode(into w: inout JSONByteWriter) throws { try w.double(Double(self)) }
+    @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) throws { try w.double(Double(self)) }
 }
 
 extension ADJSONFastDecodable where Self: FixedWidthInteger {
@@ -58,7 +58,7 @@ extension ADJSONFastDecodable where Self: FixedWidthInteger {
     }
 }
 extension ADJSONFastEncodable where Self: FixedWidthInteger {
-    @inlinable public func __adjsonEncode(into w: inout JSONByteWriter) { w.integer(self) }
+    @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) { w.integer(self) }
 }
 extension Int: ADJSONFastDecodable {}
 extension Int: ADJSONFastEncodable {}
@@ -87,7 +87,7 @@ extension Optional: ADJSONFastDecodable where Wrapped: ADJSONFastDecodable {
     }
 }
 extension Optional: ADJSONFastEncodable where Wrapped: ADJSONFastEncodable {
-    @inlinable public func __adjsonEncode(into w: inout JSONByteWriter) throws {
+    @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) throws {
         if let value = self { try value.__adjsonEncode(into: &w) } else { w.null() }
     }
 }
@@ -98,7 +98,7 @@ extension Dictionary: ADJSONFastDecodable where Key == String, Value: ADJSONFast
     }
 }
 extension Dictionary: ADJSONFastEncodable where Key == String, Value: ADJSONFastEncodable {
-    @inlinable public func __adjsonEncode(into w: inout JSONByteWriter) throws {
+    @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) throws {
         w.beginObject()
         var first = true
         for (key, value) in self {

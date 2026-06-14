@@ -25,7 +25,7 @@ extension ADJSON {
         // encoder over the class-backed writer.
         public func encodeToBytes<T: Encodable>(_ value: T) throws -> [UInt8] {
             if let fast = value as? any ADJSONFastEncodable {
-                var w = JSONByteWriter(adopting: EncoderBufferPool.take(), options: options)
+                var w = _JSONByteWriter(adopting: EncoderBufferPool.take(), options: options)
                 do {
                     try fast.__adjsonEncode(into: &w)
                 } catch {

@@ -10,29 +10,38 @@ struct SchemaValidator {
         return registry[r]
     }
 
+    // JSON Pointer for the current instance location. The location is threaded as a lightweight
+    // segment stack and only rendered to a String when an error is actually recorded — a valid
+    // document builds none.
+    private func location(_ path: [String]) -> String {
+        path.isEmpty ? "" : "/" + path.joined(separator: "/")
+    }
+
     // Recursion tracks schema-node depth plus instance depth; both are bounded by the parser's
     // `maxDepth` (512) for parsed inputs, so this cannot overflow the stack on documents produced
     // by `ADJSON.parse`. Local `$ref` cycles are broken via `activeRefs`.
     @discardableResult
     func validate(
-        _ index: Int, _ instance: JSON, _ loc: String, _ errors: inout [ValidationError],
+        _ index: Int, _ instance: JSON, _ path: inout [String], _ errors: inout [ValidationError],
         _ activeRefs: Set<String> = []
     ) -> Bool {
         let node = nodes[index]
 
         if let b = node.boolean {
-            if !b { errors.append(ValidationError(instanceLocation: loc, message: "schema is false")) }
+            if !b {
+                errors.append(ValidationError(instanceLocation: location(path), message: "schema is false"))
+            }
             return b
         }
 
         var ok = true
         func fail(_ message: String) {
             ok = false
-            errors.append(ValidationError(instanceLocation: loc, message: message))
+            errors.append(ValidationError(instanceLocation: location(path), message: message))
         }
         func passes(_ subIndex: Int, _ value: JSON) -> Bool {
             var ignored = [ValidationError]()
-            return validate(subIndex, value, loc, &ignored, activeRefs)
+            return validate(subIndex, value, &path, &ignored, activeRefs)
         }
 
         // Follow a local `$ref`, guarding against cycles (a → b → a) that would otherwise
@@ -40,8 +49,8 @@ struct SchemaValidator {
         // instance location; re-entering the same pair is a cycle, so we stop — the result is
         // idempotent because the ancestor frame already validates this subschema here.
         if let ref = node.ref, let target = resolve(ref) {
-            let key = "\(target)@\(loc)"
-            if !activeRefs.contains(key), !validate(target, instance, loc, &errors, activeRefs.union([key])) {
+            let key = "\(target)@\(location(path))"
+            if !activeRefs.contains(key), !validate(target, instance, &path, &errors, activeRefs.union([key])) {
                 ok = false
             }
         }
@@ -54,7 +63,12 @@ struct SchemaValidator {
             fail("enum: value not allowed")
         }
 
-        if instance.isNumberKind, let v = instance.double {
+        // Only parse the number when a numeric keyword is present — otherwise a typed schema
+        // (`{"type":"number"}`) would pay `strtod` on every value for nothing.
+        let hasNumericBound =
+            node.minimum != nil || node.maximum != nil || node.exclusiveMinimum != nil
+            || node.exclusiveMaximum != nil || node.multipleOf != nil
+        if hasNumericBound, instance.isNumberKind, let v = instance.double {
             if let m = node.minimum, v < m { fail("minimum") }
             if let m = node.maximum, v > m { fail("maximum") }
             if let m = node.exclusiveMinimum, v <= m { fail("exclusiveMinimum") }
@@ -65,7 +79,8 @@ struct SchemaValidator {
             }
         }
 
-        if let s = instance.string {
+        // Likewise, only materialize the String when a string keyword needs it.
+        if node.minLength != nil || node.maxLength != nil || node.pattern != nil, let s = instance.string {
             let len = s.unicodeScalars.count
             if let m = node.minLength, len < m { fail("minLength") }
             if let m = node.maxLength, len > m { fail("maxLength") }
@@ -88,13 +103,17 @@ struct SchemaValidator {
             var prefixCount = 0
             if let pi = node.prefixItems {
                 prefixCount = Swift.min(pi.count, elems.count)
-                for i in 0..<prefixCount where !validate(pi[i], elems[i], loc + "/\(i)", &errors, activeRefs) {
-                    ok = false
+                for i in 0..<prefixCount {
+                    path.append(String(i))
+                    if !validate(pi[i], elems[i], &path, &errors, activeRefs) { ok = false }
+                    path.removeLast()
                 }
             }
             if let it = node.items {
-                for i in prefixCount..<elems.count where !validate(it, elems[i], loc + "/\(i)", &errors, activeRefs) {
-                    ok = false
+                for i in prefixCount..<elems.count {
+                    path.append(String(i))
+                    if !validate(it, elems[i], &path, &errors, activeRefs) { ok = false }
+                    path.removeLast()
                 }
             }
             if let cont = node.contains {
@@ -108,49 +127,88 @@ struct SchemaValidator {
             }
         }
 
-        if instance.isObject, let obj = instance.object {
-            if let req = node.required {
-                for r in req where obj[r] == nil { fail("required: missing '\(r)'") }
-            }
-            if let m = node.minProperties, obj.count < m { fail("minProperties") }
-            if let m = node.maxProperties, obj.count > m { fail("maxProperties") }
+        if instance.isObject {
+            // Fast path for struct-style schemas: with no patternProperties/additionalProperties and
+            // no property-count bounds, we never need a materialized member dictionary or an
+            // `evaluated` set. Validate required/properties/dependents through the lazy cursor — this
+            // avoids allocating a `[String: JSON]` per object (and the key Strings + hashing it costs),
+            // which dominated validation throughput.
+            if node.patternProperties == nil, node.additionalProperties == nil,
+                node.minProperties == nil, node.maxProperties == nil
+            {
+                if let req = node.required {
+                    for r in req where !instance[r].exists { fail("required: missing '\(r)'") }
+                }
+                if let props = node.properties {
+                    for (k, sub) in props {
+                        let v = instance[k]
+                        if v.exists {
+                            path.append(jsonPointerEscape(k))
+                            if !validate(sub, v, &path, &errors, activeRefs) { ok = false }
+                            path.removeLast()
+                        }
+                    }
+                }
+                if let dr = node.dependentRequired {
+                    for (k, deps) in dr where instance[k].exists {
+                        for d in deps where !instance[d].exists { fail("dependentRequired: '\(k)' requires '\(d)'") }
+                    }
+                }
+                if let ds = node.dependentSchemas {
+                    for (k, sub) in ds where instance[k].exists {
+                        if !validate(sub, instance, &path, &errors, activeRefs) { ok = false }
+                    }
+                }
+            } else if let obj = instance.object {
+                if let req = node.required {
+                    for r in req where obj[r] == nil { fail("required: missing '\(r)'") }
+                }
+                if let m = node.minProperties, obj.count < m { fail("minProperties") }
+                if let m = node.maxProperties, obj.count > m { fail("maxProperties") }
 
-            var evaluated = Set<String>()
-            if let props = node.properties {
-                for (k, sub) in props {
-                    if let v = obj[k] {
-                        evaluated.insert(k)
-                        if !validate(sub, v, loc + "/" + jsonPointerEscape(k), &errors, activeRefs) { ok = false }
+                var evaluated = Set<String>()
+                if let props = node.properties {
+                    for (k, sub) in props {
+                        if let v = obj[k] {
+                            evaluated.insert(k)
+                            path.append(jsonPointerEscape(k))
+                            if !validate(sub, v, &path, &errors, activeRefs) { ok = false }
+                            path.removeLast()
+                        }
                     }
                 }
-            }
-            if let pp = node.patternProperties {
-                for (re, sub) in pp {
-                    for (k, v) in obj where re.matches(k) {
-                        evaluated.insert(k)
-                        if !validate(sub, v, loc + "/" + jsonPointerEscape(k), &errors, activeRefs) { ok = false }
+                if let pp = node.patternProperties {
+                    for (re, sub) in pp {
+                        for (k, v) in obj where re.matches(k) {
+                            evaluated.insert(k)
+                            path.append(jsonPointerEscape(k))
+                            if !validate(sub, v, &path, &errors, activeRefs) { ok = false }
+                            path.removeLast()
+                        }
                     }
                 }
-            }
-            if let ap = node.additionalProperties {
-                for (k, v) in obj where !evaluated.contains(k) {
-                    if !validate(ap, v, loc + "/" + jsonPointerEscape(k), &errors, activeRefs) { ok = false }
+                if let ap = node.additionalProperties {
+                    for (k, v) in obj where !evaluated.contains(k) {
+                        path.append(jsonPointerEscape(k))
+                        if !validate(ap, v, &path, &errors, activeRefs) { ok = false }
+                        path.removeLast()
+                    }
                 }
-            }
-            if let dr = node.dependentRequired {
-                for (k, deps) in dr where obj[k] != nil {
-                    for d in deps where obj[d] == nil { fail("dependentRequired: '\(k)' requires '\(d)'") }
+                if let dr = node.dependentRequired {
+                    for (k, deps) in dr where obj[k] != nil {
+                        for d in deps where obj[d] == nil { fail("dependentRequired: '\(k)' requires '\(d)'") }
+                    }
                 }
-            }
-            if let ds = node.dependentSchemas {
-                for (k, sub) in ds where obj[k] != nil {
-                    if !validate(sub, instance, loc, &errors, activeRefs) { ok = false }
+                if let ds = node.dependentSchemas {
+                    for (k, sub) in ds where obj[k] != nil {
+                        if !validate(sub, instance, &path, &errors, activeRefs) { ok = false }
+                    }
                 }
             }
         }
 
         if let all = node.allOf {
-            for sub in all where !validate(sub, instance, loc, &errors, activeRefs) { ok = false }
+            for sub in all where !validate(sub, instance, &path, &errors, activeRefs) { ok = false }
         }
         if let any = node.anyOf, !any.contains(where: { passes($0, instance) }) {
             fail("anyOf: matched none")
@@ -164,8 +222,8 @@ struct SchemaValidator {
         }
         if let ic = node.ifSchema {
             if passes(ic, instance) {
-                if let t = node.thenSchema, !validate(t, instance, loc, &errors, activeRefs) { ok = false }
-            } else if let el = node.elseSchema, !validate(el, instance, loc, &errors, activeRefs) {
+                if let t = node.thenSchema, !validate(t, instance, &path, &errors, activeRefs) { ok = false }
+            } else if let el = node.elseSchema, !validate(el, instance, &path, &errors, activeRefs) {
                 ok = false
             }
         }

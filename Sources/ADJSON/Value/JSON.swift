@@ -106,6 +106,35 @@ public struct JSON: Sendable {
         return out
     }
 
+    // MARK: Lazy walks (no intermediate collection)
+
+    /// Visit each array element in order without materializing an intermediate `[JSON]`.
+    func forEachElement(_ body: (JSON) -> Void) {
+        guard tag == JSONKind.array.rawValue else { return }
+        let c = Slot.count(slot)
+        var i = index + 1
+        for _ in 0..<c {
+            body(JSON(doc: doc, index: i))
+            i = nextIndex(after: i)
+        }
+    }
+
+    /// Visit each `(key, value)` member in document order without materializing an intermediate
+    /// `[String: JSON]`. Duplicate keys are visited as they appear (callers that build a dictionary
+    /// get last-value-wins for free).
+    func forEachMember(_ body: (String, JSON) -> Void) {
+        guard tag == JSONKind.object.rawValue else { return }
+        let c = Slot.count(slot)
+        doc.withBytePointer { p in
+            var i = index + 1
+            for _ in 0..<c {
+                let k = doc.tape[i]
+                body(decodeKey(p, k), JSON(doc: doc, index: i + 1))
+                i = nextIndex(after: i + 1)
+            }
+        }
+    }
+
     // MARK: Subscripts / dynamic member lookup
 
     public subscript(key: String) -> JSON { member(key) }
@@ -126,13 +155,17 @@ public struct JSON: Sendable {
     private func member(_ key: String) -> JSON {
         guard tag == JSONKind.object.rawValue else { return .missing(doc) }
         let c = Slot.count(slot)
+        let unique = doc.keysAreUnique  // unique keys → first match is the only match
         return doc.withBytePointer { p -> JSON in
             var i = index + 1
             var found = -1  // last match wins (consistent with `object` and JS / Foundation)
             for _ in 0..<c {
                 let k = doc.tape[i]
                 let valIdx = i + 1
-                if keyMatches(p, k, key) { found = valIdx }
+                if keyMatches(p, k, key) {
+                    found = valIdx
+                    if unique { break }
+                }
                 i = nextIndex(after: valIdx)
             }
             return found >= 0 ? JSON(doc: doc, index: found) : .missing(doc)
@@ -150,20 +183,11 @@ public struct JSON: Sendable {
 
     /// Index of the slot immediately after the value's whole subtree.
     @inline(__always)
-    private func nextIndex(after node: Int) -> Int {
-        let s = doc.tape[node]
-        let t = Slot.tag(s)
-        if t == JSONKind.object.rawValue || t == JSONKind.array.rawValue { return Slot.low(s) }
-        return node + 1
-    }
+    private func nextIndex(after node: Int) -> Int { Slot.next(after: node, doc.tape[node]) }
 
     @inline(__always)
     private func keyMatches(_ p: UnsafePointer<UInt8>, _ keySlot: UInt64, _ key: String) -> Bool {
-        let off = Slot.low(keySlot), len = Slot.length(keySlot)
-        if Slot.flags(keySlot) & 1 == 1 {
-            return JSONString.unescape(p, off, len) == key
-        }
-        return JSONKey.bytesEqual(key, p + off, len)
+        JSONKey.matches(p, Slot.low(keySlot), Slot.length(keySlot), escaped: Slot.flags(keySlot) & 1 == 1, key)
     }
 
     @inline(__always)

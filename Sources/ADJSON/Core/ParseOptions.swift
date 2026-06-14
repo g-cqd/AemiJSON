@@ -4,7 +4,9 @@ public struct JSONParseOptions: Sendable {
     public enum Validation: Sendable {
         /// RFC 8259 grammar: strict numbers, validated escapes, well-formed UTF-8.
         case strict
-        /// Permissive scanning (faster, accepts some malformed input).
+        /// Permissive scanning (faster, accepts some malformed input). Strings are not re-validated,
+        /// so escape sequences may pass through without RFC-conformant decoding — lenient string
+        /// output can therefore differ from strict decoding. It remains memory-safe.
         case lenient
     }
 
@@ -17,6 +19,10 @@ public struct JSONParseOptions: Sendable {
 
     public var validation: Validation
     public var duplicateKeys: DuplicateKeyStrategy
+    /// Maximum container nesting accepted while parsing. It also bounds the *native-stack* recursion
+    /// of the recursive consumers — `Codable` decoding, ``JSONValue`` materialization, and schema
+    /// validation — so the default (512) keeps them safe. Raising it for untrusted input risks a
+    /// stack overflow when that input is deeply nested; keep it modest unless the source is trusted.
     public var maxDepth: Int
 
     public init(

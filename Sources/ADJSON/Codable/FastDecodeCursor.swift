@@ -10,18 +10,15 @@ extension DecodeContext {
     @inlinable func memberValueIndex(of obj: Int, keyBytes lit: StaticString) -> Int? {
         let c = Slot.count(slot(obj))
         var i = obj + 1
-        let target = lit.utf8Start
-        let tlen = lit.utf8CodeUnitCount
         var found: Int? = nil
         for _ in 0..<c {
             let ks = slot(i)
             let valIdx = i + 1
             let koff = Slot.low(ks), klen = Slot.length(ks)
             assertBytes(koff, klen)
-            if Slot.flags(ks) & 1 == 0 {
-                if klen == tlen, JSONKey.bytesEqual(bytes + koff, target, tlen) { found = valIdx }
-            } else if JSONString.unescape(bytes, koff, klen) == lit.description {
+            if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, lit) {
                 found = valIdx
+                if keysAreUnique { break }  // unique keys → first match is the only match
             }
             i = nextIndex(after: valIdx)
         }
@@ -156,5 +153,91 @@ extension _FastDecodeCursor {
 
     @usableFromInline func mismatch(_ type: Any.Type) -> DecodingError {
         .typeMismatch(type, .init(codingPath: [], debugDescription: "Expected \(type)"))
+    }
+}
+
+// MARK: - Single-pass decoding
+
+// `@JSONCodable` resolves every field's value index in ONE walk of the object via `forEachMember`,
+// then decodes each field from its index — O(K) instead of O(fields × K) repeated key scans. The
+// `*At` readers mirror the by-key readers above but take a pre-resolved value index (`vi < 0` means
+// the key was absent).
+extension _FastDecodeCursor {
+    /// A member key matched against a statically-known literal on raw bytes — no String allocation
+    /// for the common (unescaped) case.
+    public struct _FastKey {
+        @usableFromInline let ctx: DecodeContext
+        @usableFromInline let off: Int
+        @usableFromInline let len: Int
+        @usableFromInline let escaped: Bool
+        @inlinable init(ctx: DecodeContext, off: Int, len: Int, escaped: Bool) {
+            self.ctx = ctx
+            self.off = off
+            self.len = len
+            self.escaped = escaped
+        }
+        @inlinable public func matches(_ s: StaticString) -> Bool {
+            JSONKey.matches(ctx.bytes, off, len, escaped: escaped, s)
+        }
+    }
+
+    /// Walk the object's members once, in document order, handing each `(key, value-index)` to
+    /// `body`. A later duplicate key overwrites an earlier match, so callers preserve last-value-wins.
+    @inlinable public func forEachMember(_ body: (_FastKey, Int) -> Void) {
+        guard ctx.tag(index) == JSONKind.object.rawValue else { return }
+        let c = ctx.count(index)
+        var i = index + 1
+        for _ in 0..<c {
+            let ks = ctx.slot(i)
+            let key = _FastKey(
+                ctx: ctx, off: Slot.low(ks), len: Slot.length(ks), escaped: Slot.flags(ks) & 1 == 1)
+            body(key, i + 1)
+            i = ctx.nextIndex(after: i + 1)
+        }
+    }
+
+    @inlinable public func stringAt(_ vi: Int, _ key: StaticString) throws -> String {
+        guard vi >= 0, let s = ctx.string(vi) else { throw missing(key) }
+        return s
+    }
+    @inlinable public func stringIfPresentAt(_ vi: Int) -> String? {
+        guard vi >= 0, !ctx.isNull(vi) else { return nil }
+        return ctx.string(vi)
+    }
+    @inlinable public func boolAt(_ vi: Int, _ key: StaticString) throws -> Bool {
+        guard vi >= 0, let b = ctx.bool(vi) else { throw missing(key) }
+        return b
+    }
+    @inlinable public func boolIfPresentAt(_ vi: Int) -> Bool? {
+        guard vi >= 0, !ctx.isNull(vi) else { return nil }
+        return ctx.bool(vi)
+    }
+    @inlinable public func doubleAt(_ vi: Int, _ key: StaticString) throws -> Double {
+        guard vi >= 0, let d = ctx.double(vi) else { throw missing(key) }
+        return d
+    }
+    @inlinable public func doubleIfPresentAt(_ vi: Int) -> Double? {
+        guard vi >= 0, !ctx.isNull(vi) else { return nil }
+        return ctx.double(vi)
+    }
+    @inlinable public func integerAt<T: FixedWidthInteger>(
+        _ vi: Int, _ key: StaticString, _ type: T.Type
+    )
+        throws -> T
+    {
+        guard vi >= 0, let n = ctx.integer(vi, type) else { throw missing(key) }
+        return n
+    }
+    @inlinable public func integerIfPresentAt<T: FixedWidthInteger>(_ vi: Int, _ type: T.Type) -> T? {
+        guard vi >= 0, !ctx.isNull(vi) else { return nil }
+        return ctx.integer(vi, type)
+    }
+    @inlinable public func decodeAt<T: Decodable>(_ type: T.Type, _ vi: Int, _ key: StaticString) throws -> T {
+        guard vi >= 0 else { throw missing(key) }
+        return try ctx.decodeValue(type, at: vi)
+    }
+    @inlinable public func decodeIfPresentAt<T: Decodable>(_ type: T.Type, _ vi: Int) throws -> T? {
+        guard vi >= 0, !ctx.isNull(vi) else { return nil }
+        return try ctx.decodeValue(type, at: vi)
     }
 }

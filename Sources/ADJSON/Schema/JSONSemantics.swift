@@ -56,5 +56,8 @@ func jsonSemanticEqual(_ a: JSON, _ b: JSON) -> Bool {
 }
 
 func jsonPointerEscape(_ s: String) -> String {
-    s.replacingOccurrences(of: "~", with: "~0").replacingOccurrences(of: "/", with: "~1")
+    // Most keys contain neither `~` nor `/`, so skip the Foundation `replacingOccurrences` calls
+    // (which bridge through NSString) and return the key unchanged.
+    guard s.utf8.contains(where: { $0 == 0x7E || $0 == 0x2F }) else { return s }
+    return s.replacingOccurrences(of: "~", with: "~0").replacingOccurrences(of: "/", with: "~1")
 }

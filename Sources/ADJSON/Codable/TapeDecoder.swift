@@ -13,6 +13,7 @@ final class DecodeContext {
     @usableFromInline let tape: UnsafePointer<UInt64>
     @usableFromInline let byteCount: Int
     @usableFromInline let tapeCount: Int
+    @usableFromInline let keysAreUnique: Bool
     let userInfo: [CodingUserInfoKey: Any]
 
     // INVARIANT: `bytes`/`tape` are borrowed from `doc`'s storage for the duration of one
@@ -31,6 +32,7 @@ final class DecodeContext {
         self.byteCount = byteCount
         self.tape = tape
         self.tapeCount = tapeCount
+        self.keysAreUnique = doc.keysAreUnique
         self.userInfo = userInfo
     }
 
@@ -48,12 +50,7 @@ final class DecodeContext {
     @inline(__always) @inlinable func count(_ i: Int) -> Int { Slot.count(slot(i)) }
     @inline(__always) @inlinable func isNull(_ i: Int) -> Bool { Slot.tag(slot(i)) == JSONKind.null.rawValue }
 
-    @inline(__always) @inlinable func nextIndex(after i: Int) -> Int {
-        let s = slot(i)
-        let t = Slot.tag(s)
-        if t == JSONKind.object.rawValue || t == JSONKind.array.rawValue { return Slot.low(s) }
-        return i + 1
-    }
+    @inline(__always) @inlinable func nextIndex(after i: Int) -> Int { Slot.next(after: i, slot(i)) }
 
     @inline(__always) @inlinable func bool(_ i: Int) -> Bool? {
         switch Slot.tag(slot(i)) {
@@ -106,13 +103,10 @@ final class DecodeContext {
             let valIdx = i + 1
             let koff = Slot.low(ks), klen = Slot.length(ks)
             assertBytes(koff, klen)
-            let matched: Bool
-            if Slot.flags(ks) & 1 == 1 {
-                matched = JSONString.unescape(bytes, koff, klen) == key
-            } else {
-                matched = JSONKey.bytesEqual(key, bytes + koff, klen)
+            if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, key) {
+                found = valIdx
+                if keysAreUnique { break }  // unique keys → first match is the only match
             }
-            if matched { found = valIdx }
             i = nextIndex(after: valIdx)
         }
         return found

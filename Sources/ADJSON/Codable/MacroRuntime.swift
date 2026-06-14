@@ -2,7 +2,7 @@ import Foundation
 
 // ============================================================================
 // MACRO RUNTIME — SPI (not API). The public-underscored symbols here
-// (`_FastDecodeCursor`, `JSONByteWriter`, `__adjsonDecode`, `__adjsonEncode`,
+// (`_FastDecodeCursor`, `_JSONByteWriter`, `__adjsonDecode`, `__adjsonEncode`,
 // `ADJSONFast*`) exist only for code emitted by the `@JSONCodable` macro and for
 // hand-written fast conformances. They are intentionally underscored to signal
 // "do not call directly": a macro cannot inject an `@_spi` import into the user's
@@ -13,7 +13,7 @@ import Foundation
 //   • MacroRuntime.swift          — the protocols + the generic-dispatch entry (here).
 //   • FastDecodeCursor.swift       — `_FastDecodeCursor`, the tape reader.
 //   • FastBuiltinConformances.swift — built-in scalar/Array/Optional/Dictionary conformances.
-// The encode-side value buffer lives in JSONByteWriter.swift.
+// The encode-side value buffer lives in _JSONByteWriter.swift.
 // ============================================================================
 
 // Opt-in fast paths that bypass the Codable container protocols. The generic
@@ -25,7 +25,7 @@ public protocol ADJSONFastDecodable {
 }
 
 public protocol ADJSONFastEncodable {
-    func __adjsonEncode(into writer: inout JSONByteWriter) throws
+    func __adjsonEncode(into writer: inout _JSONByteWriter) throws
 }
 
 struct StaticCodingKey: CodingKey {

@@ -43,9 +43,9 @@ final class EncodeState {
     }
 
     /// Bridge a fast-path value nested inside a generic encode: move the shared buffer
-    /// into a value `JSONByteWriter` (so its appends don't trigger CoW), then move back.
+    /// into a value `_JSONByteWriter` (so its appends don't trigger CoW), then move back.
     @inline(__always) func encodeFast(_ fast: any ADJSONFastEncodable) throws {
-        var bw = JSONByteWriter(adopting: w.bytes, options: options)
+        var bw = _JSONByteWriter(adopting: w.bytes, options: options)
         w.bytes = []
         try fast.__adjsonEncode(into: &bw)
         w.bytes = bw.bytes

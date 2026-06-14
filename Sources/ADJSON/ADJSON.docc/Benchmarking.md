@@ -64,11 +64,13 @@ vary with hardware, OS, and payload; treat these as ratios, not absolutes.
 | Tape parse — `citm_catalog.json` | 1246 MB/s | 318 MB/s | **3.9×** |
 | Tape parse — `canada.json` | 847 MB/s | 125 MB/s | **6.8×** |
 | Codable decode — generic | 78 MB/s | 41 MB/s | **1.9×** |
-| Codable decode — `@JSONCodable` | 173 MB/s | 41 MB/s | **4.2×** |
+| Codable decode — `@JSONCodable` | 185 MB/s | 41 MB/s | **4.4×** |
 | Codable encode — generic | 86 MB/s | 47 MB/s | **1.8×** |
 | Codable encode — `@JSONCodable` | 377 MB/s | 47 MB/s | **8.0×** |
 | `[Double]` decode | 166 MB/s | 76 MB/s | **2.2×** |
 | `JSONValue` materialize — `twitter.json` | 231 MB/s | 172 MB/s | **1.3×** |
+| `JSONValue` materialize — `citm_catalog.json` | 318 MB/s | 314 MB/s | **1.0×** |
+| `JSONValue` materialize — `canada.json` | 131 MB/s | 124 MB/s | **1.05×** |
 
 **ADJSON-only** (features Foundation has no equivalent for):
 
@@ -76,14 +78,14 @@ vary with hardware, OS, and payload; treat these as ratios, not absolutes.
 |---|---|
 | JSONPath wildcard — `$[*].profile.bio` | 2289 MB/s |
 | JSONPath filter — `$[?(@.followers > N)]` | 970 MB/s |
-| JSON Schema validate (pre-parsed, full structural) | 16 MB/s |
+| JSON Schema validate (pre-parsed, full structural) | 102 MB/s |
 | JSON Patch apply (3 ops over a 2000-element tree) | 46 µs |
 | Concurrent decode | 223 MB/s (**2.4×** serial) |
 
 Tape parsing runs at roughly **1 GB/s**; partial/lazy access is faster still, since it skips
-subtrees it never reads. Full `JSONValue` materialization lands on par with `JSONSerialization`
-(it builds a comparable Swift tree), so the win there is small — ADJSON's leverage is the lazy
-tape and typed decode.
+subtrees it never reads. Full `JSONValue` materialization now edges past `JSONSerialization`
+across the corpus — it builds a comparable Swift tree in a single pass — though ADJSON's real
+leverage remains the lazy tape and typed decode.
 
 ## Interpreting the numbers
 
@@ -95,9 +97,9 @@ tape and typed decode.
   (existentials, per-field `String` keys, dynamic dispatch); the macro fast path bypasses them.
 - **Number-heavy payloads** stress number materialization more than structure; `canada.json`
   is the stress test.
-- **Untyped materialization is roughly a wash.** Building a full `JSONValue` tree costs about
-  what `JSONSerialization` does; ADJSON's advantage is *not* materializing — the lazy tape and
-  typed decode are where it pulls ahead.
+- **Untyped materialization edges ahead.** Building a full `JSONValue` tree in one pass now
+  matches or slightly beats `JSONSerialization` across the corpus; even so, ADJSON's advantage
+  is *not* materializing — the lazy tape and typed decode are where it pulls ahead.
 - **Schema validation walks every node** (type and constraint checks), so it is heavier than a
   bare parse; compile the schema once and reuse it across documents.
 

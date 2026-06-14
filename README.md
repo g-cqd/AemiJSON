@@ -100,14 +100,15 @@ ratios, not absolutes. Reproduce with `swift run -c release ADJSONBenchmarks`.
 | Untyped tape parse — `citm_catalog.json` | **3.9×** |
 | Untyped tape parse — `canada.json` (number-heavy) | **6.8×** |
 | Codable decode — generic (`Data` → struct) | **1.9×** `JSONDecoder` |
-| Codable decode — `@JSONCodable` fast path | **4.2×** `JSONDecoder` |
+| Codable decode — `@JSONCodable` fast path | **4.4×** `JSONDecoder` |
 | Codable encode — `@JSONCodable` fast path | **8.0×** `JSONEncoder` |
 | `[Double]` decode — number-heavy | **2.2×** `JSONDecoder` |
 
 Tape parsing runs at roughly **1 GB/s** (0.85–1.25 GB/s across the corpus); lazy access is faster
-still since it skips subtrees it never reads. Full untyped materialization into `JSONValue` lands
-on par with `JSONSerialization`. Query, schema, and patch throughput, methodology, and the full
-table: see the **Benchmarking** guide in the documentation.
+still since it skips subtrees it never reads. Full untyped materialization into `JSONValue` now
+edges past `JSONSerialization` on the corpus, and compiled JSON Schema validation runs at roughly
+**100 MB/s**. Query and patch throughput, methodology, and the full table: see the **Benchmarking**
+guide in the documentation.
 
 ## Standards
 

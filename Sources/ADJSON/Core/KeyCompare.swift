@@ -34,4 +34,23 @@ enum JSONKey {
             return bytesEqual(ka, b, count)
         }
     }
+
+    // Escape-aware key match against a raw key slot's bytes (`p[off..<off+len]`, `escaped` = the
+    // tape's hasEscape flag). This owns the escape branch that the lazy-navigation, generic-decode,
+    // and `@JSONCodable` fast-path lookups all share, so the policy lives in exactly one place.
+    @inlinable
+    static func matches(
+        _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, _ key: String
+    ) -> Bool {
+        if escaped { return JSONString.unescape(p, off, len) == key }
+        return bytesEqual(key, p + off, len)
+    }
+
+    @inlinable
+    static func matches(
+        _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, _ key: StaticString
+    ) -> Bool {
+        if escaped { return JSONString.unescape(p, off, len) == key.description }
+        return len == key.utf8CodeUnitCount && bytesEqual(p + off, key.utf8Start, len)
+    }
 }

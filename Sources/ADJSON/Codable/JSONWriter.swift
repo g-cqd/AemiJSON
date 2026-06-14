@@ -30,7 +30,12 @@ final class JSONWriter {
         JSONOutput.appendInteger(v, to: &bytes)
     }
 
-    func writeDouble(_ v: Double) { bytes.append(contentsOf: v.description.utf8) }
+    // Callers guarantee `v` is finite — the value paths pre-check and apply the non-finite policy
+    // before reaching here, so this just writes the shortest `Double.description`.
+    func writeDouble(_ v: Double) {
+        assert(v.isFinite, "JSONWriter.writeDouble requires a finite value")
+        bytes.append(contentsOf: v.description.utf8)
+    }
 
     // "key":
     func writeKey(_ s: String) {

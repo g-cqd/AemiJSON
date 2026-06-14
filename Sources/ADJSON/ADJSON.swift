@@ -17,7 +17,8 @@ public enum ADJSON {
             return Result { () throws(JSONError) in try builder.build() }
         }.get()
         ADJSON.Metrics.record(bytes: data.count)
-        return JSONDocument(backing: .data(data), tape: tape)
+        return JSONDocument(
+            backing: .data(data), tape: tape, keysAreUnique: options.duplicateKeys == .throwError)
     }
 
     /// Parse a UTF-8 byte buffer into an immutable, lazily-navigable document.
@@ -33,7 +34,8 @@ public enum ADJSON {
             return Result { () throws(JSONError) in try builder.build() }
         }.get()
         ADJSON.Metrics.record(bytes: bytes.count)
-        return JSONDocument(backing: .bytes(bytes), tape: tape)
+        return JSONDocument(
+            backing: .bytes(bytes), tape: tape, keysAreUnique: options.duplicateKeys == .throwError)
     }
 
     /// Parse a `String` into an immutable, lazily-navigable document.

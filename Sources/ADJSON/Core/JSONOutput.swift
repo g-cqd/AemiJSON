@@ -1,7 +1,7 @@
 import Foundation
 
 // Single source of truth for low-level JSON byte emission. Shared by the class
-// `JSONWriter` (generic streaming encoder), the value-type `JSONByteWriter` (the
+// `JSONWriter` (generic streaming encoder), the value-type `_JSONByteWriter` (the
 // `@JSONCodable` fast path), and schema rendering — so string escaping and integer
 // formatting exist in exactly one place rather than drifting across copies. The routines
 // are `@inlinable` so the fast path still inlines them across the module boundary.

@@ -21,11 +21,16 @@ public final class JSONDocument: Sendable {
 
     @usableFromInline let backing: Backing
     @usableFromInline let tape: ContiguousArray<UInt64>
+    /// True when the parse guaranteed unique object keys (the `.throwError` duplicate-key strategy
+    /// rejects duplicates), which lets key lookups stop at the first match instead of scanning to
+    /// the last (the `.useLast` default requires the full scan).
+    @usableFromInline let keysAreUnique: Bool
 
     @usableFromInline
-    init(backing: Backing, tape: ContiguousArray<UInt64>) {
+    init(backing: Backing, tape: ContiguousArray<UInt64>, keysAreUnique: Bool = false) {
         self.backing = backing
         self.tape = tape
+        self.keysAreUnique = keysAreUnique
     }
 
     /// The root value of the document.
