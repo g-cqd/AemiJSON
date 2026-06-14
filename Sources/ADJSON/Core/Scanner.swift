@@ -1,8 +1,8 @@
 import Foundation
 
-// Single-pass recursive-descent scanner that builds the tape WITHOUT materializing
-// any value. In strict mode it enforces the RFC 8259 grammar (number shape, escape
-// validity, UTF-8 well-formedness); in lenient mode it scans permissively.
+// Single-pass, iterative (explicit-stack, non-recursive) scanner that builds the tape
+// WITHOUT materializing any value. In strict mode it enforces the RFC 8259 grammar (number
+// shape, escape validity, UTF-8 well-formedness); in lenient mode it scans permissively.
 struct TapeBuilder {
     let p: UnsafePointer<UInt8>
     let n: Int
@@ -11,7 +11,16 @@ struct TapeBuilder {
     let maxDepth: Int
     var i = 0
     var slots: [UInt64]
-    var depth = 0
+    var stack: [Frame] = []
+
+    // One open container being built. Stands in for a recursive-descent call frame, so nesting
+    // lives on the heap and arbitrarily deep input can never overflow the call stack.
+    struct Frame {
+        let openIndex: Int
+        var count: Int
+        let isObject: Bool
+        var seenKeys: [UInt64: [(offset: Int, length: Int)]]
+    }
 
     init(_ p: UnsafePointer<UInt8>, _ n: Int, options: JSONParseOptions) {
         self.p = p
@@ -21,9 +30,10 @@ struct TapeBuilder {
         self.maxDepth = options.maxDepth
         self.slots = []
         slots.reserveCapacity(n / 4 + 8)
+        stack.reserveCapacity(16)
     }
 
-    mutating func build() throws -> [UInt64] {
+    mutating func build() throws(JSONError) -> [UInt64] {
         skipWS()
         try parseValue()
         skipWS()
@@ -38,76 +48,117 @@ struct TapeBuilder {
         }
     }
 
-    mutating func parseValue() throws {
-        skipWS()
-        guard i < n else { throw JSONError.unexpectedEndOfInput }
-        switch p[i] {
-        case 0x7B: try parseObject()
-        case 0x5B: try parseArray()
-        case 0x22: try scanString()
-        case 0x74, 0x66, 0x6E: try scanLiteral()
-        case 0x2D, 0x30...0x39: try scanNumber()
-        default: throw JSONError.unexpectedCharacter(p[i], at: i)
+    // Iterative tape construction: an explicit `stack` of open containers replaces recursive
+    // descent, so nesting costs heap (O(depth)) rather than call-stack frames and can't overflow
+    // the stack at any depth. The emitted tape is byte-identical to the recursive version.
+    mutating func parseValue() throws(JSONError) {
+        while true {
+            // Positioned at the start of a value.
+            skipWS()
+            guard i < n else { throw JSONError.unexpectedEndOfInput }
+            let c = p[i]
+            var completed: Bool
+            switch c {
+            case 0x7B:  // '{'
+                if stack.count >= maxDepth { throw JSONError.depthExceeded(at: i) }
+                let openIdx = slots.count
+                slots.append(0)  // placeholder, patched at close
+                i += 1
+                skipWS()
+                if i < n && p[i] == 0x7D {
+                    i += 1
+                    try closeContainer(openIdx, count: 0, isObject: true)
+                    completed = true
+                } else {
+                    stack.append(Frame(openIndex: openIdx, count: 0, isObject: true, seenKeys: [:]))
+                    try readKeyColon()
+                    completed = false
+                }
+            case 0x5B:  // '['
+                if stack.count >= maxDepth { throw JSONError.depthExceeded(at: i) }
+                let openIdx = slots.count
+                slots.append(0)
+                i += 1
+                skipWS()
+                if i < n && p[i] == 0x5D {
+                    i += 1
+                    try closeContainer(openIdx, count: 0, isObject: false)
+                    completed = true
+                } else {
+                    stack.append(Frame(openIndex: openIdx, count: 0, isObject: false, seenKeys: [:]))
+                    completed = false
+                }
+            case 0x22:
+                try scanString()
+                completed = true
+            case 0x74, 0x66, 0x6E:
+                try scanLiteral()
+                completed = true
+            case 0x2D, 0x30...0x39:
+                try scanNumber()
+                completed = true
+            default:
+                throw JSONError.unexpectedCharacter(c, at: i)
+            }
+
+            // A value is complete: fold it into its parent, closing each container the input ends.
+            while completed {
+                guard !stack.isEmpty else { return }  // the completed value was the document root
+                stack[stack.count - 1].count += 1
+                skipWS()
+                guard i < n else { throw JSONError.unexpectedEndOfInput }
+                let sep = p[i]
+                if stack[stack.count - 1].isObject {
+                    if sep == 0x2C {
+                        i += 1
+                        try readKeyColon()
+                        completed = false
+                    } else if sep == 0x7D {
+                        i += 1
+                        let frame = stack.removeLast()
+                        try closeContainer(frame.openIndex, count: frame.count, isObject: true)
+                    } else {
+                        throw JSONError.unexpectedCharacter(sep, at: i)
+                    }
+                } else if sep == 0x2C {
+                    i += 1
+                    completed = false
+                } else if sep == 0x5D {
+                    i += 1
+                    let frame = stack.removeLast()
+                    try closeContainer(frame.openIndex, count: frame.count, isObject: false)
+                } else {
+                    throw JSONError.unexpectedCharacter(sep, at: i)
+                }
+            }
         }
     }
 
-    mutating func parseObject() throws {
-        depth += 1
-        if depth > maxDepth { throw JSONError.depthExceeded(at: i) }
-        let openIdx = slots.count
-        slots.append(0)  // placeholder, patched at close
-        i += 1  // {
+    // Reads `"key":` for the current (top) object frame: key string + duplicate check + colon.
+    mutating func readKeyColon() throws(JSONError) {
         skipWS()
-        var count = 0
-        var seenKeys: [UInt64: [(offset: Int, length: Int)]] = [:]
-        if i < n && p[i] == 0x7D {
-            i += 1
-        } else {
-            while true {
-                skipWS()
-                guard i < n, p[i] == 0x22 else {
-                    throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i)
-                }
-                let keyStart = i
-                try scanString()  // key
-                if checkDuplicates { try recordKey(keyStart, into: &seenKeys) }
-                skipWS()
-                guard i < n, p[i] == 0x3A else {
-                    throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i)
-                }
-                i += 1  // :
-                try parseValue()
-                count += 1
-                skipWS()
-                guard i < n else { throw JSONError.unexpectedEndOfInput }
-                let c = p[i]
-                if c == 0x2C {
-                    i += 1
-                    continue
-                }
-                if c == 0x7D {
-                    i += 1
-                    break
-                }
-                throw JSONError.unexpectedCharacter(c, at: i)
-            }
-        }
-        // `count` occupies the 28-bit aux field; `next` (== slots.count) the low 32 bits.
-        // Both are bounded by the 4 GB input cap (ADJSON.parse), but guard explicitly so a
-        // pathological element count can never silently wrap and corrupt tape navigation.
+        guard i < n, p[i] == 0x22 else { throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i) }
+        let keyStart = i
+        try scanString()  // key
+        if checkDuplicates { try recordKey(keyStart, frame: stack.count - 1) }
+        skipWS()
+        guard i < n, p[i] == 0x3A else { throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i) }
+        i += 1  // :
+    }
+
+    // Patches a container's placeholder with its element count and the index after its subtree.
+    // `count` occupies the 28-bit aux field, `next` the low 32 bits — both bounded by the 4 GB
+    // input cap, but guarded so a pathological count can't silently wrap and corrupt navigation.
+    mutating func closeContainer(_ openIdx: Int, count: Int, isObject: Bool) throws(JSONError) {
         guard count <= Slot.auxMask, slots.count <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
-        slots[openIdx] = Slot.container(JSONKind.object.rawValue, count: count, next: slots.count)
-        depth -= 1
+        let tag = isObject ? JSONKind.object.rawValue : JSONKind.array.rawValue
+        slots[openIdx] = Slot.container(tag, count: count, next: slots.count)
     }
 
     // Detects duplicate keys (RFC 7493 / `.throwError`) in O(1) expected time by bucketing
     // keys under an FNV-1a hash of their raw bytes — avoiding the O(n^2) all-pairs scan that
     // a hostile object with many keys could exploit (DoS). Hash collisions fall back to memcmp.
-    mutating func recordKey(
-        _ keyStart: Int, into seen: inout [UInt64: [(offset: Int, length: Int)]]
-    )
-        throws
-    {
+    mutating func recordKey(_ keyStart: Int, frame: Int) throws(JSONError) {
         let keySlot = slots[slots.count - 1]
         let offset = Slot.low(keySlot)
         let length = Slot.length(keySlot)
@@ -115,51 +166,18 @@ struct TapeBuilder {
         for k in 0..<length {
             hash = (hash ^ UInt64(p[offset + k])) &* 0x0000_0100_0000_01b3
         }
-        var bucket = seen[hash] ?? []
+        var bucket = stack[frame].seenKeys[hash] ?? []
         for previous in bucket
         where previous.length == length && (length == 0 || memcmp(p + previous.offset, p + offset, length) == 0) {
             throw JSONError.duplicateKey(at: keyStart)
         }
         bucket.append((offset, length))
-        seen[hash] = bucket
-    }
-
-    mutating func parseArray() throws {
-        depth += 1
-        if depth > maxDepth { throw JSONError.depthExceeded(at: i) }
-        let openIdx = slots.count
-        slots.append(0)
-        i += 1  // [
-        skipWS()
-        var count = 0
-        if i < n && p[i] == 0x5D {
-            i += 1
-        } else {
-            while true {
-                try parseValue()
-                count += 1
-                skipWS()
-                guard i < n else { throw JSONError.unexpectedEndOfInput }
-                let c = p[i]
-                if c == 0x2C {
-                    i += 1
-                    continue
-                }
-                if c == 0x5D {
-                    i += 1
-                    break
-                }
-                throw JSONError.unexpectedCharacter(c, at: i)
-            }
-        }
-        guard count <= Slot.auxMask, slots.count <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
-        slots[openIdx] = Slot.container(JSONKind.array.rawValue, count: count, next: slots.count)
-        depth -= 1
+        stack[frame].seenKeys[hash] = bucket
     }
 
     // Records the string's content range + hasEscape flag; validates escapes and
     // UTF-8 in strict mode. Does not decode.
-    mutating func scanString() throws {
+    mutating func scanString() throws(JSONError) {
         let start = i + 1
         var j = start
         var esc: UInt64 = 0
@@ -190,7 +208,7 @@ struct TapeBuilder {
     }
 
     // `p[j]` is a backslash; validates the escape and advances `j` past it.
-    mutating func validateEscape(_ j: inout Int) throws {
+    mutating func validateEscape(_ j: inout Int) throws(JSONError) {
         guard j + 1 < n else { throw JSONError.invalidString(at: j) }
         switch p[j + 1] {
         case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
@@ -212,7 +230,7 @@ struct TapeBuilder {
         }
     }
 
-    func hex4(_ at: Int) throws -> UInt16 {
+    func hex4(_ at: Int) throws(JSONError) -> UInt16 {
         guard at + 4 <= n else { throw JSONError.invalidString(at: at) }
         var value: UInt16 = 0
         for k in 0..<4 {
@@ -231,7 +249,7 @@ struct TapeBuilder {
         }
     }
 
-    mutating func scanNumber() throws {
+    mutating func scanNumber() throws(JSONError) {
         let start = i
         var isInt: UInt64 = 1
         if strict {
@@ -267,7 +285,7 @@ struct TapeBuilder {
     }
 
     // RFC 8259: [ '-' ] ( '0' | [1-9][0-9]* ) [ '.' [0-9]+ ] [ (e|E) [+|-] [0-9]+ ]
-    mutating func scanNumberStrict(_ isInt: inout UInt64, start: Int) throws {
+    mutating func scanNumberStrict(_ isInt: inout UInt64, start: Int) throws(JSONError) {
         if i < n && p[i] == 0x2D { i += 1 }
         guard i < n else { throw JSONError.invalidNumber(at: start) }
         if p[i] == 0x30 {
@@ -296,7 +314,7 @@ struct TapeBuilder {
 
     @inline(__always) func isDigit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
 
-    mutating func scanLiteral() throws {
+    mutating func scanLiteral() throws(JSONError) {
         let start = i
         switch p[i] {
         case 0x74:
@@ -311,7 +329,7 @@ struct TapeBuilder {
         }
     }
 
-    @inline(__always) mutating func expectLiteral(_ lit: StaticString) throws {
+    @inline(__always) mutating func expectLiteral(_ lit: StaticString) throws(JSONError) {
         let len = lit.utf8CodeUnitCount
         guard i + len <= n, memcmp(p + i, lit.utf8Start, len) == 0 else {
             throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i)

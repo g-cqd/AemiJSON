@@ -72,3 +72,16 @@ private let samples: [E] = [
         try ADJSON.JSONEncoder().encode(F(v: .infinity))
     }
 }
+
+@Test func jsonValueRejectsNonFiniteOnEncode() {
+    #expect(throws: EncodingError.self) { try JSONValue.number(.infinity).encoded() }
+    #expect(throws: EncodingError.self) { try JSONValue.number(.nan).encoded() }
+    #expect(throws: EncodingError.self) { try JSONValue.object(["v": .number(-.infinity)]).encoded() }
+}
+
+@Test func jsonValueEncodesFiniteNumbersLocaleIndependently() throws {
+    let v = JSONValue.object(["i": .number(42), "d": .number(3.5), "neg": .number(-0.25)])
+    let back = try JSONValue(parsing: try v.encoded())
+    #expect(back == v)
+    #expect(String(decoding: try JSONValue.number(3.5).encoded(), as: UTF8.self) == "3.5")
+}

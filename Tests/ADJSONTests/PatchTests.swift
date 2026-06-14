@@ -53,6 +53,24 @@ private func applyPatch(_ patch: String, to target: String) throws -> JSONValue 
     }
 }
 
+@Test func rfc6902RejectsMoveIntoOwnChild() {
+    // RFC 6902 §4.4: a location cannot be moved into one of its children.
+    #expect(throws: JSONPatchError.self) {
+        try JSONPatch(Data(#"[{"op":"move","from":"/a","path":"/a/b"}]"#.utf8)).apply(to: jv(#"{"a":{"b":1}}"#))
+    }
+}
+
+@Test func rfc6901RejectsNonCanonicalArrayIndex() throws {
+    // RFC 6901 §4: array index is "0" or [1-9][0-9]* — no leading zero or '+'.
+    let doc = try ADJSON.parse(#"{"a":["x","y"]}"#).root
+    #expect(doc[pointer: "/a/0"].string == "x")
+    #expect(doc[pointer: "/a/01"].exists == false)
+    #expect(doc[pointer: "/a/+1"].exists == false)
+    let v = try JSONValue(parsing: #"{"a":["x","y"]}"#)
+    #expect(v.value(at: try JSONPointer("/a/01")) == nil)
+    #expect(v.value(at: try JSONPointer("/a/1")) == .string("y"))
+}
+
 @Test func rfc7396MergePatch() {
     func merge(_ patch: String, into target: String) -> JSONValue { JSONMergePatch.apply(jv(patch), to: jv(target)) }
     #expect(merge(#"{"a":"c"}"#, into: #"{"a":"b"}"#) == jv(#"{"a":"c"}"#))

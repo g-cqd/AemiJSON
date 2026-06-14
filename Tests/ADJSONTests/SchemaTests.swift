@@ -90,6 +90,13 @@ private func valid(_ schema: JSONSchema, _ json: String) -> Bool { schema.isVali
     #expect(!valid(tree, #"{"children":"no"}"#))
 }
 
+@Test func refCycleTerminatesInsteadOfRecursingForever() {
+    // a → b → a with no instance consumption would recurse until the stack overflows without
+    // the cycle guard; with it, validation terminates (no constraints along the cycle).
+    let s = schema(##"{"$ref":"#/$defs/a","$defs":{"a":{"$ref":"#/$defs/b"},"b":{"$ref":"#/$defs/a"}}}"##)
+    #expect(valid(s, "1"))
+}
+
 @Test func validatesAdditionalAndDependent() {
     let s = schema(#"{"type":"object","properties":{"a":{"type":"integer"}},"additionalProperties":false}"#)
     #expect(valid(s, #"{"a":1}"#))

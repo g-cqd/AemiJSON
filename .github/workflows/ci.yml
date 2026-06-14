@@ -1,0 +1,35 @@
+# Continuous integration: build, test, and lint the package.
+#
+# NOTE ON TOOLCHAIN: ADJSON uses `swift-tools-version: 6.3` and targets the iOS 26 SDK
+# generation, so the runner must provide a Swift 6.3+ toolchain (and the 2025 SDKs for the
+# device platforms). Hosted GitHub runners may not ship this until it reaches GA — pin
+# `runs-on` / the Xcode image to one that does, or run this on a self-hosted macOS runner.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-lint:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      # Formatting gate + shipped-library discipline (no force-unwrap / no locale-sensitive strtod).
+      - name: Lint
+        run: ./scripts/lint.sh

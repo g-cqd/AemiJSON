@@ -8,8 +8,17 @@ struct JSONPathError: Error, Sendable {
 struct JSONPathParser {
     let chars: [Character]
     var i = 0
+    // Bounds recursive descent so a crafted query (`((((…))))`, `[?@[?@[?…]]]`) can't
+    // exhaust the stack. Incremented at the two mutual-recursion entry points below.
+    var depth = 0
+    static let maxDepth = 256
 
     init(_ s: String) { chars = Array(s) }
+
+    mutating func enter() throws {
+        depth += 1
+        guard depth <= Self.maxDepth else { throw err("expression nested too deeply") }
+    }
 
     var atEnd: Bool { i >= chars.count }
     func peek() -> Character? { i < chars.count ? chars[i] : nil }
@@ -37,6 +46,8 @@ struct JSONPathParser {
     }
 
     mutating func parseSegments() throws -> [PathSegment] {
+        try enter()
+        defer { depth -= 1 }
         var segs: [PathSegment] = []
         loop: while let c = peek() {
             switch c {
@@ -234,6 +245,8 @@ struct JSONPathParser {
     }
 
     mutating func parsePrimary() throws -> FilterExpr {
+        try enter()
+        defer { depth -= 1 }
         skipWS()
         if peek() == "(" {
             i += 1

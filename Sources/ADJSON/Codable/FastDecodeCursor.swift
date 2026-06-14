@@ -19,12 +19,7 @@ extension DecodeContext {
             let koff = Slot.low(ks), klen = Slot.length(ks)
             assertBytes(koff, klen)
             if Slot.flags(ks) & 1 == 0 {
-                // stdlib `elementsEqual` (not C `memcmp`) so the body stays `@inlinable`
-                // under InternalImportsByDefault; the optimizer lowers it to a bulk compare.
-                let candidate = UnsafeBufferPointer(start: bytes + koff, count: klen)
-                if klen == tlen, candidate.elementsEqual(UnsafeBufferPointer(start: target, count: tlen)) {
-                    found = valIdx
-                }
+                if klen == tlen, keyBytesEqual(bytes + koff, target, tlen) { found = valIdx }
             } else if unescapeString(bytes, koff, klen) == lit.description {
                 found = valIdx
             }

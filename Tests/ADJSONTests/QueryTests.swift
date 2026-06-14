@@ -15,6 +15,15 @@ private func doc(_ s: String) -> JSON { try! ADJSON.parse(s).root }
     #expect(j[pointer: "/a/b/9"].exists == false)
 }
 
+@Test func deepDescendantQueryDoesNotOverflow() throws {
+    // `$..x` over a 5k-deep object exercises the now-iterative `descend`; recursive descent
+    // would overflow the stack at this depth.
+    let depth = 5_000
+    let nested = String(repeating: #"{"x":"#, count: depth) + "1" + String(repeating: "}", count: depth)
+    let root = try ADJSON.parse(nested, options: JSONParseOptions(maxDepth: depth + 1)).root
+    #expect(try root.query("$..x").count == depth)
+}
+
 private let store = doc(
     #"""
     {"store":{"book":[{"title":"A","price":5,"tags":["x"]},{"title":"B","price":15},{"title":"C","price":8,"author":"Z"}],"bicycle":{"price":100}}}

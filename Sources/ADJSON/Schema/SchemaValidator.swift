@@ -11,7 +11,10 @@ struct SchemaValidator {
     }
 
     @discardableResult
-    func validate(_ index: Int, _ instance: JSON, _ loc: String, _ errors: inout [ValidationError]) -> Bool {
+    func validate(
+        _ index: Int, _ instance: JSON, _ loc: String, _ errors: inout [ValidationError],
+        _ activeRefs: Set<String> = []
+    ) -> Bool {
         let node = nodes[index]
 
         if let b = node.boolean {
@@ -26,11 +29,18 @@ struct SchemaValidator {
         }
         func passes(_ subIndex: Int, _ value: JSON) -> Bool {
             var ignored = [ValidationError]()
-            return validate(subIndex, value, loc, &ignored)
+            return validate(subIndex, value, loc, &ignored, activeRefs)
         }
 
+        // Follow a local `$ref`, guarding against cycles (a → b → a) that would otherwise
+        // recurse forever on the same instance. The key pairs the target subschema with the
+        // instance location; re-entering the same pair is a cycle, so we stop — the result is
+        // idempotent because the ancestor frame already validates this subschema here.
         if let ref = node.ref, let target = resolve(ref) {
-            if !validate(target, instance, loc, &errors) { ok = false }
+            let key = "\(target)@\(loc)"
+            if !activeRefs.contains(key), !validate(target, instance, loc, &errors, activeRefs.union([key])) {
+                ok = false
+            }
         }
 
         if let types = node.types, !types.contains(where: { instance.matchesSchemaType($0) }) {
@@ -75,10 +85,14 @@ struct SchemaValidator {
             var prefixCount = 0
             if let pi = node.prefixItems {
                 prefixCount = Swift.min(pi.count, elems.count)
-                for i in 0..<prefixCount where !validate(pi[i], elems[i], loc + "/\(i)", &errors) { ok = false }
+                for i in 0..<prefixCount where !validate(pi[i], elems[i], loc + "/\(i)", &errors, activeRefs) {
+                    ok = false
+                }
             }
             if let it = node.items {
-                for i in prefixCount..<elems.count where !validate(it, elems[i], loc + "/\(i)", &errors) { ok = false }
+                for i in prefixCount..<elems.count where !validate(it, elems[i], loc + "/\(i)", &errors, activeRefs) {
+                    ok = false
+                }
             }
             if let cont = node.contains {
                 var matched = 0
@@ -103,7 +117,7 @@ struct SchemaValidator {
                 for (k, sub) in props {
                     if let v = obj[k] {
                         evaluated.insert(k)
-                        if !validate(sub, v, loc + "/" + jsonPointerEscape(k), &errors) { ok = false }
+                        if !validate(sub, v, loc + "/" + jsonPointerEscape(k), &errors, activeRefs) { ok = false }
                     }
                 }
             }
@@ -111,13 +125,13 @@ struct SchemaValidator {
                 for (re, sub) in pp {
                     for (k, v) in obj where re.matches(k) {
                         evaluated.insert(k)
-                        if !validate(sub, v, loc + "/" + jsonPointerEscape(k), &errors) { ok = false }
+                        if !validate(sub, v, loc + "/" + jsonPointerEscape(k), &errors, activeRefs) { ok = false }
                     }
                 }
             }
             if let ap = node.additionalProperties {
                 for (k, v) in obj where !evaluated.contains(k) {
-                    if !validate(ap, v, loc + "/" + jsonPointerEscape(k), &errors) { ok = false }
+                    if !validate(ap, v, loc + "/" + jsonPointerEscape(k), &errors, activeRefs) { ok = false }
                 }
             }
             if let dr = node.dependentRequired {
@@ -127,13 +141,13 @@ struct SchemaValidator {
             }
             if let ds = node.dependentSchemas {
                 for (k, sub) in ds where obj[k] != nil {
-                    if !validate(sub, instance, loc, &errors) { ok = false }
+                    if !validate(sub, instance, loc, &errors, activeRefs) { ok = false }
                 }
             }
         }
 
         if let all = node.allOf {
-            for sub in all where !validate(sub, instance, loc, &errors) { ok = false }
+            for sub in all where !validate(sub, instance, loc, &errors, activeRefs) { ok = false }
         }
         if let any = node.anyOf, !any.contains(where: { passes($0, instance) }) {
             fail("anyOf: matched none")
@@ -147,8 +161,8 @@ struct SchemaValidator {
         }
         if let ic = node.ifSchema {
             if passes(ic, instance) {
-                if let t = node.thenSchema, !validate(t, instance, loc, &errors) { ok = false }
-            } else if let el = node.elseSchema, !validate(el, instance, loc, &errors) {
+                if let t = node.thenSchema, !validate(t, instance, loc, &errors, activeRefs) { ok = false }
+            } else if let el = node.elseSchema, !validate(el, instance, loc, &errors, activeRefs) {
                 ok = false
             }
         }

@@ -19,27 +19,9 @@ public struct JSONByteWriter {
     @inlinable public mutating func endArray() { bytes.append(0x5D) }
     @inlinable public mutating func comma() { bytes.append(0x2C) }
 
-    @inlinable public mutating func null() {
-        bytes.append(0x6E)
-        bytes.append(0x75)
-        bytes.append(0x6C)
-        bytes.append(0x6C)
-    }
+    @inlinable public mutating func null() { JSONOutput.appendNull(to: &bytes) }
 
-    @inlinable public mutating func bool(_ v: Bool) {
-        if v {
-            bytes.append(0x74)
-            bytes.append(0x72)
-            bytes.append(0x75)
-            bytes.append(0x65)
-        } else {
-            bytes.append(0x66)
-            bytes.append(0x61)
-            bytes.append(0x6C)
-            bytes.append(0x73)
-            bytes.append(0x65)
-        }
-    }
+    @inlinable public mutating func bool(_ v: Bool) { JSONOutput.appendBool(v, to: &bytes) }
 
     /// A statically-known object key: `"key":`.
     @inlinable public mutating func key(_ k: StaticString) {
@@ -51,19 +33,14 @@ public struct JSONByteWriter {
 
     /// A runtime object key (escaped) followed by `:`. Used for `Dictionary` keys.
     @inlinable public mutating func dynamicKey(_ k: String) {
-        appendString(k)
+        JSONOutput.appendString(k, to: &bytes)
         bytes.append(0x3A)
     }
 
-    @inlinable public mutating func string(_ v: String) { appendString(v) }
+    @inlinable public mutating func string(_ v: String) { JSONOutput.appendString(v, to: &bytes) }
 
     @inlinable public mutating func integer<T: FixedWidthInteger>(_ v: T) {
-        if v == 0 {
-            bytes.append(0x30)
-            return
-        }
-        if T.isSigned && v < 0 { bytes.append(0x2D) }
-        appendMagnitude(v.magnitude)
+        JSONOutput.appendInteger(v, to: &bytes)
     }
 
     @inlinable public mutating func double(_ v: Double) throws {
@@ -92,65 +69,5 @@ public struct JSONByteWriter {
         try v.encode(to: TapeEncoder(state: state))
         state.closeDownTo(0)
         bytes = writer.bytes
-    }
-
-    @usableFromInline mutating func appendMagnitude<U: UnsignedInteger & FixedWidthInteger>(_ value: U) {
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 40) { buf in
-            var n = value
-            var idx = 40
-            while n > 0 {
-                idx -= 1
-                buf[idx] = 0x30 + UInt8(truncatingIfNeeded: n % 10)
-                n /= 10
-            }
-            bytes.append(contentsOf: buf[idx..<40])
-        }
-    }
-
-    @usableFromInline mutating func appendString(_ s: String) {
-        bytes.append(0x22)
-        var str = s
-        str.withUTF8 { buf in
-            guard let p = buf.baseAddress else { return }
-            let n = buf.count
-            var runStart = 0
-            var i = 0
-            while i < n {
-                let b = p[i]
-                if b < 0x20 || b == 0x22 || b == 0x5C {
-                    if i > runStart {
-                        bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
-                    }
-                    appendEscape(b)
-                    i += 1
-                    runStart = i
-                } else {
-                    i += 1
-                }
-            }
-            if i > runStart {
-                bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
-            }
-        }
-        bytes.append(0x22)
-    }
-
-    @usableFromInline mutating func appendEscape(_ b: UInt8) {
-        bytes.append(0x5C)
-        switch b {
-        case 0x22: bytes.append(0x22)
-        case 0x5C: bytes.append(0x5C)
-        case 0x0A: bytes.append(0x6E)
-        case 0x0D: bytes.append(0x72)
-        case 0x09: bytes.append(0x74)
-        case 0x08: bytes.append(0x62)
-        case 0x0C: bytes.append(0x66)
-        default:
-            bytes.append(0x75)
-            bytes.append(0x30)
-            bytes.append(0x30)
-            bytes.append(b >> 4 < 10 ? 0x30 + (b >> 4) : 0x61 + (b >> 4) - 10)
-            bytes.append(b & 0xF < 10 ? 0x30 + (b & 0xF) : 0x61 + (b & 0xF) - 10)
-        }
     }
 }

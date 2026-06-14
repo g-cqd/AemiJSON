@@ -4,7 +4,7 @@
 /// Validate the multi-byte UTF-8 sequence starting at `j` (where `p[j] >= 0x80`),
 /// returning its length in bytes. Throws `JSONError.invalidUTF8` if malformed.
 @inline(__always)
-func utf8SequenceLength(_ p: UnsafePointer<UInt8>, _ j: Int, _ n: Int) throws -> Int {
+func utf8SequenceLength(_ p: UnsafePointer<UInt8>, _ j: Int, _ n: Int) throws(JSONError) -> Int {
     let b = p[j]
     let length: Int
     let lowerBound: UInt32

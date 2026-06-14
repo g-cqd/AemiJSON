@@ -19,11 +19,17 @@ enum JSONPathEvaluator {
     }
 
     static func descend(_ node: JSON, _ visit: (JSON) -> Void) {
-        visit(node)
-        if node.isArray {
-            for e in node.arrayValue { descend(e, visit) }
-        } else if node.isObject {
-            for v in node.objectValue.values { descend(v, visit) }
+        // Iterative preorder DFS: children are pushed reversed so they pop in document order,
+        // matching the former recursion exactly — but with no call-stack growth, so a
+        // descendant query (`..`) over a deeply nested document can't overflow the stack.
+        var stack = [node]
+        while let n = stack.popLast() {
+            visit(n)
+            if n.isArray {
+                for e in n.arrayValue.reversed() { stack.append(e) }
+            } else if n.isObject {
+                for v in n.objectValue.values.reversed() { stack.append(v) }
+            }
         }
     }
 

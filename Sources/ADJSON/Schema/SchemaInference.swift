@@ -101,20 +101,12 @@ private func render(_ acc: SchemaAccumulator) -> String {
     return "{\(parts.joined(separator: ","))}"
 }
 
+// Reuses the canonical encoder escaper (the single source of truth in `JSONOutput`) so the
+// rendered schema text escapes control characters identically to the rest of the library.
 private func schemaQuote(_ s: String) -> String {
-    var out = "\""
-    for ch in s.unicodeScalars {
-        switch ch {
-        case "\"": out += "\\\""
-        case "\\": out += "\\\\"
-        case "\n": out += "\\n"
-        case "\t": out += "\\t"
-        case "\r": out += "\\r"
-        default: out.unicodeScalars.append(ch)
-        }
-    }
-    out += "\""
-    return out
+    var out = [UInt8]()
+    JSONOutput.appendString(s, to: &out)
+    return String(decoding: out, as: UTF8.self)
 }
 
 extension JSONSchema {

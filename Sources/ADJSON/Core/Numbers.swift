@@ -1,19 +1,14 @@
-import Foundation
+// Number materialization over a byte range; to be replaced by Eisel-Lemire in a later phase.
 
-// Number materialization over a byte range. Doubles currently use libc strtod on a
-// stack copy (correct, no overrun); to be replaced by Eisel-Lemire in a later phase.
-
+// `Double(_:)` parses with fixed C-locale semantics, unlike libc `strtod`, which honours the
+// host `LC_NUMERIC` and would misread "1.5" as 1.0 under a comma-decimal locale (set by the
+// process or an interop library via `setlocale`). The scanner has already validated the
+// number's shape, so this only fails on out-of-range magnitudes, which round to ±inf exactly
+// as `strtod` did. Short numbers (≤15 UTF-8 bytes — the common case) use the inline
+// small-string buffer, so no heap allocation occurs on the hot path.
 @inline(__always)
 @usableFromInline
 func adParseDouble(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Double {
-    if length < 32 {
-        return withUnsafeTemporaryAllocation(of: CChar.self, capacity: 33) { buf in
-            guard let base = buf.baseAddress else { return .nan }
-            memcpy(base, p + offset, length)
-            base[length] = 0
-            return strtod(base, nil)
-        }
-    }
     let s = String(decoding: UnsafeBufferPointer(start: p + offset, count: length), as: UTF8.self)
     return Double(s) ?? .nan
 }

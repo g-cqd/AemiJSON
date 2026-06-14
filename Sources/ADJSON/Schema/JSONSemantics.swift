@@ -27,26 +27,32 @@ extension JSON {
 /// Structural equality used by `const`, `enum`, and `uniqueItems`. Numerically,
 /// 1 and 1.0 compare equal (JSON Schema value equality). Works across documents.
 func jsonSemanticEqual(_ a: JSON, _ b: JSON) -> Bool {
-    if a.isNull { return b.isNull }
-    if let x = a.bool { return b.bool == x }
-    if a.isNumberKind {
-        guard b.isNumberKind, let av = a.double, let bv = b.double else { return false }
-        return av == bv
-    }
-    if let x = a.string { return b.string == x }
-    if a.isArray {
-        guard b.isArray, a.count == b.count, let ae = a.array, let be = b.array else { return false }
-        for i in 0..<ae.count where !jsonSemanticEqual(ae[i], be[i]) { return false }
-        return true
-    }
-    if a.isObject {
-        guard b.isObject, let ao = a.object, let bo = b.object, ao.count == bo.count else { return false }
-        for (k, v) in ao {
-            guard let bv = bo[k], jsonSemanticEqual(v, bv) else { return false }
+    // Iterative: a work-stack of pairs left to compare replaces structural recursion, so equality
+    // of deeply nested values can't overflow the stack. Comparison order doesn't affect the result.
+    var stack: [(JSON, JSON)] = [(a, b)]
+    while let (x, y) = stack.popLast() {
+        if x.isNull {
+            if !y.isNull { return false }
+        } else if let xb = x.bool {
+            if y.bool != xb { return false }
+        } else if x.isNumberKind {
+            guard y.isNumberKind, let av = x.double, let bv = y.double, av == bv else { return false }
+        } else if let xs = x.string {
+            if y.string != xs { return false }
+        } else if x.isArray {
+            guard y.isArray, x.count == y.count, let xe = x.array, let ye = y.array else { return false }
+            for i in 0..<xe.count { stack.append((xe[i], ye[i])) }
+        } else if x.isObject {
+            guard y.isObject, let xo = x.object, let yo = y.object, xo.count == yo.count else { return false }
+            for (k, v) in xo {
+                guard let yv = yo[k] else { return false }
+                stack.append((v, yv))
+            }
+        } else {
+            return false
         }
-        return true
     }
-    return false
+    return true
 }
 
 func jsonPointerEscape(_ s: String) -> String {

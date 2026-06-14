@@ -51,6 +51,8 @@ public struct JSONPatch: Sendable {
             case .replace(let path, let value):
                 result = try result.replacing(path.tokens[...], value)
             case .move(let from, let path):
+                // RFC 6902 §4.4: a location cannot be moved into one of its own children.
+                guard !from.isProperPrefix(of: path) else { throw JSONPatchError.invalidOperation }
                 guard let moved = result.value(at: from) else { throw JSONPatchError.pathNotFound }
                 result = try result.removing(from.tokens[...])
                 result = try result.adding(path.tokens[...], moved)

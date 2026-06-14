@@ -1,5 +1,12 @@
 import Foundation
 
+/// Errors from parsing or resolving a JSON Pointer (RFC 6901) or Relative JSON Pointer.
+/// Distinct from `JSONPatchError` so the addressing layer doesn't depend on the patch layer.
+public enum JSONPointerError: Error, Sendable, Equatable {
+    case invalidSyntax
+    case notFound
+}
+
 /// RFC 6901 JSON Pointer. `""` is the whole document; otherwise a sequence of
 /// `/`-separated reference tokens with `~1`→`/` and `~0`→`~` unescaping.
 public struct JSONPointer: Sendable, Equatable {
@@ -12,14 +19,31 @@ public struct JSONPointer: Sendable, Equatable {
             tokens = []
             return
         }
-        guard string.hasPrefix("/") else {
-            throw JSONError.unexpectedCharacter(string.utf8.first ?? 0, at: 0)
-        }
+        guard string.hasPrefix("/") else { throw JSONPointerError.invalidSyntax }
         tokens = string.split(separator: "/", omittingEmptySubsequences: false).dropFirst().map(Self.unescape)
     }
 
     static func unescape(_ s: Substring) -> String {
         s.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+    }
+
+    /// Parse an RFC 6901 §4 array-index token: exactly `0` or `[1-9][0-9]*`. Rejects a
+    /// leading `+`, sign, leading zero, or surrounding whitespace that `Int(_:)` would
+    /// otherwise accept. Returns nil for `-` (the RFC 6902 "end of array" token) and any
+    /// non-conforming token.
+    static func arrayIndex(_ token: String) -> Int? {
+        let u = token.utf8
+        guard let first = u.first else { return nil }
+        if first == 0x30 { return u.count == 1 ? 0 : nil }  // "0", never "01"
+        guard first >= 0x31, first <= 0x39 else { return nil }
+        for b in u where b < 0x30 || b > 0x39 { return nil }
+        return Int(token)
+    }
+
+    /// True if `self` addresses a strict ancestor of `other`. RFC 6902 §4.4 forbids a
+    /// `move` whose `from` is a proper prefix of `path` (moving a value into its own child).
+    func isProperPrefix(of other: JSONPointer) -> Bool {
+        tokens.count < other.tokens.count && other.tokens.starts(with: tokens)
     }
 }
 
@@ -30,7 +54,7 @@ extension JSON {
         for token in pointer.tokens {
             if current.isObject {
                 current = current[token]
-            } else if current.isArray, let i = Int(token) {
+            } else if current.isArray, let i = JSONPointer.arrayIndex(token) {
                 current = current[index: i]
             } else {
                 return JSON.missing(doc)

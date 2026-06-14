@@ -32,6 +32,11 @@ let testSettings: [SwiftSetting] =
 
 let package = Package(
     name: "ADJSON",
+    // macOS is intentionally one generation below the device platforms: everything the library
+    // needs is available there (`Synchronization`'s Atomic/Mutex ship in macOS 15, and
+    // `Span`/`RawSpan` back-deploy further still), so there's no reason to force macOS 26. Types
+    // gated to the 2025 SDKs (`UTF8Span`, `InlineArray`) are therefore not adopted yet — that
+    // would raise this floor or fragment the code with availability shims.
     platforms: [
         .macOS(.v15),
         .iOS(.v26),

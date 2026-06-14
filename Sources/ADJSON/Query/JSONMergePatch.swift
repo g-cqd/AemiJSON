@@ -19,6 +19,6 @@ public enum JSONMergePatch {
     }
 
     public static func apply(_ patchData: Data, toData targetData: Data) throws -> Data {
-        apply(try JSONValue(parsing: patchData), to: try JSONValue(parsing: targetData)).encoded()
+        try apply(try JSONValue(parsing: patchData), to: try JSONValue(parsing: targetData)).encoded()
     }
 }

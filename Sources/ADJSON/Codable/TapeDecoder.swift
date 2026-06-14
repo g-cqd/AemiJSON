@@ -110,7 +110,7 @@ final class DecodeContext {
             if Slot.flags(ks) & 1 == 1 {
                 matched = unescapeString(bytes, koff, klen) == key
             } else {
-                matched = key.utf8.elementsEqual(UnsafeBufferPointer(start: bytes + koff, count: klen))
+                matched = keyBytesEqual(key, bytes + koff, klen)
             }
             if matched { found = valIdx }
             i = nextIndex(after: valIdx)
