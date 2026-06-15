@@ -6,19 +6,32 @@ How ADJSON is built, and the reasoning behind the choices that shaped it.
 
 ADJSON ships as two layers. **`ADJSONCore`** is the engine — the tape parser, lazy ``JSON`` /
 ``JSONDocument`` / ``JSONValue``, and the query types (``JSONPath``, ``JSONPointer``,
-``JSONPatch``, ``JSONMergePatch``) — and depends on **nothing**: no Foundation, no swift-syntax.
-**`ADJSON`** is the umbrella that re-exports the core (`@_exported import`) and layers the `Data`
-conveniences, the Codable coders, JSON Schema, and the `@JSONCodable` / `@Schemable` macros on top.
+``JSONPatch``, ``JSONMergePatch``) — and is **Foundation-free and swift-syntax-free**. Its one
+dependency is **swift-collections' `OrderedCollections`**, which backs the order-preserving eager
+``JSONValue/object(_:)``: it is itself Foundation-free with zero transitive package dependencies
+(measured), so the core stays lean and portable. **`ADJSON`** is the umbrella that re-exports the
+core (`@_exported import`) and layers the `Data` conveniences, the Codable coders, JSON Schema, and
+the `@JSONCodable` / `@Schemable` macros on top.
 
 The split keeps Foundation at the boundary. The byte-scanning and encoding hot paths already
 operate on `UnsafePointer<UInt8>` / `[UInt8]`, so the only Foundation type in the engine's public
 API was `Data` — which moves to the umbrella as a thin overload (`parse(Array(data))`). The
 Codable error types (`DecodingError` / `EncodingError`) are standard-library, not Foundation, so
-the core's encode path keeps them without pulling Foundation in. A strict zero-dependency consumer
-can therefore depend on `ADJSONCore` alone; everyone else uses `ADJSON` and sees the same flat API
-as before. Internals that the umbrella's inlinable fast paths reach across the module boundary are
-exposed with `package` (or `public`, where they are named by code that inlines into *your* module),
-so the split is performance-neutral.
+the core's encode path keeps them without pulling Foundation in. A consumer that wants the lean,
+Foundation-free engine can therefore depend on `ADJSONCore` alone; everyone else uses `ADJSON` and
+sees the same flat API as before. Internals that the umbrella's inlinable fast paths reach across
+the module boundary are exposed with `package` (or `public`, where they are named by code that
+inlines into *your* module), so the split is performance-neutral.
+
+### Why `OrderedDictionary` for eager objects
+
+The lazy ``JSON`` view always preserved member order (it walks the tape), but the eager
+``JSONValue`` used a plain `Dictionary`, which dropped it — so materialize → mutate → re-encode
+could reorder keys. Switching ``JSONValue/object(_:)`` to `OrderedDictionary` fixes that **and** is
+*faster* for the small objects JSON is made of: its compact array-backed layout beat `Dictionary`'s
+hashing by ~33% on a 10-key build+lookup micro-benchmark, ~2.5% on end-to-end materialization, and
+~6.7% on encode. Object value-equality stays order-insensitive (JSON objects are unordered), so the
+order is preserved for serialization without making `==` order-sensitive.
 
 ## The tape
 

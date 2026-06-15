@@ -1,9 +1,6 @@
 import ADJSON
 import Foundation
-
-#if canImport(OrderedCollections)
-    import OrderedCollections
-#endif
+import OrderedCollections
 
 // MARK: - Bench harness
 
@@ -371,45 +368,44 @@ for file in ["twitter.json", "citm_catalog.json", "canada.json"] {
 }
 print(corpusGatePassed ? "corpus gate: PASS" : "corpus gate: FAIL")
 
-// MARK: - G2 posture data: Dictionary vs OrderedDictionary for the eager object model (ADJSON_DEV)
+// MARK: - Eager-object backing: Dictionary vs OrderedDictionary (the G2 adoption rationale)
 
-#if canImport(OrderedCollections)
-    section("G2  Dictionary vs OrderedDictionary  (eager-object model — ADJSON_DEV only)")
-    // Representative small object: the ~10 string keys of the User/Profile shape, built and fully
-    // looked up many times (the JSONValue.object materialization + member-access pattern).
-    let objKeys = [
-        "id", "login", "name", "email", "followers", "following", "isAdmin", "score", "tags", "profile",
-    ]
-    let objReps = 200_000
-    let objBytes = objReps * objKeys.reduce(0) { $0 + $1.utf8.count }
+section("OBJECT MODEL  Dictionary vs OrderedDictionary  (eager JSONValue.object backing)")
+// Representative small object: the ~10 string keys of the User/Profile shape, built and fully
+// looked up many times (the JSONValue.object materialization + member-access pattern). This is why
+// JSONValue.object is an OrderedDictionary — faster for small objects *and* order-preserving.
+let objKeys = [
+    "id", "login", "name", "email", "followers", "following", "isAdmin", "score", "tags", "profile",
+]
+let objReps = 200_000
+let objBytes = objReps * objKeys.reduce(0) { $0 + $1.utf8.count }
 
-    let dictBuild = bench("Dictionary build+lookup x10", bytes: objBytes) {
-        var sink = 0
-        for _ in 0..<objReps {
-            var d = [String: Int](minimumCapacity: objKeys.count)
-            for (i, k) in objKeys.enumerated() { d[k] = i }
-            for k in objKeys { sink &+= d[k] ?? 0 }
-        }
-        blackHole(sink)
+let dictBuild = bench("Dictionary build+lookup x10", bytes: objBytes) {
+    var sink = 0
+    for _ in 0..<objReps {
+        var d = [String: Int](minimumCapacity: objKeys.count)
+        for (i, k) in objKeys.enumerated() { d[k] = i }
+        for k in objKeys { sink &+= d[k] ?? 0 }
     }
-    let orderedBuild = bench("OrderedDictionary build+lookup x10", bytes: objBytes) {
-        var sink = 0
-        for _ in 0..<objReps {
-            var d = OrderedDictionary<String, Int>(minimumCapacity: objKeys.count)
-            for (i, k) in objKeys.enumerated() { d[k] = i }
-            for k in objKeys { sink &+= d[k] ?? 0 }
-        }
-        blackHole(sink)
+    blackHole(sink)
+}
+let orderedBuild = bench("OrderedDictionary build+lookup x10", bytes: objBytes) {
+    var sink = 0
+    for _ in 0..<objReps {
+        var d = OrderedDictionary<String, Int>(minimumCapacity: objKeys.count)
+        for (i, k) in objKeys.enumerated() { d[k] = i }
+        for k in objKeys { sink &+= d[k] ?? 0 }
     }
-    report(dictBuild, vs: nil)
-    report(orderedBuild, vs: dictBuild)
+    blackHole(sink)
+}
+report(dictBuild, vs: nil)
+report(orderedBuild, vs: dictBuild)
 
-    var ordered = OrderedDictionary<String, Int>()
-    for (i, k) in objKeys.enumerated() { ordered[k] = i }
-    let plain = Dictionary(uniqueKeysWithValues: objKeys.enumerated().map { ($1, $0) })
-    print("advantage      : OrderedDictionary preserves insertion order -> \(Array(ordered.keys) == objKeys)")
-    print("                 plain Dictionary preserves it -> \(Array(plain.keys) == objKeys) (order is unspecified)")
-#endif
+var ordered = OrderedDictionary<String, Int>()
+for (i, k) in objKeys.enumerated() { ordered[k] = i }
+let plain = Dictionary(uniqueKeysWithValues: objKeys.enumerated().map { ($1, $0) })
+print("advantage      : OrderedDictionary preserves insertion order -> \(Array(ordered.keys) == objKeys)")
+print("                 plain Dictionary preserves it -> \(Array(plain.keys) == objKeys) (order is unspecified)")
 
 let metrics = ADJSON.Metrics.snapshot()
 print("\nSynchronization metrics: documents=\(metrics.documents) bytes=\(metrics.bytes)")

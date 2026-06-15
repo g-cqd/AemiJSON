@@ -1,3 +1,5 @@
+import OrderedCollections
+
 // RFC 6901 JSON Pointer access and the tree-mutation primitives behind JSON Patch
 // (RFC 6902). These live in the Query layer — not in `Value` — so the value model stays
 // pure data + (de)serialization and the addressing/patch error domain is owned here.

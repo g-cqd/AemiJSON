@@ -1,3 +1,5 @@
+import OrderedCollections
+
 // SQLite JSON1-dialect functions layered on `SQLiteJSONPath`. Read accessors operate on the lazy
 // `JSON` view; mutations produce a new `JSONValue` tree (SQLite's JSON functions are pure — they
 // return a modified copy rather than editing in place). The table-valued `json_each` / `json_tree`

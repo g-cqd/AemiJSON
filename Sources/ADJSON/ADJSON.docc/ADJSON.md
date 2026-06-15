@@ -38,8 +38,9 @@ passes the full nst/JSONTestSuite (318/318).
 - **Batteries included.** Schema (Draft 2020-12 subset), JSONPath (RFC 9535), Pointer
   (RFC 6901), Patch (RFC 6902), Merge Patch (RFC 7396), Relative Pointer.
 - **Concurrency-safe.** Immutable documents; parallel array decode across cores.
-- **Lean.** The engine ships as a separate, dependency-free `ADJSONCore` product — no Foundation,
-  no swift-syntax — for consumers that want a minimal JSON core. See <doc:Architecture>.
+- **Lean.** The engine ships as a separate, Foundation-free `ADJSONCore` product — no Foundation,
+  no swift-syntax; its one dependency, `OrderedCollections`, is itself Foundation-free with no
+  transitive deps — for consumers that want a minimal JSON core. See <doc:Architecture>.
 
 ## Topics
 

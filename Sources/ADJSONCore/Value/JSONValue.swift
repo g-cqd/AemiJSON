@@ -1,3 +1,5 @@
+public import OrderedCollections
+
 /// A fully-materialized, mutable JSON value tree. The lazy `JSON` view is read-only
 /// over a parsed document; `JSONValue` is the editable counterpart used by JSON Patch
 /// (RFC 6902) and JSON Merge Patch (RFC 7396).
@@ -14,7 +16,7 @@ public enum JSONValue: Sendable, Equatable {
     case number(Double)
     case string(String)
     case array([JSONValue])
-    case object([String: JSONValue])
+    case object(OrderedDictionary<String, JSONValue>)
 }
 
 extension JSONValue {
@@ -32,7 +34,10 @@ extension JSONValue {
         case let (.number(a), .int(b)): return a == Double(b)
         case let (.string(a), .string(b)): return a == b
         case let (.array(a), .array(b)): return a == b
-        case let (.object(a), .object(b)): return a == b
+        case let (.object(a), .object(b)):
+            // JSON objects are unordered, so compare by membership (not OrderedDictionary's
+            // order-sensitive `==`); element values recurse through this operator.
+            return a.count == b.count && a.allSatisfy { b[$0.key] == $0.value }
         default: return false
         }
     }
@@ -63,7 +68,7 @@ extension JSONValue {
             json.forEachElement { elements.append(materialize($0, depth: depth + 1)) }
             return .array(elements)
         }
-        var members = [String: JSONValue](minimumCapacity: json.count)
+        var members = OrderedDictionary<String, JSONValue>(minimumCapacity: json.count)
         json.forEachMember { members[$0] = materialize($1, depth: depth + 1) }
         return .object(members)
     }
@@ -116,7 +121,7 @@ extension JSONValue {
         let keys: [String]
         var next = 0
         var array: [JSONValue]
-        var object: [String: JSONValue]
+        var object: OrderedDictionary<String, JSONValue>
         var openKey: String?
 
         init(_ node: JSON) {
@@ -134,7 +139,7 @@ extension JSONValue {
                 keys = ks
                 nodes = vs
                 array = []
-                object = [String: JSONValue](minimumCapacity: c)
+                object = OrderedDictionary<String, JSONValue>(minimumCapacity: c)
             } else {
                 isObject = false
                 var vs: [JSON] = []
@@ -144,7 +149,7 @@ extension JSONValue {
                 keys = []
                 array = []
                 array.reserveCapacity(c)
-                object = [:]
+                object = [:]  // OrderedDictionary empty literal
             }
         }
 

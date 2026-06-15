@@ -45,8 +45,8 @@ Reference the namespaced types as `ADJSON.JSONDecoder` etc. where Foundation is 
 ### Foundation-free core
 
 Want only the engine — tape parsing, lazy navigation, `JSONValue`, and JSONPath/Pointer/Patch —
-with **no Foundation and no swift-syntax** in your dependency graph? Depend on the `ADJSONCore`
-product instead:
+with **no Foundation and no swift-syntax** in your dependency graph (just `OrderedCollections`,
+itself Foundation-free with no transitive deps)? Depend on the `ADJSONCore` product instead:
 
 ```swift
 .target(name: "MyEngine", dependencies: [.product(name: "ADJSONCore", package: "ADJSON")])

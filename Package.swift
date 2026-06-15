@@ -43,20 +43,18 @@ let isDev = Context.environment["ADJSON_DEV"] != nil
 let isFuzz = Context.environment["ADJSON_FUZZ"] != nil
 
 var packageDependencies: [Package.Dependency] = [
-    .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0")
+    .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0"),
+    // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
+    // with zero transitive package dependencies (measured), so the core stays portable; it is the
+    // one shipped dependency of `ADJSONCore` beyond the standard library.
+    .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"),
 ]
 if isDev {
     packageDependencies.append(
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.0.0"))
-    // Dev-only: used by the benchmark target to weigh OrderedDictionary vs Dictionary for eager
-    // objects (the G2 posture decision). Never resolved by consumers (gated behind `ADJSON_DEV`).
-    packageDependencies.append(
-        .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"))
 }
 
-// Benchmark target extras under `ADJSON_DEV` (OrderedCollections for the eager-object comparison).
-let benchmarkExtraDependencies: [Target.Dependency] =
-    isDev ? [.product(name: "OrderedCollections", package: "swift-collections")] : []
+let orderedCollections: Target.Dependency = .product(name: "OrderedCollections", package: "swift-collections")
 
 // Build-time formatting enforcement attaches to the library only in dev/CI. A build-tool plugin on
 // a library target would otherwise run for everyone who depends on ADJSON, so it stays gated.
@@ -81,9 +79,9 @@ let package = Package(
     products: [
         // The full library: the engine plus Foundation interop, Codable, Schema, and the macros.
         .library(name: "ADJSON", targets: ["ADJSON"]),
-        // The dependency-free engine on its own (no Foundation, no swift-syntax): tape parsing,
-        // lazy navigation, JSONValue, and JSONPath/Pointer/Patch. For consumers that want a lean,
-        // Foundation-free JSON core (e.g. zero-dependency libraries).
+        // The engine on its own — Foundation-free and swift-syntax-free (its one dependency,
+        // OrderedCollections, is itself Foundation-free with no transitive deps): tape parsing, lazy
+        // navigation, JSONValue, and JSONPath/Pointer/Patch. For consumers that want a lean core.
         .library(name: "ADJSONCore", targets: ["ADJSONCore"]),
     ],
     dependencies: packageDependencies,
@@ -98,15 +96,15 @@ let package = Package(
             swiftSettings: strictSettings
         ),
         // The Foundation-free, swift-syntax-free engine: tape parse, lazy navigation
-        // (JSONDocument/JSON/JSONValue), and query (JSONPath/Pointer/Patch). Zero
-        // dependencies, so a strict zero-dependency consumer can adopt just this.
+        // (JSONDocument/JSON/JSONValue), and query (JSONPath/Pointer/Patch). Depends only on
+        // OrderedCollections (Foundation-free, no transitive deps) for order-preserving eager objects.
         .target(
-            name: "ADJSONCore", dependencies: [], swiftSettings: strictSettings),
+            name: "ADJSONCore", dependencies: [orderedCollections], swiftSettings: strictSettings),
         .target(
-            name: "ADJSON", dependencies: ["ADJSONCore", "ADJSONMacros"], swiftSettings: strictSettings,
-            plugins: adjsonBuildPlugins),
+            name: "ADJSON", dependencies: ["ADJSONCore", "ADJSONMacros", orderedCollections],
+            swiftSettings: strictSettings, plugins: adjsonBuildPlugins),
         .executableTarget(
-            name: "ADJSONBenchmarks", dependencies: ["ADJSON"] + benchmarkExtraDependencies,
+            name: "ADJSONBenchmarks", dependencies: ["ADJSON", orderedCollections],
             swiftSettings: benchSettings),
         .testTarget(
             name: "ADJSONTests",
