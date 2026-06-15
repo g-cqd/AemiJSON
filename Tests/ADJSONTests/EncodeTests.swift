@@ -101,10 +101,15 @@ private let samples: [E] = [
     #expect(throws: EncodingError.self) { try JSONValue.number(.nan).encoded() }
 }
 
-@Test func jsonValueMaterializesDeepDocumentWithoutOverflow() throws {
-    // Parsed with a large maxDepth, the document nests far deeper than the call stack tolerates;
-    // the now-iterative `JSONValue.init(_:)` must materialize it without recursing. (`==` on the
-    // result is itself recursive, so navigate iteratively instead.)
+// Pinned to the main actor: `JSONValue.init(_:)` recurses on its fast path up to `maxFastDepth`
+// (128) before switching to the explicit-stack builder, and each level is several stack frames
+// (`materialize` → `forEachMember` → `withBytePointer` → …). ASan inflates those past the
+// swift-testing cooperative-pool thread's ~512 KB budget, so the fast-path recursion would overflow
+// before the iterative fallback engages. The 8 MB main-thread stack keeps it safe.
+@MainActor @Test func jsonValueMaterializesDeepDocumentWithoutOverflow() throws {
+    // Parsed with a large maxDepth, the document nests far deeper than the fast-path recursion cap;
+    // `JSONValue.init(_:)` must hand the deep tail to its iterative builder rather than recursing all
+    // the way down. (`==` on the result is itself recursive, so navigate iteratively instead.)
     let depth = 5_000
     let nested = String(repeating: #"{"x":"#, count: depth) + "1" + String(repeating: "}", count: depth)
     let root = try ADJSON.parse(nested, options: JSONParseOptions(maxDepth: depth + 1)).root
@@ -118,12 +123,13 @@ private let samples: [E] = [
     #expect(cursor == .number(1))
 }
 
-@Test func jsonValueEncodesDeepTreeIteratively() throws {
+// Pinned to the main actor (8 MB stack): round-tripping the tree re-materializes it
+// (`JSONValue.init` recurses up to `maxFastDepth` = 128 on its fast path) and the deep eager tree is
+// torn down by recursive ARC at scope exit — both overflow the swift-testing cooperative-pool
+// thread's ~512 KB stack once ASan inflates frames.
+@MainActor @Test func jsonValueEncodesDeepTreeIteratively() throws {
     // The iterative writer serializes well beyond the old 512 cap without recursing. 1000 nested
     // objects (≈2× Foundation's hard 512) round-trip through parse → materialize → re-encode.
-    // (Bounded at 1000 here only because the *test* thread's small stack limits the bulk ARC
-    // deallocation of the deep JSONValue tree at scope exit — the writer itself is iterative and
-    // handles hundreds of thousands of levels on the main thread; see the depth-safety harness.)
     let depth = 1000
     var deep = JSONValue.number(1)
     for _ in 0..<depth { deep = .object(["x": deep]) }

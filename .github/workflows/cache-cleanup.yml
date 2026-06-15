@@ -1,0 +1,74 @@
+# Bounds the repository's GitHub Actions cache so it can't creep up to the 10 GB hard limit, where
+# GitHub starts LRU-evicting caches (thrashing the warm ones CI depends on). The CI workflow saves a
+# fresh ~400 MB SwiftPM/`.build` cache per scope — build, release, the four platform builds, both
+# sanitizers, benchmarks, docs — on every source-changing commit, because each key embeds
+# `hashFiles('Sources/**', …)`. Left alone, a couple of commits exhaust the quota. This keeps only the
+# most-recently-used caches up to a budget and deletes the cold tail (older generations), and clears a
+# PR's caches as soon as it closes.
+name: Cache cleanup
+
+on:
+  # After each CI run completes, trim back under budget — keeps the freshest per-scope caches warm and
+  # drops the previous generations that source-hash key churn would otherwise leave piling up.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  # A merged/closed PR's caches are orphaned (its ref is gone); delete them right away.
+  pull_request:
+    types: [closed]
+  # Safety net in case no CI runs land for a while.
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: write # required to delete caches via the API
+  contents: read
+
+# Never run two pruners at once (they'd race on the same delete calls); don't cancel an in-flight one.
+concurrency:
+  group: cache-cleanup
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete caches for the closed PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          echo "Deleting caches scoped to $REF"
+          gh cache list --repo "$REPO" --ref "$REF" --limit 100 --json id --jq '.[].id' \
+            | while read -r id; do
+                [ -n "$id" ] && gh cache delete "$id" --repo "$REPO" || true
+              done
+
+      - name: Prune caches to stay under budget
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # Keep the most-recently-used caches up to this budget; delete the rest. 6 GiB leaves a wide
+          # margin under the 10 GB hard limit, while comfortably fitting one full generation of every
+          # scope's warm cache (~11 scopes × ~0.4 GB), so incremental builds stay fast.
+          BUDGET_BYTES: "6442450944"
+        run: |
+          gh cache list --repo "$REPO" --limit 1000 \
+            --json id,key,sizeInBytes,lastAccessedAt > caches.json
+          total=$(jq '[.[].sizeInBytes] | add // 0' caches.json)
+          count=$(jq 'length' caches.json)
+          echo "Current usage: $(( total / 1024 / 1024 )) MiB across $count caches (budget $(( BUDGET_BYTES / 1024 / 1024 )) MiB)"
+          # Sort newest-used first, accumulate sizes, and mark everything past the budget for deletion.
+          jq -r --argjson budget "$BUDGET_BYTES" '
+            sort_by(.lastAccessedAt) | reverse
+            | reduce .[] as $c ({sum: 0, ids: []};
+                .sum += $c.sizeInBytes
+                | if .sum > $budget then .ids += [$c.id] else . end)
+            | .ids[]' caches.json \
+          | while read -r id; do
+              [ -n "$id" ] && { echo "Deleting over-budget cache $id"; gh cache delete "$id" --repo "$REPO" || true; }
+            done

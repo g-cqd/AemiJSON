@@ -101,12 +101,16 @@ struct DepthSafetyTests {
         // cap the validator fails CLOSED (records an error, returns invalid) rather than crashing.
         let schemaJSON = ##"{"$ref":"#/$defs/a","$defs":{"a":{"type":"array","items":{"$ref":"#/$defs/a"}}}}"##
         let schema = try JSONSchema(parsing: schemaJSON)
-        // Instance nested deeper than the (low) cap; `validate` frames are heavy (a `SchemaNode`
-        // copy each), so a low cap keeps the guard firing well within the small test thread's stack.
-        let dInstance = 60
+        // Instance nested deeper than the (low) cap. `validate` frames are heavy (a `SchemaNode`
+        // copy each) and this runs on a swift-testing cooperative-pool thread (~512 KB stack), so the
+        // cap must keep recursion shallow enough that the GUARD — not the stack — stops the descent.
+        // The threshold is sanitizer-sensitive: a debug frame overflowed a small worker stack around
+        // ~50 frames, but ASan inflates each frame ~2-3×, dropping the ceiling to ~20. A cap of 8
+        // (≈9 frames; ~2 frames per instance level) keeps a wide margin under ASan while still firing.
+        let dInstance = 24
         let it = String(repeating: "[", count: dInstance) + String(repeating: "]", count: dInstance)
         let instance = try ADJSON.parse(it, options: JSONParseOptions(maxDepth: dInstance + 1)).root
-        var validator = SchemaValidator(nodes: schema.nodes, registry: schema.registry, maxValidationDepth: 30)
+        let validator = SchemaValidator(nodes: schema.nodes, registry: schema.registry, maxValidationDepth: 8)
         var path = [String]()
         var errors = [ValidationError]()
         let ok = validator.validate(schema.rootIndex, instance, &path, &errors)
@@ -160,10 +164,14 @@ struct DepthSafetyTests {
         #expect(try encoder.encode([1, 2, 3]) == Data("[1,2,3]".utf8))
     }
 
-    @Test func patchAndMergeBoundDeepRecursion() throws {
+    // Pinned to the main actor: `maxMutationDepth` (256) is sized for the main-thread stack budget,
+    // so exercising it needs a stack that can actually hold ~256 frames. swift-testing's default
+    // cooperative-pool thread (~512 KB) can't once ASan inflates each frame ~2-3×, so the recursion
+    // would overflow before the guard fires. The 8 MB main-thread stack keeps the GUARD — not the
+    // stack — in control.
+    @MainActor @Test func patchAndMergeBoundDeepRecursion() throws {
         // JSON Patch pointer mutation recurses once per path token; a pointer deeper than the cap
-        // over a matching tree must throw `JSONPatchError.depthExceeded`, not overflow. (Depth kept
-        // above the 256 cap but within the test thread's value-tree dealloc headroom.)
+        // over a matching tree must throw `JSONPatchError.depthExceeded`, not overflow.
         let d = 300
         var target: JSONValue = .int(0)
         for _ in 0..<d { target = .object(["a": target]) }

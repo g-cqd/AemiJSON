@@ -157,6 +157,10 @@ if isFuzz {
             ],
             linkerSettings: [.unsafeFlags(["-sanitize=fuzzer"])]
         ))
+    // Declare the explicit executable product so `swift build --product ADJSONFuzz` links the binary.
+    // (`--target` only compiles the module: with `-parse-as-library` the `main` comes from libFuzzer
+    // at link time, so without a product to drive the link no executable is produced.)
+    package.products.append(.executable(name: "ADJSONFuzz", targets: ["ADJSONFuzz"]))
 }
 
 if isDev {

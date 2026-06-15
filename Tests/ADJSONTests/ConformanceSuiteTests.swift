@@ -15,7 +15,10 @@ struct SuiteCase: Sendable, CustomTestStringConvertible {
 private func loadSuite() -> [SuiteCase] {
     guard let urls = Bundle.module.urls(forResourcesWithExtension: "json", subdirectory: "Resources/JSONTestSuite")
     else { return [] }
-    return urls.compactMap { url in
+    return urls.compactMap { entry -> SuiteCase? in
+        // On Linux, `Bundle.urls(forResourcesWithExtension:subdirectory:)` yields `NSURL`; bridge to
+        // `URL` explicitly (a no-op on Darwin) so `Data(contentsOf:)` resolves on both platforms.
+        let url = entry as URL
         guard let data = try? Data(contentsOf: url) else { return nil }
         return SuiteCase(name: url.lastPathComponent, data: data)
     }

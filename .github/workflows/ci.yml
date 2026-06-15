@@ -260,7 +260,10 @@ jobs:
       - name: Build fuzz target
         env:
           ADJSON_FUZZ: "1"
-        run: swift build --target ADJSONFuzz
+        # Build the executable PRODUCT, not the target: `ADJSONFuzz` is `-parse-as-library` (its
+        # `main` is supplied by the libFuzzer runtime at link time), so `swift build --target` only
+        # compiles the module and never links the binary. `--product` forces the executable link.
+        run: swift build --product ADJSONFuzz
       - name: Assemble seed corpus from vendored corpora + CTS
         run: |
           mkdir -p corpus
@@ -274,7 +277,20 @@ jobs:
         env:
           ADJSON_FUZZ: "1"
         run: |
-          BIN="$(swift build --target ADJSONFuzz --show-bin-path)/ADJSONFuzz"
+          BINDIR="$(swift build --product ADJSONFuzz --show-bin-path)"
+          BIN="$BINDIR/ADJSONFuzz"
+          # Resilient locate: if the binary isn't at the reported bin path, search the build tree.
+          if [ ! -x "$BIN" ]; then
+            echo "::warning::fuzz binary not at $BIN; searching .build"
+            ls -la "$BINDIR" 2>/dev/null || true
+            BIN="$(find .build -type f -name ADJSONFuzz -perm -u+x 2>/dev/null | head -1)"
+          fi
+          if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
+            echo "::error::ADJSONFuzz executable not found after build"
+            find .build -name 'ADJSONFuzz*' 2>/dev/null || true
+            exit 1
+          fi
+          echo "Running fuzz binary: $BIN"
           "$BIN" corpus -max_total_time=300 -timeout=10 -rss_limit_mb=2048 -artifact_prefix=crash-
       - name: Upload crash reproducers
         if: failure()
