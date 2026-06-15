@@ -2,14 +2,40 @@
 /// over a parsed document; `JSONValue` is the editable counterpart used by JSON Patch
 /// (RFC 6902) and JSON Merge Patch (RFC 7396).
 ///
-/// Numbers are held as `Double`; integers beyond 2^53 lose precision (documented).
+/// An integer-shaped number that fits a signed 64-bit `Int64` is held losslessly as ``int(_:)`` —
+/// so a 64-bit ID like `9223372036854775807` survives a parse → encode round-trip exactly. Other
+/// numbers (fractions, exponents, and magnitudes beyond `Int64`, e.g. a `UInt64 > Int64.max`) are
+/// held as ``number(_:)`` (`Double`) and lose precision above 2^53, as documented. `.int(n)` and
+/// `.number(Double(n))` compare equal, so the two integer spellings interoperate.
 public enum JSONValue: Sendable, Equatable {
     case null
     case bool(Bool)
+    case int(Int64)
     case number(Double)
     case string(String)
     case array([JSONValue])
     case object([String: JSONValue])
+}
+
+extension JSONValue {
+    // Custom value equality: `.int` and `.number` are the same JSON number domain, so they compare
+    // numerically (`.int(5) == .number(5.0)`), which keeps every hand-built `.number(...)` test in
+    // step with parsed integers (now `.int`). Containers delegate to `Array`/`Dictionary` `==`,
+    // which recurse through this operator element-wise (no manual structural recursion here).
+    public static func == (lhs: JSONValue, rhs: JSONValue) -> Bool {
+        switch (lhs, rhs) {
+        case (.null, .null): return true
+        case let (.bool(a), .bool(b)): return a == b
+        case let (.int(a), .int(b)): return a == b
+        case let (.number(a), .number(b)): return a == b
+        case let (.int(a), .number(b)): return Double(a) == b
+        case let (.number(a), .int(b)): return a == Double(b)
+        case let (.string(a), .string(b)): return a == b
+        case let (.array(a), .array(b)): return a == b
+        case let (.object(a), .object(b)): return a == b
+        default: return false
+        }
+    }
 }
 
 extension JSONValue {
@@ -70,6 +96,9 @@ extension JSONValue {
     private static func scalarValue(_ json: JSON) -> JSONValue? {
         if json.isNull { return .null }
         if let b = json.bool { return .bool(b) }
+        // An integer-shaped token within Int64 keeps full precision as `.int`; a fraction/exponent,
+        // or a magnitude beyond Int64, parses to `nil` here and falls through to the `Double` model.
+        if let i = json.integer(Int64.self) { return .int(i) }
         if let d = json.double { return .number(d) }
         if let s = json.string { return .string(s) }
         if json.isArray || json.isObject { return nil }
@@ -180,6 +209,71 @@ extension JSONValue {
     }
 
     func write(into writer: JSONWriter, depth: Int, options: JSONEncodingOptions) throws {
+        // Compact + declaration-order is the overwhelmingly common case; a shallow tree serializes
+        // fastest by direct recursion straight into the writer (no `WriteOp` buffering — the same
+        // regression the eager-tree parse had). Pretty/sorted output, or any subtree past
+        // `maxFastDepth`, takes the iterative walk below; a deep subtree is handed off to it
+        // mid-recursion, so the call stack stays bounded and the emitted bytes are identical either
+        // way. The 512 depth cap is enforced on the iterative path (recursion never reaches it).
+        if !options.prettyPrinted, options.keyOrder == .declaration {
+            try writeCompact(self, into: writer, depth: depth, options: options)
+        } else {
+            try writeIterative(into: writer, depth: depth, options: options)
+        }
+    }
+
+    // Direct-recursion compact serializer: emits scalars and containers straight into the writer.
+    // A child at or past `maxFastDepth` is delegated to the iterative walk (same writer, same
+    // bytes), so real-world shallow trees never pay the explicit-stack overhead and deep ones still
+    // can't overflow the call stack.
+    private func writeCompact(
+        _ value: JSONValue, into writer: JSONWriter, depth: Int, options: JSONEncodingOptions
+    ) throws {
+        switch value {
+        case .null:
+            writer.writeNull()
+        case .bool(let b):
+            writer.writeBool(b)
+        case .int(let i):
+            writer.writeInteger(i)
+        case .number(let d):
+            try writeNumber(d, into: writer, options: options)
+        case .string(let s):
+            writer.writeString(s)
+        case .array(let elements):
+            writer.byte(0x5B)
+            var first = true
+            for element in elements {
+                if !first { writer.byte(0x2C) }
+                first = false
+                try writeCompactChild(element, into: writer, depth: depth + 1, options: options)
+            }
+            writer.byte(0x5D)
+        case .object(let members):
+            writer.byte(0x7B)
+            var first = true
+            for (key, member) in members {
+                if !first { writer.byte(0x2C) }
+                first = false
+                writer.writeKey(key)
+                try writeCompactChild(member, into: writer, depth: depth + 1, options: options)
+            }
+            writer.byte(0x7D)
+        }
+    }
+
+    @inline(__always)
+    private func writeCompactChild(
+        _ value: JSONValue, into writer: JSONWriter, depth: Int, options: JSONEncodingOptions
+    ) throws {
+        if depth >= Self.maxFastDepth {
+            try value.writeIterative(into: writer, depth: depth, options: options)
+        } else {
+            try writeCompact(value, into: writer, depth: depth, options: options)
+        }
+    }
+
+    func writeIterative(into writer: JSONWriter, depth: Int, options: JSONEncodingOptions) throws {
         // Explicit-stack preorder emission: containers push their closing byte, then their children
         // interleaved with separators in reverse, so a deeply nested tree serializes with no call
         // recursion. Output order is identical to the former recursive walk.
@@ -210,6 +304,8 @@ extension JSONValue {
                     writer.writeNull()
                 case .bool(let b):
                     writer.writeBool(b)
+                case .int(let i):
+                    writer.writeInteger(i)
                 case .number(let d):
                     try writeNumber(d, into: writer, options: options)
                 case .string(let s):
@@ -257,10 +353,12 @@ extension JSONValue {
         }
     }
 
-    // Number emission for the value model. Under `.swiftShortest` an integral magnitude below 2^53
-    // is rendered without a fractional part (`2`, not `2.0`) so a JSON integer survives a
-    // parse → `JSONValue` → `encoded()` round-trip unchanged — `JSONValue` only stores `Double`,
-    // so it cannot otherwise tell `2` from `2.0`. This intentionally differs from the Codable
+    // `Double`-case number emission. A parsed JSON integer within Int64 is held as `.int` and
+    // emitted exactly via `writeInteger`, so this path only sees `.number(Double)` — a fraction, an
+    // exponent, an out-of-Int64 integer, or a hand-built `.number(...)`. Under `.swiftShortest` an
+    // integral `Double` magnitude below 2^53 is still rendered without a fractional part (`2`, not
+    // `2.0`), so a hand-built `.number(2)` and an out-of-Int64 integer both round-trip as integers;
+    // `.number` can't otherwise tell `2` from `2.0`. This intentionally differs from the Codable
     // encode path, where a value typed `Double` is faithfully rendered as `2.0` (see
     // `JSONEncodingOptions.NumberFormat.swiftShortest`). Neither path reproduces Foundation's
     // formatter byte-for-byte; use `.ecma262` for `JSON.stringify` parity.

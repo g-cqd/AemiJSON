@@ -53,6 +53,24 @@ changes allocation layout, so the sanitized bench run is a correctness pass, not
 use the plain `swift run -c release ADJSONBenchmarks` for numbers. First run is slow (the graph,
 including swift-syntax, rebuilds under instrumentation).
 
+## Coverage-guided fuzzing (libFuzzer)
+
+The `ADJSONFuzz` target drives `ADJSON.parse` (strict / lenient / json5 / iJSON), lazy navigation,
+`JSONValue(parsing:)`, `JSONPath`, and `SQLiteJSONPath` from one `LLVMFuzzerTestOneInput` entry. It
+is gated behind `ADJSON_FUZZ` (so the default `swift build` never tries to link a `main`-less
+fuzzer executable) and built with `-sanitize=fuzzer -parse-as-library`.
+
+`-sanitize=fuzzer` is a **Linux** capability of the Swift toolchain (the Darwin SDK rejects it), so
+run it on Linux (the CI `fuzz` job does this on every `main` push / dispatch, time-boxed, seeded
+from the vendored corpora + CTS):
+
+```sh
+ADJSON_FUZZ=1 swift build --target ADJSONFuzz
+"$(ADJSON_FUZZ=1 swift build --target ADJSONFuzz --show-bin-path)/ADJSONFuzz" corpus -max_total_time=300
+```
+
+A crash writes a `crash-*` reproducer; commit it as a regression test under `Tests/`.
+
 ## The `ADJSON_DEV` flag
 
 Heavier dev tooling is gated behind the `ADJSON_DEV` environment variable so that packages which
@@ -68,7 +86,20 @@ ADJSON_DEV=1 swift package generate-documentation --target ADJSON
 ```
 
 The `format`, `lint`, and `fetch-fixtures` command plugins are dependency-free and work without
-the flag.
+the flag. `ADJSON_DEV` also pulls swift-docc-plugin (docs) and swift-collections (only the benchmark
+target, for the OrderedDictionary-vs-Dictionary comparison) — neither is ever resolved by consumers.
+
+## Dependencies & `Package.resolved`
+
+The shipped graph is deliberately thin: the library proper depends only on **swift-syntax** (the
+`@JSONCodable` / `@Schemable` macros need it), pinned with an `upToNextMajor` `from:` requirement;
+the `ADJSONCore` product depends on **nothing**. Everything heavier (docc-plugin, swift-collections,
+package-benchmark, the fuzzer) is gated behind `ADJSON_DEV` / `ADJSON_FUZZ` so a package that merely
+depends on ADJSON never resolves it.
+
+`Package.resolved` is **gitignored** (the library convention — an application pins exact versions,
+a library lets its consumers' resolution win). With the only requirement `from:`-bounded, a checkout
+resolves to the latest compatible swift-syntax deterministically without a committed lock file.
 
 ## Git hooks
 
@@ -85,8 +116,10 @@ the gate passes:
 - **`build-test`** (macOS): lint → build → fixtures → test, in one job (one cache, warm build).
 - **`platforms`**: a cross-platform compile matrix (iOS / tvOS / watchOS / visionOS), on
   `main` / manual dispatch.
-- **`sanitizers`**: TSan + ASan passes over `swift test`, on `main` / manual dispatch (not PRs);
-  each pass rebuilds the graph under instrumentation, so they stay off the PR path.
+- **`sanitizers`**: TSan + ASan passes over `swift test`, on `main` / manual dispatch — and,
+  additionally, on any PR that touches the unsafe scanner (`Sources/ADJSONCore/Core/**`, gated by a
+  `dorny/paths-filter` `changes` job). Each pass rebuilds the graph under instrumentation, so other
+  PRs stay off the path.
 - **`docs`**: builds the DocC site and deploys it to GitHub Pages on `main` —
   <https://g-cqd.github.io/ADJSON/>. Requires Pages source = "GitHub Actions" in the repo
   settings (a one-time manual step).

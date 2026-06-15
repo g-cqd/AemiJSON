@@ -37,13 +37,26 @@ let testSettings: [SwiftSetting] =
 // dependencies, so they are always available without the flag.
 let isDev = Context.environment["ADJSON_DEV"] != nil
 
+// The libFuzzer target is gated behind `ADJSON_FUZZ` so the default `swift build` is never asked to
+// link a `main`-less, `-sanitize=fuzzer` executable (the combo only works under a fuzzer build).
+// Contributors / CI set `ADJSON_FUZZ=1` and build it with the fuzzer sanitizer; see `Sources/ADJSONFuzz`.
+let isFuzz = Context.environment["ADJSON_FUZZ"] != nil
+
 var packageDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0")
 ]
 if isDev {
     packageDependencies.append(
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.0.0"))
+    // Dev-only: used by the benchmark target to weigh OrderedDictionary vs Dictionary for eager
+    // objects (the G2 posture decision). Never resolved by consumers (gated behind `ADJSON_DEV`).
+    packageDependencies.append(
+        .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"))
 }
+
+// Benchmark target extras under `ADJSON_DEV` (OrderedCollections for the eager-object comparison).
+let benchmarkExtraDependencies: [Target.Dependency] =
+    isDev ? [.product(name: "OrderedCollections", package: "swift-collections")] : []
 
 // Build-time formatting enforcement attaches to the library only in dev/CI. A build-tool plugin on
 // a library target would otherwise run for everyone who depends on ADJSON, so it stays gated.
@@ -92,7 +105,9 @@ let package = Package(
         .target(
             name: "ADJSON", dependencies: ["ADJSONCore", "ADJSONMacros"], swiftSettings: strictSettings,
             plugins: adjsonBuildPlugins),
-        .executableTarget(name: "ADJSONBenchmarks", dependencies: ["ADJSON"], swiftSettings: benchSettings),
+        .executableTarget(
+            name: "ADJSONBenchmarks", dependencies: ["ADJSON"] + benchmarkExtraDependencies,
+            swiftSettings: benchSettings),
         .testTarget(
             name: "ADJSONTests",
             dependencies: [
@@ -126,3 +141,19 @@ let package = Package(
         .plugin(name: "LintBuild", capability: .buildTool()),
     ]
 )
+
+if isFuzz {
+    // `-parse-as-library` (libFuzzer supplies `main`) + `-sanitize=fuzzer` (instrument + link the
+    // fuzzer runtime). Unsafe flags are fine here: the target is internal, gated, and never a product.
+    // NOTE: `-sanitize=fuzzer` is a Linux capability of the Swift toolchain (the Darwin SDK rejects
+    // it), so this target is built and run in the Linux CI fuzz job, not on macOS.
+    package.targets.append(
+        .executableTarget(
+            name: "ADJSONFuzz",
+            dependencies: ["ADJSON"],
+            swiftSettings: strictSettings + [
+                .unsafeFlags(["-parse-as-library", "-sanitize=fuzzer"])
+            ],
+            linkerSettings: [.unsafeFlags(["-sanitize=fuzzer"])]
+        ))
+}

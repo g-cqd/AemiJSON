@@ -1,3 +1,12 @@
+// Memoizes absolute (`$`-rooted) sub-query results within a single filter application. Such a query
+// is candidate-independent — its nodelist depends only on the document root — so evaluating it once
+// and reusing it across every candidate turns an O(candidates × subquery) filter into
+// O(candidates + subquery). Relative (`@`) queries are never cached (they vary per candidate). The
+// cache is local to one synchronous evaluation, so it needs no synchronization.
+final class FilterCache {
+    var absolute: [Int: [JSON]] = [:]
+}
+
 enum JSONPathEvaluator {
     static func evaluate(_ segments: [PathSegment], start: JSON, root: JSON) -> [JSON] {
         var nodes = [start]
@@ -64,10 +73,14 @@ enum JSONPathEvaluator {
         case .slice(let start, let end, let step):
             if node.isArray { appendSlice(node, start, end, step, &out) }
         case .filter(let expr):
+            // One cache per filter application: any absolute (`$`) sub-query inside `expr` yields the
+            // same nodelist for every candidate, so it is computed once and reused (see `FilterCache`).
+            let cache = FilterCache()
             if node.isArray {
-                node.forEachElement { e in if evalFilter(expr, current: e, root: root) { out.append(e) } }
+                node.forEachElement { e in if evalFilter(expr, current: e, root: root, cache: cache) { out.append(e) } }
             } else if node.isObject {
-                node.forEachMember { _, v in if evalFilter(expr, current: v, root: root) { out.append(v) } }
+                node.forEachMember { _, v in if evalFilter(expr, current: v, root: root, cache: cache) { out.append(v) }
+                }
             }
         }
     }
@@ -107,22 +120,29 @@ enum JSONPathEvaluator {
     // existence, comparison, regex — bottom out into the iterative `evaluate`). The AST is produced
     // by `JSONPathParser`, whose `enter()`/`maxDepth` guard caps logical nesting, so this recursion
     // is bounded (≤ `JSONPathParser.maxDepth`) and a crafted query can't drive it to overflow.
-    static func evalFilter(_ e: FilterExpr, current: JSON, root: JSON) -> Bool {
+    static func evalFilter(_ e: FilterExpr, current: JSON, root: JSON, cache: FilterCache) -> Bool {
         switch e {
-        case .or(let xs): return xs.contains { evalFilter($0, current: current, root: root) }
-        case .and(let xs): return xs.allSatisfy { evalFilter($0, current: current, root: root) }
-        case .not(let x): return !evalFilter(x, current: current, root: root)
-        case .existence(let q): return !evalQuery(q, current: current, root: root).isEmpty
+        case .or(let xs): return xs.contains { evalFilter($0, current: current, root: root, cache: cache) }
+        case .and(let xs): return xs.allSatisfy { evalFilter($0, current: current, root: root, cache: cache) }
+        case .not(let x): return !evalFilter(x, current: current, root: root, cache: cache)
+        case .existence(let q): return !evalQuery(q, current: current, root: root, cache: cache).isEmpty
         case .comparison(let l, let op, let r):
             return compare(
-                evalComparand(l, current: current, root: root), op, evalComparand(r, current: current, root: root))
+                evalComparand(l, current: current, root: root, cache: cache), op,
+                evalComparand(r, current: current, root: root, cache: cache))
         case .regex(let s, let p, let anchored):
-            return evalRegex(s, p, anchored, current: current, root: root)
+            return evalRegex(s, p, anchored, current: current, root: root, cache: cache)
         }
     }
 
-    static func evalQuery(_ q: RelQuery, current: JSON, root: JSON) -> [JSON] {
-        evaluate(q.segments, start: q.fromRoot ? root : current, root: root)
+    static func evalQuery(_ q: RelQuery, current: JSON, root: JSON, cache: FilterCache) -> [JSON] {
+        // A relative (`@`) query depends on the candidate, so it is always evaluated fresh. An
+        // absolute (`$`) query depends only on root, so it is memoized once per filter application.
+        guard q.fromRoot else { return evaluate(q.segments, start: current, root: root) }
+        if let hit = cache.absolute[q.id] { return hit }
+        let result = evaluate(q.segments, start: root, root: root)
+        cache.absolute[q.id] = result
+        return result
     }
 
     enum QueryValue {
@@ -141,7 +161,7 @@ enum JSONPathEvaluator {
         return .structural(j)
     }
 
-    static func evalComparand(_ c: Comparand, current: JSON, root: JSON) -> QueryValue {
+    static func evalComparand(_ c: Comparand, current: JSON, root: JSON, cache: FilterCache) -> QueryValue {
         switch c {
         case .literal(let l):
             switch l {
@@ -151,18 +171,18 @@ enum JSONPathEvaluator {
             case .null: return .null
             }
         case .query(let q):
-            let r = evalQuery(q, current: current, root: root)
+            let r = evalQuery(q, current: current, root: root, cache: cache)
             return r.count == 1 ? coerce(r[0]) : .nothing
         case .length(let arg):
-            switch evalComparand(arg, current: current, root: root) {
+            switch evalComparand(arg, current: current, root: root, cache: cache) {
             case .string(let s): return .number(Double(s.unicodeScalars.count))
             case .structural(let j) where j.isArray || j.isObject: return .number(Double(j.count))
             default: return .nothing
             }
         case .count(let q):
-            return .number(Double(evalQuery(q, current: current, root: root).count))
+            return .number(Double(evalQuery(q, current: current, root: root, cache: cache).count))
         case .value(let q):
-            let r = evalQuery(q, current: current, root: root)
+            let r = evalQuery(q, current: current, root: root, cache: cache)
             return r.count == 1 ? coerce(r[0]) : .nothing
         }
     }
@@ -200,11 +220,11 @@ enum JSONPathEvaluator {
     }
 
     static func evalRegex(
-        _ sc: Comparand, _ pattern: RegexOperand, _ anchored: Bool, current: JSON, root: JSON
+        _ sc: Comparand, _ pattern: RegexOperand, _ anchored: Bool, current: JSON, root: JSON, cache: FilterCache
     )
         -> Bool
     {
-        guard case let .string(s) = evalComparand(sc, current: current, root: root) else { return false }
+        guard case let .string(s) = evalComparand(sc, current: current, root: root, cache: cache) else { return false }
         let re: Regex<AnyRegexOutput>
         switch pattern {
         case .compiled(let c):
@@ -213,7 +233,7 @@ enum JSONPathEvaluator {
             // A pattern sourced from the (untrusted) JSON document must be re-validated against the
             // I-Regexp safe subset before it reaches the backtracking engine; an unsafe or malformed
             // pattern simply doesn't match (eval can't throw).
-            guard case let .string(pat) = evalComparand(pc, current: current, root: root),
+            guard case let .string(pat) = evalComparand(pc, current: current, root: root, cache: cache),
                 iRegexpRejectionReason(pat) == nil,
                 let compiled = try? Regex(iRegexpToSwift(pat))
             else { return false }

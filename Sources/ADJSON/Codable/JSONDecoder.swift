@@ -17,6 +17,22 @@ extension ADJSON {
         /// How JSON keys are converted before matching `CodingKey`s (default `.useDefaultKeys`).
         public var keyDecodingStrategy: KeyDecodingStrategy = .useDefaultKeys
 
+        /// Assume the top level of the input is an object even without enclosing braces, so
+        /// `"a":1,"b":2` decodes as `{"a":1,"b":2}` (matches `Foundation.JSONDecoder`). Applies to
+        /// the `Data` / `[UInt8]` decode entry points; a pre-parsed `JSONDocument` is used as-is.
+        public var assumesTopLevelDictionary: Bool {
+            get { options.assumesTopLevelDictionary }
+            set { options.assumesTopLevelDictionary = newValue }
+        }
+
+        /// Parse the input as JSON5 (comments, unquoted/single-quoted keys, trailing commas, the
+        /// extended number grammar). Matches `Foundation.JSONDecoder.allowsJSON5`. Setting it to
+        /// `false` restores strict RFC 8259 parsing.
+        public var allowsJSON5: Bool {
+            get { if case .json5 = options.validation { return true } else { return false } }
+            set { options.validation = newValue ? .json5 : .strict }
+        }
+
         public init() {}
 
         private var strategies: DecodeStrategies {

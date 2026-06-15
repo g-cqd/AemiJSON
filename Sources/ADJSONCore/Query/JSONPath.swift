@@ -56,6 +56,10 @@ enum Literal: Sendable {
 }
 
 struct RelQuery: Sendable {
+    /// A stable identity assigned at parse time, unique within a compiled ``JSONPath``. Used to
+    /// memoize an absolute (`$`-rooted) sub-query's result across the candidates of one filter
+    /// application (its nodelist depends only on the document root, never on the current candidate).
+    let id: Int
     let fromRoot: Bool
     let segments: [PathSegment]
 

@@ -5,13 +5,31 @@ public import Foundation
 // top of the Foundation-free `ADJSONCore` engine. Keeping these here is what lets the core stay
 // dependency-free while `import ADJSON` consumers keep the familiar `Data`-returning surface.
 //
-// The byte-buffer / `String` entry points live in the core and are zero-extra-copy; a `Data` input
-// is copied once into a `[UInt8]` here at the boundary (`Array(data)`). Parsing touches every input
-// byte regardless, so the single copy is negligible against parse cost, and it keeps the core from
-// naming `Data`.
+// `Data` holds its bytes contiguously with value semantics, so it conforms to the core's
+// ``ByteSource`` and can be parsed **zero-copy** via the generic `parse(_:some ByteSource & Sendable)`
+// entry — the document retains the `Data` and reads it in place (copy-on-write keeps the borrowed
+// bytes stable if the caller mutates their copy afterward).
+//
+// The default `parse(_:Data)` deliberately keeps the *copy* path, though. Measurement (see the
+// roadmap notes) showed zero-copy is a wash on parse throughput — the one input copy is negligible
+// against the single-pass scan — while it *regresses* every repeated lazy read (`json.a.b.string`,
+// `JSONValue(parsing:)`) by ~20%, because each `withBytePointer` then dispatches through the
+// `any ByteSource` existential rather than a directly-inlined `[UInt8]` buffer borrow. So the
+// default stays on the fast lazy path; reach for the `ByteSource` overload only when the access
+// pattern is decode-once / few-field (no per-value dispatch) and skipping the copy matters (very
+// large inputs, memory pressure).
+
+extension Data: ByteSource {
+    public func withBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R {
+        try withUnsafeBytes(body)
+    }
+}
 
 extension ADJSON {
-    /// Parse UTF-8 `Data` into an immutable, lazily-navigable document.
+    /// Parse UTF-8 `Data` into an immutable, lazily-navigable document. Copies the input once into
+    /// the document's owned buffer, which keeps lazy navigation on the fast inlined path; for a
+    /// zero-copy alternative (at the cost of slower repeated lazy reads) parse the `Data` through the
+    /// generic ``parse(_:options:)-(some_ByteSource_&_Sendable,_)`` overload instead.
     public static func parse(_ data: Data, options: JSONParseOptions = .strict) throws(JSONError) -> JSONDocument {
         try parse(Array(data), options: options)
     }

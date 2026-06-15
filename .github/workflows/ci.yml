@@ -71,6 +71,28 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  changes:
+    name: Detect Core/** changes
+    needs: build-test
+    # Path gate for the sanitizer passes: the unsafe raw-pointer scanner lives under
+    # `Sources/ADJSONCore/Core/**`, so a PR that touches it is exactly the case that warrants the
+    # (otherwise main-only) ASan/TSan runs. On push the filter compares against the prior commit; on
+    # a PR, against the merge base.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      core: ${{ steps.filter.outputs.core }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            core:
+              - 'Sources/ADJSONCore/Core/**'
+
   release-test:
     name: Test (macOS, release / no asserts)
     needs: build-test
@@ -174,13 +196,15 @@ jobs:
 
   sanitizers:
     name: Sanitize (${{ matrix.name }})
-    needs: build-test
+    needs: [build-test, changes]
     # Sanitizers are slow (TSan ~5-15x, ASan ~2x) and rebuild the whole graph under instrumentation,
-    # so run them on main / on demand — never on every PR. The conformance + simdjson corpora double
-    # as the stress input that trips data races (TSan) and OOB / use-after-free (ASan) in the unsafe
+    # so run them on main / on demand — and, additionally, on any PR that touches the unsafe scanner
+    # (`Sources/ADJSONCore/Core/**`, gated by the `changes` job), where a memory or data-race bug is
+    # most likely to be introduced. Other PRs skip them. The conformance + simdjson corpora double as
+    # the stress input that trips data races (TSan) and OOB / use-after-free (ASan) in the unsafe
     # scanner and the shared-state concurrency layer. These find what `-enable-actor-data-race-checks`
     # (actor-isolation only) cannot. TSan and ASan are mutually exclusive, hence two passes.
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.core == 'true'
     runs-on: macos-26
     timeout-minutes: 90
     strategy:
@@ -209,6 +233,51 @@ jobs:
         run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
       - name: Test under ${{ matrix.name }} sanitizer
         run: swift test ${{ matrix.flags }}
+
+  fuzz:
+    name: Fuzz (libFuzzer, Linux)
+    needs: build-test
+    # libFuzzer (`-sanitize=fuzzer`) is a Linux capability of the Swift toolchain — the Darwin SDK
+    # rejects the flag — so the gated `ADJSONFuzz` target builds and runs here, time-boxed, on
+    # main / manual dispatch. Advisory (nightly toolchain), like the Linux build job. A crash fails
+    # the job and uploads the reproducer; commit any reproducer as a regression test.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    container: swiftlang/swift:nightly-main-jammy
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Show toolchain
+        run: swift --version
+      - name: Fetch fixtures (seed corpus)
+        run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
+      - name: Build fuzz target
+        env:
+          ADJSON_FUZZ: "1"
+        run: swift build --target ADJSONFuzz
+      - name: Assemble seed corpus from vendored corpora + CTS
+        run: |
+          mkdir -p corpus
+          n=0
+          find Tests Benchmarks -type f -name '*.json' 2>/dev/null | while read -r f; do
+            cp "$f" "corpus/seed-$n.json" 2>/dev/null || true
+            n=$((n + 1))
+          done
+          if [ -z "$(ls -A corpus 2>/dev/null)" ]; then printf '{"a":[1,2,3],"b":"x"}' > corpus/seed.json; fi
+      - name: Run fuzzer (time-boxed)
+        env:
+          ADJSON_FUZZ: "1"
+        run: |
+          BIN="$(swift build --target ADJSONFuzz --show-bin-path)/ADJSONFuzz"
+          "$BIN" corpus -max_total_time=300 -timeout=10 -rss_limit_mb=2048 -artifact_prefix=crash-
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: crash-*
+          if-no-files-found: ignore
 
   benchmarks:
     name: Benchmark (macOS, release)

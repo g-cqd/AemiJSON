@@ -66,6 +66,18 @@ path is represented by a sentinel index, so `a.b.c.string` returns `nil` instead
 ``JSONValue`` is the opposite end: a fully-materialized, mutable enum for editing and patching.
 You opt into materialization explicitly by converting.
 
+### Random access is linear — materialize once for repeated reads
+
+The tape preserves member/element order rather than hashing it, so a single ``JSON`` key lookup
+(`json["k"]`, `json.k`) or array index (`json[i]`) is an **O(n)** walk over that container's
+children. Reading one or two fields out of a large object is exactly the cheap case the tape is
+built for. But resolving *many* keys against the same object — or repeatedly indexing the same
+array — is O(n·k); for that pattern, materialize the container once with ``JSON/object`` /
+``JSON/array`` (each O(n), then O(1) per key/index against the returned `Dictionary`/`Array`) and
+read from the result. No secondary hash index is kept on the lazy view: it would cost every parse
+to benefit only the repeated-random-access minority, against a design whose whole point is to
+defer work you may never do.
+
 ## Single-pass, recursion-free scanner
 
 The scanner is iterative: an explicit heap stack of open containers replaces recursive

@@ -49,6 +49,18 @@ private let store = doc(
     #expect(try store.query("$.store.book[?(!(@.price > 10))].title").compactMap(\.string) == ["A", "C"])
 }
 
+@Test func filterWithAbsoluteSubqueryCachesWithoutChangingResults() throws {
+    // `$.threshold` is candidate-independent, so it is evaluated once and reused across candidates;
+    // the memoization must not change which elements pass (50 < v).
+    let j = doc(#"{"threshold":50,"items":[{"v":10},{"v":60},{"v":50},{"v":99},{"v":51}]}"#)
+    #expect(try j.query("$.items[?($.threshold < @.v)].v").compactMap(\.int) == [60, 99, 51])
+    // An absolute query ($.limit) compared against a function of the candidate is cached the same way.
+    let k = doc(#"{"limit":2,"rows":[{"tags":["a"]},{"tags":["a","b","c"]},{"tags":["a","b"]}]}"#)
+    #expect(try k.query("$.rows[?(length(@.tags) > $.limit)]").count == 1)
+    // Mixed absolute + relative comparison still respects the relative side per candidate.
+    #expect(try j.query("$.items[?(@.v == $.threshold)].v").compactMap(\.int) == [50])
+}
+
 @Test func jsonPathRootAndArrayRoot() throws {
     let a = doc("[1,2,3]")
     #expect(try a.query("$").count == 1)

@@ -137,4 +137,75 @@ struct SQLiteJSONFunctionTests {
         let patch = jvalue(#"{"b":{"y":null,"z":3},"c":4}"#)
         #expect(SQLiteJSON.patch(target, with: patch) == jvalue(#"{"a":1,"b":{"x":1,"z":3},"c":4}"#))
     }
+
+    @Test func jsonQuote() {
+        #expect(SQLiteJSON.quote(.number(3.5)) == "3.5")
+        #expect(SQLiteJSON.quote(.number(5)) == "5")  // integral double collapses, like a JSON int
+        #expect(SQLiteJSON.quote(.string("verdant")) == #""verdant""#)
+        #expect(SQLiteJSON.quote(.string("a\"b")) == #""a\"b""#)  // quote escaped
+        #expect(SQLiteJSON.quote(.bool(true)) == "true")
+        #expect(SQLiteJSON.quote(.null) == "null")
+        #expect(SQLiteJSON.quote(.array([.number(1), .number(2)])) == "[1,2]")
+        #expect(SQLiteJSON.quote(.number(.infinity)) == "null")  // non-finite → well-formed null
+    }
+
+    @Test func jsonEach() {
+        // Object: one row per member; key set, index nil; full path; type per value.
+        let obj = doc(#"{"a":1,"b":[10,20],"c":"x"}"#)
+        let objRows = Array(SQLiteJSON.each(obj))
+        #expect(objRows.map(\.key) == ["a", "b", "c"])
+        #expect(objRows.allSatisfy { $0.index == nil })
+        #expect(objRows.map(\.type) == ["integer", "array", "text"])
+        #expect(objRows.map(\.path) == ["$.a", "$.b", "$.c"])
+        #expect(objRows[0].value.int == 1)
+
+        // Array: one row per element; index set, key nil.
+        let arrRows = Array(SQLiteJSON.each(doc("[10,20,30]")))
+        #expect(arrRows.map(\.index) == [0, 1, 2])
+        #expect(arrRows.allSatisfy { $0.key == nil })
+        #expect(arrRows.map(\.path) == ["$[0]", "$[1]", "$[2]"])
+
+        // Scalar: a single self-row at `$`.
+        let scalarRows = Array(SQLiteJSON.each(doc("42")))
+        #expect(scalarRows.count == 1)
+        #expect(scalarRows[0].path == "$" && scalarRows[0].type == "integer")
+        #expect(scalarRows[0].value.int == 42)
+
+        // Empty container / missing: no rows.
+        #expect(Array(SQLiteJSON.each(doc("{}"))).isEmpty)
+        #expect(Array(SQLiteJSON.each(doc("[]"))).isEmpty)
+        #expect(Array(SQLiteJSON.each(doc(#"{"a":1}"#).missing)).isEmpty)
+    }
+
+    @Test func jsonEachQuotesSpecialKeysAndRoundTrips() throws {
+        let j = doc(#"{"a b":1,"a.b":2}"#)
+        let rows = Array(SQLiteJSON.each(j))
+        #expect(rows.map(\.path) == [#"$."a b""#, #"$."a.b""#])
+        // Each generated path re-parses through SQLiteJSONPath and resolves to the same value.
+        for row in rows {
+            #expect(try SQLiteJSONPath(row.path).evaluate(j).int == row.value.int)
+        }
+    }
+
+    @Test func jsonTreePreorderWithFullPaths() throws {
+        let j = doc(#"{"a":1,"b":{"c":[2,3]}}"#)
+        let rows = Array(SQLiteJSON.tree(j))
+        // Preorder, root first: $, $.a, $.b, $.b.c, $.b.c[0], $.b.c[1].
+        #expect(rows.map(\.path) == ["$", "$.a", "$.b", "$.b.c", "$.b.c[0]", "$.b.c[1]"])
+        #expect(rows.map(\.type) == ["object", "integer", "object", "array", "integer", "integer"])
+        #expect(rows[0].key == nil && rows[0].index == nil)  // root
+        #expect(rows[1].key == "a")
+        #expect(rows[4].index == 0)
+        // Every path resolves back to a present node.
+        for row in rows { #expect(try SQLiteJSONPath(row.path).evaluate(j).exists) }
+    }
+
+    @Test func jsonTreeDeepStreamsWithoutOverflow() throws {
+        let depth = 1000
+        let nested = String(repeating: #"{"x":"#, count: depth) + "1" + String(repeating: "}", count: depth)
+        let j = try ADJSON.parse(nested, options: JSONParseOptions(maxDepth: depth + 1)).root
+        var count = 0
+        for _ in SQLiteJSON.tree(j) { count += 1 }
+        #expect(count == depth + 1)  // `depth` nested objects + the innermost number
+    }
 }

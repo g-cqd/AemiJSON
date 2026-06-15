@@ -13,6 +13,13 @@ extension JSONDocument {
                 }
                 return try body(base)
             }
+        case .source(let source):
+            return try source.withBytes { raw in
+                guard let base = raw.baseAddress else {
+                    preconditionFailure("JSONDocument input is never empty")
+                }
+                return try body(base.assumingMemoryBound(to: UInt8.self))
+            }
         }
     }
 

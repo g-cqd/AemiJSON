@@ -182,6 +182,41 @@ private let samples: [E] = [
             """)
 }
 
+@Test func jsonValueLosslessLargeIntegers() throws {
+    // A 64-bit ID beyond 2^53 round-trips exactly via the `.int` case (the Double model could not).
+    let maxInt = "9223372036854775807"  // Int64.max
+    let vMax = try JSONValue(parsing: maxInt)
+    #expect(vMax == .int(.max))
+    #expect(String(decoding: try vMax.encodedBytes(), as: UTF8.self) == maxInt)
+
+    let minInt = "-9223372036854775808"  // Int64.min
+    let vMin = try JSONValue(parsing: minInt)
+    #expect(vMin == .int(.min))
+    #expect(String(decoding: try vMin.encodedBytes(), as: UTF8.self) == minInt)
+
+    // `.int` and `.number` are one number domain: equal exactly when numerically equal.
+    #expect(JSONValue.int(5) == .number(5))
+    #expect(JSONValue.number(5) == .int(5))
+    #expect(JSONValue.int(5) != .number(5.5))
+    #expect(JSONValue.int(5) != .int(6))
+
+    // A magnitude beyond Int64 (UInt64 range) falls back to `.number` (documented precision loss).
+    if case .number = try JSONValue(parsing: "18446744073709551615") {  // UInt64.max
+    } else {
+        Issue.record("UInt64.max should fall back to .number")
+    }
+    // Fractions / exponents stay `.number`.
+    if case .number = try JSONValue(parsing: "3.5") {} else { Issue.record("3.5 should be .number") }
+    if case .number = try JSONValue(parsing: "10e2") {} else { Issue.record("10e2 should be .number") }
+
+    // A mixed tree round-trips and equals a hand-built tree spelling integers either way.
+    let tree = try JSONValue(parsing: #"{"id":9007199254740993,"ratio":0.5,"small":7}"#)
+    #expect(tree == .object(["id": .int(9_007_199_254_740_993), "ratio": .number(0.5), "small": .number(7)]))
+    #expect(
+        String(decoding: try tree.encodedBytes(options: JSONEncodingOptions(keyOrder: .sorted)), as: UTF8.self)
+            == #"{"id":9007199254740993,"ratio":0.5,"small":7}"#)
+}
+
 @Test func codableEncoderHonorsOptionsProfile() throws {
     struct F: Encodable {
         var a: Double

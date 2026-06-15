@@ -19,8 +19,52 @@ public enum JSONNumber {
     @inline(__always)
     public static func parseDouble(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Double {
         if let fast = parseDoubleFast(p, offset, length) { return fast }
+        // The slow path also covers the JSON5-only spellings (Infinity / NaN / hex). The fast path
+        // already returned for every strict/lenient number it can, so this never runs on their hot
+        // path; only a long/extreme decimal reaches here and `parseJSON5Number` returns nil for it.
+        if let json5 = parseJSON5Number(p, offset, length) { return json5 }
         let s = String(decoding: UnsafeBufferPointer(start: p + offset, count: length), as: UTF8.self)
         return Double(s) ?? .nan
+    }
+
+    // Parse the JSON5-only number spellings — `Infinity`, `NaN`, and hexadecimal (`0x…`) — returning
+    // the value, or nil for an ordinary decimal (left to `Double(_:)`).
+    @inline(__always)
+    static func parseJSON5Number(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Double? {
+        var idx = offset
+        let end = offset + length
+        guard idx < end else { return nil }
+        var sign = 1.0
+        if p[idx] == 0x2D {
+            sign = -1
+            idx += 1
+        } else if p[idx] == 0x2B {
+            idx += 1
+        }
+        guard idx < end else { return nil }
+        switch p[idx] {
+        case 0x49: return sign * .infinity  // 'I' Infinity
+        case 0x4E: return .nan  // 'N' NaN
+        case 0x30 where idx + 1 < end && (p[idx + 1] == 0x78 || p[idx + 1] == 0x58):  // 0x / 0X
+            var value = 0.0
+            var k = idx + 2
+            while k < end, let d = hexDigitValue(p[k]) {
+                value = value * 16 + Double(d)
+                k += 1
+            }
+            return k > idx + 2 ? sign * value : nil
+        default: return nil
+        }
+    }
+
+    @inline(__always)
+    static func hexDigitValue(_ b: UInt8) -> Int? {
+        switch b {
+        case 0x30...0x39: return Int(b - 0x30)
+        case 0x61...0x66: return Int(b - 0x61 + 10)
+        case 0x41...0x46: return Int(b - 0x41 + 10)
+        default: return nil
+        }
     }
 
     // Clinger fast path. When the decimal significand fits in 2^53 (so `Double(significand)` is
@@ -109,6 +153,11 @@ public enum JSONNumber {
             idx += 1
         }
         guard idx < end else { return nil }
+        // JSON5 hex literal `0x…` (only emitted in json5 mode — a strict/lenient integer token never
+        // starts with `0x`, so this is a single predictable branch off the common decimal path).
+        if p[idx] == 0x30, idx + 1 < end, p[idx + 1] == 0x78 || p[idx + 1] == 0x58 {
+            return parseHexInteger(p, idx + 2, end, neg, T.self)
+        }
         var v: T = 0
         let ten = T(10)
         while idx < end {
@@ -116,6 +165,35 @@ public enum JSONNumber {
             guard c >= 0x30 && c <= 0x39 else { return nil }
             let d = T(truncatingIfNeeded: c - 0x30)
             let (m, o1) = v.multipliedReportingOverflow(by: ten)
+            guard !o1 else { return nil }
+            if neg {
+                let (s, o2) = m.subtractingReportingOverflow(d)
+                guard !o2 else { return nil }
+                v = s
+            } else {
+                let (a, o2) = m.addingReportingOverflow(d)
+                guard !o2 else { return nil }
+                v = a
+            }
+            idx += 1
+        }
+        return v
+    }
+
+    // Parse a JSON5 hex integer body (the digits after `0x`) into any fixed-width type, with correct
+    // overflow handling; a negative sign accumulates downward so `Int.min` magnitudes still fit.
+    @inline(__always)
+    static func parseHexInteger<T: FixedWidthInteger>(
+        _ p: UnsafePointer<UInt8>, _ start: Int, _ end: Int, _ neg: Bool, _ type: T.Type
+    ) -> T? {
+        guard start < end else { return nil }
+        var v: T = 0
+        let sixteen = T(16)
+        var idx = start
+        while idx < end {
+            guard let digit = hexDigitValue(p[idx]) else { return nil }
+            let d = T(truncatingIfNeeded: digit)
+            let (m, o1) = v.multipliedReportingOverflow(by: sixteen)
             guard !o1 else { return nil }
             if neg {
                 let (s, o2) = m.subtractingReportingOverflow(d)

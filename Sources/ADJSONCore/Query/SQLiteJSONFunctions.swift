@@ -1,8 +1,8 @@
 // SQLite JSON1-dialect functions layered on `SQLiteJSONPath`. Read accessors operate on the lazy
 // `JSON` view; mutations produce a new `JSONValue` tree (SQLite's JSON functions are pure — they
-// return a modified copy rather than editing in place). Table-valued `json_each`/`json_tree` are
-// out of scope (they only make sense inside SQLite). `json_quote` is omitted: it serializes a SQL
-// value, which has no ADJSON analogue — use `JSONValue.encoded()`.
+// return a modified copy rather than editing in place). The table-valued `json_each` / `json_tree`
+// are surfaced as Swift `Sequence`s over the lazy view (their natural shape outside a SQL engine),
+// and `json_quote` serializes a value to JSON text.
 
 // MARK: - Path-relative accessors and mutations (json -> / ->> / set / insert / replace / remove)
 
@@ -151,5 +151,137 @@ public enum SQLiteJSON {
     /// `json_patch(T, P)`: apply the RFC 7396 merge patch `patch` to `target`.
     public static func patch(_ target: JSONValue, with patch: JSONValue) -> JSONValue {
         JSONMergePatch.apply(patch, to: target)
+    }
+
+    /// `json_quote(X)`: the JSON text of a value — a string is quoted and escaped, numbers /
+    /// booleans / null render as their literals, and an object/array as compact JSON. A non-finite
+    /// number (only reachable in a hand-built tree) renders as `null`, so the result is always
+    /// well-formed JSON.
+    public static func quote(_ value: JSONValue) -> String {
+        let bytes = (try? value.encodedBytes()) ?? Array("null".utf8)
+        return String(decoding: bytes, as: UTF8.self)
+    }
+}
+
+// MARK: - Table-valued json_each / json_tree
+
+/// One row of `json_each` / `json_tree`: the SQLite columns reshaped for Swift. `key` is set for an
+/// object member, `index` for an array element (both `nil` for the walked value itself); `value` is
+/// the lazy node, `type` its ``SQLiteJSON/type(_:)`` name, and `path` the full SQLite-style path to
+/// it (re-parseable by ``SQLiteJSONPath``).
+public struct SQLiteJSONRow: Sendable {
+    public let key: String?
+    public let index: Int?
+    public let value: JSON
+    public let type: String
+    public let path: String
+}
+
+extension SQLiteJSON {
+    /// `json_each(X)`: a sequence over the *immediate* children of `json` — each array element or
+    /// object member. A scalar (or `null`) yields a single row for the value itself at path `$`; an
+    /// empty container or a missing node yields nothing.
+    public static func each(_ root: JSON) -> JSONEachSequence {
+        var rows: [SQLiteJSONRow] = []
+        if root.isArray {
+            var idx = 0
+            root.forEachElement { child in
+                rows.append(
+                    SQLiteJSONRow(
+                        key: nil, index: idx, value: child, type: type(child) ?? "null", path: "$[\(idx)]"))
+                idx += 1
+            }
+        } else if root.isObject {
+            root.forEachMember { key, child in
+                rows.append(
+                    SQLiteJSONRow(
+                        key: key, index: nil, value: child, type: type(child) ?? "null",
+                        path: "$" + pathKeySegment(key)))
+            }
+        } else if root.exists {
+            rows.append(SQLiteJSONRow(key: nil, index: nil, value: root, type: type(root) ?? "null", path: "$"))
+        }
+        return JSONEachSequence(rows: rows)
+    }
+
+    /// `json_tree(X)`: a preorder sequence over `json` *and all its descendants*, root first. The
+    /// walk is iterative (an explicit stack, like ``JSONPath`` descent), so an arbitrarily deep
+    /// document streams without recursion. A missing node yields nothing.
+    public static func tree(_ root: JSON) -> JSONTreeSequence { JSONTreeSequence(root: root) }
+
+    // A SQLite-style object-key path segment: `.label` for a simple identifier, else a JSON-escaped
+    // `."label"`. Both forms re-parse through `SQLiteJSONPath`, so a row's `path` round-trips back
+    // through `json_extract`.
+    static func pathKeySegment(_ key: String) -> String {
+        if isSimpleLabel(key) { return "." + key }
+        var bytes: [UInt8] = [0x2E]  // '.'
+        JSONOutput.appendString(key, to: &bytes)  // "...": quoted + escaped
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
+    // A label is "simple" (needs no quoting) when it is a non-empty ASCII identifier:
+    // `[A-Za-z_][A-Za-z0-9_]*`. Conservative — anything else is quoted, which still round-trips.
+    static func isSimpleLabel(_ key: String) -> Bool {
+        let utf8 = key.utf8
+        guard let first = utf8.first, isLabelStart(first) else { return false }
+        return utf8.dropFirst().allSatisfy { isLabelStart($0) || ($0 >= 0x30 && $0 <= 0x39) }
+    }
+
+    private static func isLabelStart(_ b: UInt8) -> Bool {
+        (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) || b == 0x5F
+    }
+}
+
+/// The `Sequence` returned by ``SQLiteJSON/each(_:)``. Rows are computed once (one level deep).
+public struct JSONEachSequence: Sequence, Sendable {
+    let rows: [SQLiteJSONRow]
+    public func makeIterator() -> IndexingIterator<[SQLiteJSONRow]> { rows.makeIterator() }
+}
+
+/// The `Sequence` returned by ``SQLiteJSON/tree(_:)``: a lazy, iterative preorder walk that never
+/// recurses, so it is safe over arbitrarily deep documents.
+public struct JSONTreeSequence: Sequence, Sendable {
+    let root: JSON
+
+    public func makeIterator() -> Iterator { Iterator(root: root) }
+
+    public struct Iterator: IteratorProtocol {
+        // A work stack of rows still to emit. Popping yields preorder (root, then each child's whole
+        // subtree); children are pushed reversed so they pop back in document order.
+        private var stack: [SQLiteJSONRow]
+
+        init(root: JSON) {
+            stack =
+                root.exists
+                ? [SQLiteJSONRow(key: nil, index: nil, value: root, type: SQLiteJSON.type(root) ?? "null", path: "$")]
+                : []
+        }
+
+        public mutating func next() -> SQLiteJSONRow? {
+            guard let row = stack.popLast() else { return nil }
+            let node = row.value
+            if node.isArray {
+                var kids: [SQLiteJSONRow] = []
+                var idx = 0
+                node.forEachElement { child in
+                    kids.append(
+                        SQLiteJSONRow(
+                            key: nil, index: idx, value: child, type: SQLiteJSON.type(child) ?? "null",
+                            path: row.path + "[\(idx)]"))
+                    idx += 1
+                }
+                stack.append(contentsOf: kids.reversed())
+            } else if node.isObject {
+                var kids: [SQLiteJSONRow] = []
+                node.forEachMember { key, child in
+                    kids.append(
+                        SQLiteJSONRow(
+                            key: key, index: nil, value: child, type: SQLiteJSON.type(child) ?? "null",
+                            path: row.path + SQLiteJSON.pathKeySegment(key)))
+                }
+                stack.append(contentsOf: kids.reversed())
+            }
+            return row
+        }
     }
 }

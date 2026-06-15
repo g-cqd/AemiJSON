@@ -1,6 +1,10 @@
 import ADJSON
 import Foundation
 
+#if canImport(OrderedCollections)
+    import OrderedCollections
+#endif
+
 // MARK: - Bench harness
 
 struct BenchResult {
@@ -154,6 +158,35 @@ report(lazyTwo, vs: serBase)
 report(fullWalk, vs: serBase)
 report(valueTree, vs: serBase)
 
+// Whitespace-heavy parse (exercises the SWAR `skipWS`): the same users payload re-serialized
+// pretty-printed, so insignificant whitespace dominates the inter-token gaps.
+let prettyEncoder = JSONEncoder()
+prettyEncoder.outputFormatting = [.prettyPrinted]
+let usersPretty = try! prettyEncoder.encode(users)
+print("ws-heavy payload: \(usersPretty.count) bytes (pretty-printed users)")
+let wsFound = bench("Foundation JSONSerialization (ws)", bytes: usersPretty.count) {
+    blackHole(try! JSONSerialization.jsonObject(with: usersPretty))
+}
+let wsParse = bench("ADJSON parse (ws-heavy)", bytes: usersPretty.count) {
+    blackHole(try! ADJSON.parse(usersPretty))
+}
+report(wsFound, vs: nil)
+report(wsParse, vs: wsFound)
+
+// Non-ASCII-heavy parse (exercises strict UTF-8 continuation validation in `scanString`): an array
+// of CJK strings, so multi-byte sequences dominate the string bytes.
+let cjkStrings = (0..<4000).map { _ in "日本語のテキストデータ、これはベンチマーク用の文字列です。" }
+let cjkData = try! encoder.encode(cjkStrings)
+print("cjk payload    : \(cjkData.count) bytes (\(cjkStrings.count) CJK strings)")
+let cjkFound = bench("Foundation JSONSerialization (cjk)", bytes: cjkData.count) {
+    blackHole(try! JSONSerialization.jsonObject(with: cjkData))
+}
+let cjkParse = bench("ADJSON parse (cjk, strict UTF-8)", bytes: cjkData.count) {
+    blackHole(try! ADJSON.parse(cjkData))
+}
+report(cjkFound, vs: nil)
+report(cjkParse, vs: cjkFound)
+
 // MARK: - Typed decode (Data -> [User])
 
 section("DECODE typed  Data -> [User]  (ADJSON vs Foundation JSONDecoder)")
@@ -189,6 +222,14 @@ let adMacroEnc = bench("ADJSON @JSONCodable (fast path)", bytes: userData.count)
 report(fEnc, vs: nil)
 report(adEnc, vs: fEnc)
 report(adMacroEnc, vs: fEnc)
+
+// JSONValue model serialization (the hybrid recursive/iterative `write`), independent of Codable:
+// materialize the users tree once, then time `encodedBytes()` over it.
+let usersValueForEncode = try! JSONValue(parsing: userData)
+let valueEnc = bench("ADJSON JSONValue.encodedBytes", bytes: userData.count) {
+    blackHole(try! usersValueForEncode.encodedBytes())
+}
+report(valueEnc, vs: fEnc)
 
 // MARK: - Number-heavy decode ([Double])
 
@@ -229,6 +270,16 @@ let queryWildcard = bench("wildcard  \(pathWildcard)", bytes: userData.count) {
 }
 report(queryFilter, vs: nil)
 report(queryWildcard, vs: nil)
+
+// Filter with an absolute (`$`-rooted) sub-query: `$[0].followers` is candidate-independent, so the
+// sub-query cache evaluates it once instead of once per of the 2000 candidates.
+let pathAbsFilter = "$[?(@.followers > $[0].followers)]"
+let absFilterHits = (try? usersDoc.root.query(pathAbsFilter))?.count ?? -1
+print("verify abs-filt: \(pathAbsFilter) -> \(absFilterHits) hits")
+let queryAbsFilter = bench("filter abs-subquery", bytes: userData.count) {
+    blackHole((try? usersDoc.root.query(pathAbsFilter)) ?? [])
+}
+report(queryAbsFilter, vs: nil)
 
 // JSONPath compilation (string -> AST). Exercises the path parser itself (the byte-vs-`[Character]`
 // target), independent of evaluation; each iteration compiles the set 1000x for stable timing.
@@ -319,6 +370,46 @@ for file in ["twitter.json", "citm_catalog.json", "canada.json"] {
     }
 }
 print(corpusGatePassed ? "corpus gate: PASS" : "corpus gate: FAIL")
+
+// MARK: - G2 posture data: Dictionary vs OrderedDictionary for the eager object model (ADJSON_DEV)
+
+#if canImport(OrderedCollections)
+    section("G2  Dictionary vs OrderedDictionary  (eager-object model — ADJSON_DEV only)")
+    // Representative small object: the ~10 string keys of the User/Profile shape, built and fully
+    // looked up many times (the JSONValue.object materialization + member-access pattern).
+    let objKeys = [
+        "id", "login", "name", "email", "followers", "following", "isAdmin", "score", "tags", "profile",
+    ]
+    let objReps = 200_000
+    let objBytes = objReps * objKeys.reduce(0) { $0 + $1.utf8.count }
+
+    let dictBuild = bench("Dictionary build+lookup x10", bytes: objBytes) {
+        var sink = 0
+        for _ in 0..<objReps {
+            var d = [String: Int](minimumCapacity: objKeys.count)
+            for (i, k) in objKeys.enumerated() { d[k] = i }
+            for k in objKeys { sink &+= d[k] ?? 0 }
+        }
+        blackHole(sink)
+    }
+    let orderedBuild = bench("OrderedDictionary build+lookup x10", bytes: objBytes) {
+        var sink = 0
+        for _ in 0..<objReps {
+            var d = OrderedDictionary<String, Int>(minimumCapacity: objKeys.count)
+            for (i, k) in objKeys.enumerated() { d[k] = i }
+            for k in objKeys { sink &+= d[k] ?? 0 }
+        }
+        blackHole(sink)
+    }
+    report(dictBuild, vs: nil)
+    report(orderedBuild, vs: dictBuild)
+
+    var ordered = OrderedDictionary<String, Int>()
+    for (i, k) in objKeys.enumerated() { ordered[k] = i }
+    let plain = Dictionary(uniqueKeysWithValues: objKeys.enumerated().map { ($1, $0) })
+    print("advantage      : OrderedDictionary preserves insertion order -> \(Array(ordered.keys) == objKeys)")
+    print("                 plain Dictionary preserves it -> \(Array(plain.keys) == objKeys) (order is unspecified)")
+#endif
 
 let metrics = ADJSON.Metrics.snapshot()
 print("\nSynchronization metrics: documents=\(metrics.documents) bytes=\(metrics.bytes)")

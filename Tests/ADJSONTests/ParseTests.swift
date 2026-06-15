@@ -146,6 +146,146 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
     #expect(try ADJSON.JSONDecoder().decode([Int].self, from: data) == [Int.min, Int.max])
 }
 
+@Test func json5GrammarParsesExtensions() throws {
+    func parse5(_ s: String) throws -> JSON { try ADJSON.parse(s, options: .json5).root }
+
+    // Comments, unquoted keys, single-quoted strings, trailing commas.
+    let j = try parse5(
+        "{\n  // line comment\n  unquoted: 'single quoted',\n  \"quoted\": 1, /* block */\n  arr: [1, 2, 3,],\n}")
+    #expect(j.unquoted.string == "single quoted")
+    #expect(j.quoted.int == 1)
+    #expect(j.arr.arrayValue.compactMap(\.int) == [1, 2, 3])
+
+    // Numbers: leading +, .5, 5., hex, Infinity, NaN.
+    #expect(try parse5("+5").int == 5)
+    #expect(try parse5(".5").double == 0.5)
+    #expect(try parse5("5.").double == 5.0)
+    #expect(try parse5("0xFF").int == 255)
+    #expect(try parse5("-0x10").int == -16)
+    #expect(try parse5("Infinity").double == .infinity)
+    #expect(try parse5("-Infinity").double == -.infinity)
+    #expect(try parse5("NaN").double?.isNaN == true)
+
+    // JSON5 string escapes: \x, \t, and a line continuation (elided).
+    #expect(try parse5(#"'\x41\x42'"#).string == "AB")
+    #expect(try parse5(#"'tab\tend'"#).string == "tab\tend")
+    #expect(try parse5("'line1\\\nline2'").string == "line1line2")
+
+    // Strict mode rejects every one of these.
+    #expect(throws: JSONError.self) { try ADJSON.parse("{a:1}") }
+    #expect(throws: JSONError.self) { try ADJSON.parse("[1,2,]") }
+    #expect(throws: JSONError.self) { try ADJSON.parse("0xFF") }
+    #expect(throws: JSONError.self) { try ADJSON.parse("'single'") }
+    #expect(throws: JSONError.self) { try ADJSON.parse("// c\n1") }
+    // And JSON5 still rejects genuinely malformed input.
+    #expect(throws: JSONError.self) { try parse5("/* unterminated") }
+    #expect(throws: JSONError.self) { try parse5("{a 1}") }  // missing colon
+    #expect(throws: JSONError.self) { try parse5("0xZZ") }  // not hex
+
+    // Decoder convenience property mirrors Foundation's allowsJSON5.
+    struct Config: Decodable, Equatable {
+        let host: String
+        let port: Int
+        let debug: Bool
+    }
+    var decoder = ADJSON.JSONDecoder()
+    decoder.allowsJSON5 = true
+    let cfg = try decoder.decode(
+        Config.self, from: Data("{ host: 'localhost', port: 0x1F90, debug: true, /* ok */ }".utf8))
+    #expect(cfg == Config(host: "localhost", port: 8080, debug: true))
+}
+
+@Test func assumesTopLevelDictionaryWrapsBracelessInput() throws {
+    let opts = JSONParseOptions(assumesTopLevelDictionary: true)
+    // Braceless (quoted-key) input parses as an object.
+    let j = try ADJSON.parse(#""a":1,"b":[2,3]"#, options: opts).root
+    #expect(j.isObject)
+    #expect(j.a.int == 1)
+    #expect(j.b.arrayValue.compactMap(\.int) == [2, 3])
+    // Already-braced input is parsed unchanged.
+    #expect(try ADJSON.parse(#"{"x":9}"#, options: opts).root.x.int == 9)
+    // A single unmatched brace is still rejected on both sides.
+    #expect(throws: JSONError.self) { try ADJSON.parse(#"{"a":1"#, options: opts) }  // '{…'
+    #expect(throws: JSONError.self) { try ADJSON.parse(#""a":1}"#, options: opts) }  // '…}'
+    // Without the option, braceless input is an error.
+    #expect(throws: JSONError.self) { try ADJSON.parse(#""a":1"#) }
+
+    // Decoder convenience property mirrors Foundation.
+    struct KV: Decodable, Equatable {
+        let name: String
+        let count: Int
+    }
+    var decoder = ADJSON.JSONDecoder()
+    decoder.assumesTopLevelDictionary = true
+    #expect(try decoder.decode(KV.self, from: Data(#""name":"x","count":7"#.utf8)) == KV(name: "x", count: 7))
+}
+
+@Test func parseDataAndByteSourcePathsAreCorrect() throws {
+    // Default parse(Data) (copy path) navigates correctly.
+    let document = try ADJSON.parse(Data(#"{"a":1,"name":"héllo","arr":[1,2,3]}"#.utf8))
+    #expect(document.root.a.int == 1)
+    #expect(document.root.name.string == "héllo")
+    #expect(document.root.arr.arrayValue.compactMap(\.int) == [1, 2, 3])
+
+    // Opt-in zero-copy ByteSource path retains the source and is copy-on-write safe: mutating the
+    // caller's Data afterward must not disturb the parsed document (it reads the retained storage).
+    var data = Data(#"{"k":42,"s":"こんにちは"}"#.utf8)
+    let source: any ByteSource & Sendable = data
+    let zeroCopy = try ADJSON.parse(source)
+    data.removeAll()
+    data.append(contentsOf: Array("garbage".utf8))
+    #expect(zeroCopy.root.k.int == 42)
+    #expect(zeroCopy.root.s.string == "こんにちは")
+
+    // Codable decode straight from Data works (decode borrows once, so it is the zero-copy-friendly
+    // access pattern).
+    struct M: Decodable, Equatable {
+        let a: Int
+        let name: String
+        let arr: [Int]
+    }
+    let decoded = try ADJSON.JSONDecoder().decode(M.self, from: Data(#"{"a":1,"name":"héllo","arr":[1,2,3]}"#.utf8))
+    #expect(decoded == M(a: 1, name: "héllo", arr: [1, 2, 3]))
+
+    // Empty input is rejected cleanly on both paths (never traps on a nil base address).
+    #expect(throws: JSONError.self) { try ADJSON.parse(Data()) }
+    let empty: any ByteSource & Sendable = Data()
+    #expect(throws: JSONError.self) { try ADJSON.parse(empty) }
+}
+
+@Test func multiByteUTF8RunsValidateAndRejectMidRun() throws {
+    // The tight non-ASCII validation loop must round-trip runs that end at a quote, an escape, an
+    // ASCII byte, and end-of-content — and still reject a malformed sequence *inside* a run.
+    #expect(try ADJSON.parse(#""日本語テキストabc\n更に""#).root.string == "日本語テキストabc\n更に")
+    #expect(try ADJSON.parse(#""🎉🚀✨""#).root.string == "🎉🚀✨")  // 4-byte run
+    // Invalid continuation byte inside a run (second char's 2nd byte is 0x00, not 10xxxxxx).
+    let badMidRun: [UInt8] = [0x22, 0xE6, 0x97, 0xA5, 0xE6, 0x00, 0xA5, 0x22]
+    #expect(throws: JSONError.self) { try ADJSON.parse(badMidRun) }
+    // Truncated 3-byte sequence terminated early by the closing quote.
+    let truncated: [UInt8] = [0x22, 0xE6, 0x97, 0x22]
+    #expect(throws: JSONError.self) { try ADJSON.parse(truncated) }
+}
+
+@Test func iJSONRestrictsNumbersToIEEE754Range() throws {
+    // RFC 7493 §2.2: under `.iJSON`, an integer beyond ±(2^53−1) or a number overflowing to ±∞
+    // is rejected; strict/lenient keep the full RFC 8259 number grammar.
+    #expect(throws: JSONError.self) { try ADJSON.parse("9007199254740993", options: .iJSON) }  // 2^53+1
+    #expect(throws: JSONError.self) { try ADJSON.parse("-9007199254740992", options: .iJSON) }  // −2^53
+    #expect(throws: JSONError.self) { try ADJSON.parse("1e400", options: .iJSON) }  // → +∞
+    #expect(throws: JSONError.self) { try ADJSON.parse("[1, 99999999999999999999]", options: .iJSON) }  // >Int64
+
+    // In-range values stay accepted under `.iJSON` (Int64 literals are 64-bit on every platform).
+    let maxSafe: Int64 = 9_007_199_254_740_991
+    #expect(try ADJSON.parse("9007199254740991", options: .iJSON).root.double == Double(maxSafe))
+    #expect(try ADJSON.parse("-9007199254740991", options: .iJSON).root.double == -Double(maxSafe))
+    #expect(try ADJSON.parse("3.5", options: .iJSON).root.double == 3.5)
+    #expect(try ADJSON.parse("1e308", options: .iJSON).root.double == 1e308)  // finite, accepted
+
+    // strict (the default) imposes no range restriction.
+    #expect(try ADJSON.parse("9007199254740993").root.exists)
+    #expect(try ADJSON.parse("1e400").root.double == .infinity)
+}
+
 @Test func differentialAgainstFoundation() throws {
     let samples = [
         #"{"id":1,"name":"héllo","ok":true,"x":null}"#,

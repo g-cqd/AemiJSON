@@ -71,7 +71,7 @@ public struct JSON: Sendable {
         let esc = Slot.flags(slot) & 1 == 1
         return doc.withBytePointer { p in
             if !esc { return String(decoding: UnsafeBufferPointer(start: p + off, count: len), as: UTF8.self) }
-            return JSONString.unescape(p, off, len)
+            return doc.isJSON5 ? JSONString.unescapeJSON5(p, off, len) : JSONString.unescape(p, off, len)
         }
     }
 
@@ -137,7 +137,14 @@ public struct JSON: Sendable {
 
     // MARK: Subscripts / dynamic member lookup
 
+    /// Look up an object member by key. Each lookup is an O(n) tape walk over the object's members
+    /// (the tape is order-preserving, not hashed), so resolving many keys on the same object — or
+    /// indexing the same array repeatedly — is O(n·k). For repeated random access, materialize the
+    /// container once with ``object`` / ``array`` (each O(n), then O(1) per key/index) and read from
+    /// the resulting `Dictionary`/`Array` instead.
     public subscript(key: String) -> JSON { member(key) }
+    /// Look up an array element by index. O(n) in the element's position (the tape stores no offset
+    /// index); see ``subscript(key:)`` for the materialize-once guidance on repeated access.
     public subscript(index idx: Int) -> JSON { element(idx) }
     public subscript(dynamicMember key: String) -> JSON { member(key) }
 
@@ -152,6 +159,8 @@ public struct JSON: Sendable {
 
     // MARK: Navigation helpers
 
+    // O(n) in the member count: an order-preserving linear scan, not a hash lookup. Callers doing
+    // repeated random access should materialize once via `object` (see the subscript docs).
     private func member(_ key: String) -> JSON {
         guard tag == JSONKind.object.rawValue else { return .missing(doc) }
         let c = Slot.count(slot)
@@ -193,7 +202,9 @@ public struct JSON: Sendable {
     @inline(__always)
     private func decodeKey(_ p: UnsafePointer<UInt8>, _ keySlot: UInt64) -> String {
         let off = Slot.low(keySlot), len = Slot.length(keySlot)
-        if Slot.flags(keySlot) & 1 == 1 { return JSONString.unescape(p, off, len) }
+        if Slot.flags(keySlot) & 1 == 1 {
+            return doc.isJSON5 ? JSONString.unescapeJSON5(p, off, len) : JSONString.unescape(p, off, len)
+        }
         return String(decoding: UnsafeBufferPointer(start: p + off, count: len), as: UTF8.self)
     }
 }
