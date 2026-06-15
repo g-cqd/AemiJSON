@@ -13,12 +13,22 @@ final class EncodeState {
     let strategies: EncodeStrategies
     var kinds: [Bool] = []  // true = object, false = array
     var counts: [Int] = []
-    private var iso8601: ISO8601DateFormatter?  // lazy, single-operation cache
+    // Symmetric with the decoder's `maxDecodeDepth`: the Codable encode path is unavoidably
+    // recursive (`encodeValue` → `value.encode(to:)` → a container → `encodeValue`), so a
+    // recursive / self-referential `Encodable` would overflow the native stack. `encodeValue` bumps
+    // `encodeDepth` on entry and throws past `maxEncodeDepth`. The depth is threaded across the
+    // `EncodeState` ↔ `_JSONByteWriter` (fast-path) boundary so it can't be reset mid-recursion.
+    var encodeDepth = 0
+    let maxEncodeDepth: Int
 
-    init(_ w: JSONWriter, options: JSONEncodingOptions = .rfc8259, strategies: EncodeStrategies = EncodeStrategies()) {
+    init(
+        _ w: JSONWriter, options: JSONEncodingOptions = .rfc8259,
+        strategies: EncodeStrategies = EncodeStrategies(), maxEncodeDepth: Int = 2048
+    ) {
         self.w = w
         self.options = options
         self.strategies = strategies
+        self.maxEncodeDepth = maxEncodeDepth
     }
 
     @inline(__always) func appendDouble(_ v: Double) throws {
@@ -44,6 +54,15 @@ final class EncodeState {
     /// configured strategy before the fast path or generic `encode(to:)`, matching Foundation. The
     /// fast path is skipped when a key strategy is active so keys flow through `member`.
     func encodeValue<T: Encodable>(_ value: T) throws {
+        encodeDepth += 1
+        defer { encodeDepth -= 1 }
+        guard encodeDepth <= maxEncodeDepth else {
+            throw EncodingError.invalidValue(
+                value,
+                .init(
+                    codingPath: [], debugDescription: "Encoding exceeded the maximum nesting depth (\(maxEncodeDepth))")
+            )
+        }
         if let date = value as? Date {
             try encodeDate(date)
         } else if let data = value as? Data {
@@ -64,9 +83,9 @@ final class EncodeState {
         case .millisecondsSince1970:
             try appendDouble(date.timeIntervalSince1970 * 1000)
         case .iso8601:
-            let f = iso8601 ?? makeISO8601Formatter()
-            iso8601 = f
-            w.writeString(f.string(from: date))
+            // `Date.ISO8601FormatStyle` (Sendable, allocation-free) replaces the non-Sendable
+            // `ISO8601DateFormatter`; its default output is byte-identical to Foundation's `.iso8601`.
+            w.writeString(date.formatted(.iso8601))
         case .formatted(let formatter):
             w.writeString(formatter.string(from: date))
         case .custom(let body):
@@ -109,7 +128,8 @@ final class EncodeState {
     /// Bridge a fast-path value nested inside a generic encode: move the shared buffer
     /// into a value `_JSONByteWriter` (so its appends don't trigger CoW), then move back.
     @inline(__always) func encodeFast(_ fast: any ADJSONFastEncodable) throws {
-        var bw = _JSONByteWriter(adopting: w.bytes, options: options)
+        var bw = _JSONByteWriter(adopting: w.bytes, options: options, maxDepth: maxEncodeDepth)
+        bw.depth = encodeDepth  // continue the depth count into the fast writer (no reset)
         w.bytes = []
         try fast.__adjsonEncode(into: &bw)
         w.bytes = bw.bytes

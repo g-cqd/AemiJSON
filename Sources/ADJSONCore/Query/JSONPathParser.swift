@@ -407,7 +407,7 @@ struct JSONPathParser {
     }
 
     // Peeks an ASCII identifier (the only function / keyword names RFC 9535 defines), skipping just
-    // leading spaces — a tab/newline before it makes this return `nil`, matching the prior behaviour.
+    // leading spaces — a tab/newline before it makes this return `nil`.
     func peekIdentifier() -> String? {
         var j = i
         while j < bytes.count, bytes[j] == 0x20 { j += 1 }  // ' '
@@ -459,6 +459,12 @@ struct JSONPathParser {
     }
 
     mutating func parseComparand() throws(JSONPathError) -> Comparand {
+        // `length()` takes a comparand argument, so `length(length(…(@)…))` recurses here once per
+        // level; without this guard a crafted nest would overflow the parser stack (and the AST it
+        // builds would then overflow `evalComparand`'s `.length` walk). `enter()`/`maxDepth` bounds
+        // it exactly as it bounds `parseSegments`/`parsePrimary`.
+        try enter()
+        defer { depth -= 1 }
         skipWS()
         guard let c = peek() else { throw err("expected comparand") }
         if c == 0x40 || c == 0x24 { return .query(try parseRelQuery()) }  // '@' or '$'

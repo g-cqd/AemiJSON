@@ -59,6 +59,29 @@ private func valid(_ schema: JSONSchema, _ json: String) -> Bool { schema.isVali
     #expect(!valid(cont, "[5,1]"))
 }
 
+@Test func uniqueItemsRespectsSemanticEquality() {
+    // The O(n) hash pass must agree with `jsonSemanticEqual`: numbers by value, objects unordered.
+    let s = schema(#"{"type":"array","uniqueItems":true}"#)
+    #expect(!valid(s, "[1,1.0]"))  // same JSON number
+    #expect(!valid(s, #"[{"a":1,"b":2},{"b":2,"a":1}]"#))  // objects equal regardless of key order
+    #expect(!valid(s, #"[{"a":{"b":[1,2,3]}},{"a":{"b":[1,2,3]}}]"#))  // deep duplicate still caught
+    // Distinct (but similar) nested values stay unique — the hash bucketing must not false-positive.
+    #expect(valid(s, #"[{"a":[1,2]},{"a":[1,3]},{"a":[2,1]}]"#))
+    #expect(valid(s, "[1,2,3,4,5]"))
+}
+
+@Test func multipleOfUsesExactIntegerModulo() {
+    // Large integers: the old relative-epsilon test grew its tolerance to ~10² near 10¹², so a
+    // non-multiple wrongly passed. Exact integer modulo (both operands integral, < 2^53) fixes it.
+    let s = schema(#"{"multipleOf":7}"#)
+    #expect(valid(s, "999999999999"))  // 7 × 142857142857
+    #expect(!valid(s, "1000000000000"))
+    #expect(!valid(s, "1000000000001"))
+    // Genuine fractions still use the epsilon path.
+    #expect(valid(schema(#"{"multipleOf":0.1}"#), "0.3"))
+    #expect(!valid(schema(#"{"multipleOf":0.5}"#), "0.3"))
+}
+
 @Test func validatesCombinatorsAndConditional() {
     let any = schema(#"{"anyOf":[{"type":"string"},{"type":"integer"}]}"#)
     #expect(valid(any, #""x""#))

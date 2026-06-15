@@ -72,12 +72,14 @@ jobs:
           fi
 
   changes:
-    name: Detect Core/** changes
+    name: Detect unsafe / concurrency changes
     needs: build-test
-    # Path gate for the sanitizer passes: the unsafe raw-pointer scanner lives under
-    # `Sources/ADJSONCore/Core/**`, so a PR that touches it is exactly the case that warrants the
-    # (otherwise main-only) ASan/TSan runs. On push the filter compares against the prior commit; on
-    # a PR, against the merge base.
+    # Path gate for the sanitizer passes. Two risk surfaces warrant the (otherwise main-only)
+    # ASan/TSan runs on a PR: the unsafe raw-pointer scanner (`Sources/ADJSONCore/Core/**`) for
+    # OOB/UAF under ASan, and the shared-state concurrency layer — the encoder buffer pool and the
+    # concurrent decoder — under TSan. The latter lives in `Sources/ADJSON/Concurrency/**` and
+    # `Sources/ADJSON/Codable/**`, so a PR touching either must trip the sanitizers too. On push the
+    # filter compares against the prior commit; on a PR, against the merge base.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -92,6 +94,8 @@ jobs:
           filters: |
             core:
               - 'Sources/ADJSONCore/Core/**'
+              - 'Sources/ADJSON/Concurrency/**'
+              - 'Sources/ADJSON/Codable/**'
 
   release-test:
     name: Test (macOS, release / no asserts)
@@ -199,7 +203,8 @@ jobs:
     needs: [build-test, changes]
     # Sanitizers are slow (TSan ~5-15x, ASan ~2x) and rebuild the whole graph under instrumentation,
     # so run them on main / on demand — and, additionally, on any PR that touches the unsafe scanner
-    # (`Sources/ADJSONCore/Core/**`, gated by the `changes` job), where a memory or data-race bug is
+    # OR the concurrency layer (`Sources/ADJSONCore/Core/**`, `Sources/ADJSON/Concurrency/**`,
+    # `Sources/ADJSON/Codable/**` — gated by the `changes` job), where a memory or data-race bug is
     # most likely to be introduced. Other PRs skip them. The conformance + simdjson corpora double as
     # the stress input that trips data races (TSan) and OOB / use-after-free (ASan) in the unsafe
     # scanner and the shared-state concurrency layer. These find what `-enable-actor-data-race-checks`
@@ -284,8 +289,9 @@ jobs:
     needs: build-test
     # Benchmarks rebuild the graph in release and are noisy on shared runners, so run them on
     # main / on demand — never on every PR (same gating as the platforms/sanitizers jobs). The
-    # run publishes its numbers to the run's job summary for at-a-glance tracking; it is not a
-    # regression gate (hosted-runner variance would make a hard threshold flaky).
+    # run publishes its numbers to the run's job summary for at-a-glance tracking. Regression
+    # detection is **advisory** (the threshold step below is `continue-on-error`): hosted-runner
+    # variance would make a hard gate flaky, so drift is surfaced in the summary, never failing CI.
     if: github.event_name != 'pull_request'
     runs-on: macos-26
     timeout-minutes: 60
@@ -315,6 +321,30 @@ jobs:
         run: |
           set -o pipefail
           swift package --allow-writing-to-package-directory benchmark --format markdown | tee bench-output.md
+      - name: Regression check vs committed baseline (advisory)
+        # Advisory regression gate. When a baseline has been committed under `.benchmarkBaselines/main`
+        # — generated on this runner class via a manual dispatch:
+        #   ADJSON_DEV=1 swift package --allow-writing-to-package-directory benchmark baseline update main
+        # then committed — this compares the current run against it and reports deltas. It is
+        # `continue-on-error` (and a no-op until a baseline exists), so hosted-runner variance can
+        # never break the build; it only surfaces drift in the job summary. Promote to a hard gate
+        # only if the runner proves stable enough.
+        if: always()
+        continue-on-error: true
+        env:
+          ADJSON_DEV: "1"
+        run: |
+          if [ -d .benchmarkBaselines/main ]; then
+            {
+              echo "## Benchmark regression check (advisory) vs baseline \`main\`"
+              echo '```text'
+              swift package --allow-writing-to-package-directory benchmark baseline check main 2>&1 || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "_No committed baseline (.benchmarkBaselines/main); skipping advisory regression check._" \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: ADJSON-vs-Foundation comparison table
         # Pairs each Foundation baseline with the ADJSON variant(s) in its workload and reports the
         # speedup — the at-a-glance headline the flat per-benchmark table above doesn't give. Reuses

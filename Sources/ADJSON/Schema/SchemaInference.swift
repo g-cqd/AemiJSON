@@ -18,6 +18,11 @@ private func ingest(_ j: JSON, into acc: SchemaAccumulator) {
     } else if j.bool != nil {
         acc.types.insert("boolean")
     } else if j.isNumberKind {
+        // Instance-based inference can't distinguish `2` from `2.0` — both are just JSON numbers —
+        // so a whole-valued sample is inferred as `integer`. If any later sample is non-integral the
+        // type widens to `number` (see `render`, which drops `integer` when `number` is also
+        // present). The `@Schemable` macro path (`describeValue`) instead reads the *static* Swift
+        // type, so a `Double` property is correctly `number` even when its value happens to be whole.
         if let d = j.double, d.isFinite, d.rounded() == d {
             acc.types.insert("integer")
         } else {

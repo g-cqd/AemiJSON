@@ -1,9 +1,10 @@
 /// A single SAX event produced by ``JSONEventReader``.
 ///
-/// `.number` carries the parsed `Double`; for an integer-shaped token its exact `Int64` value is
-/// also available via the reader's most recent token (use ``JSONValue`` materialization when you
-/// need lossless 64-bit integers). Object members surface as a `.key` event immediately followed by
-/// the value's event(s).
+/// `.number` carries the parsed `Double`, so an integer-shaped token beyond 2^53 loses precision.
+/// When you need lossless 64-bit integers, materialize through ``JSONValue`` (which keeps an exact
+/// `Int64`) or use the Codable decoder rather than the SAX stream — the reader exposes no separate
+/// integer accessor. Object members surface as a `.key` event immediately followed by the value's
+/// event(s).
 public enum JSONEvent: Sendable, Equatable {
     case beginObject
     case endObject
@@ -598,7 +599,9 @@ public struct JSONEventStreamReader {
                 let length = try leadLength(c, at: j)
                 guard j + length <= count else { return .incomplete }
                 _ = try buffer.withUnsafeBufferPointer { buf throws(JSONError) -> Int in
-                    try JSONUTF8.sequenceLength(buf.baseAddress!, j, count)
+                    // Reached only with a byte at `j` (c >= 0x80), so the buffer is non-empty and
+                    // `baseAddress` is non-nil.
+                    try JSONUTF8.sequenceLength(buf.baseAddress!, j, count)  // lint:allow
                 }
                 j += length
                 continue

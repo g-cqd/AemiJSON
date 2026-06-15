@@ -9,6 +9,16 @@
 
 import ADJSON
 
+// A representative macro fast-path type (recursive, so it exercises the depth-guarded
+// `fastArray` / `decodeValue` paths) for the Codable decode entry point below.
+@JSONCodable
+struct FuzzRecord: Codable {
+    var id: Int
+    var name: String?
+    var tags: [String]
+    var nested: [FuzzRecord]
+}
+
 @_cdecl("LLVMFuzzerTestOneInput")
 public func LLVMFuzzerTestOneInput(_ start: UnsafePointer<UInt8>?, _ count: Int) -> CInt {
     guard let start, count > 0 else { return 0 }
@@ -35,6 +45,35 @@ public func LLVMFuzzerTestOneInput(_ start: UnsafePointer<UInt8>?, _ count: Int)
         _ = path.query(document.root)
     }
     _ = try? SQLiteJSONPath(text)
+
+    // Codable decoder — the macro fast path + nested collections, all depth-guarded.
+    let decoder = ADJSON.JSONDecoder()
+    _ = try? decoder.decode(FuzzRecord.self, from: bytes)
+    _ = try? decoder.decode([[Int]].self, from: bytes)
+    _ = try? decoder.decode([String: Double].self, from: bytes)
+
+    // Schema compile + validate, JSON Patch (RFC 6902), and Merge-Patch (RFC 7396): treat the parsed
+    // document as a schema and validate it against itself, then apply it as a patch. These are the
+    // recursive paths whose depth guards must fail closed rather than overflow.
+    if let document = try? ADJSON.parse(bytes) {
+        let schema = JSONSchema(document.root)
+        _ = schema.validate(document.root)
+        let value = JSONValue(document.root)
+        if let patch = try? JSONPatch(document.root) { _ = try? patch.apply(to: value) }
+        _ = JSONMergePatch.apply(value, to: value)
+    }
+
+    // Push (chunked) SAX reader: feed the bytes in small chunks, then finish — the resumable
+    // tokenizer path the pull reader and tape parser don't cover.
+    var stream = JSONEventStreamReader()
+    var offset = 0
+    let chunk = 7
+    while offset < bytes.count {
+        let end = Swift.min(offset + chunk, bytes.count)
+        guard (try? stream.feed(Array(bytes[offset..<end]))) != nil else { break }
+        offset = end
+    }
+    _ = try? stream.finish()
 
     return 0
 }

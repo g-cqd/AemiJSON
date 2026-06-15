@@ -37,22 +37,33 @@ struct StaticCodingKey: CodingKey {
 }
 
 extension DecodeContext {
-    /// Decode any Decodable at a tape index — fast path if the type opts in, else
-    /// the generic container path. The fast-path result is bound back to `T` with a
-    /// conditional cast (the conformer is `T` by construction); if that ever failed
-    /// we fall through to the generic decoder rather than trap.
-    @inlinable func decodeValue<T: Decodable>(_ type: T.Type, at index: Int) throws -> T {
-        // Recursion guard: the Codable path is unavoidably recursive, so cap native depth and throw
-        // a catchable error rather than overflow the stack on deeply nested (or self-referential)
-        // input. See `DecodeContext.maxDecodeDepth`.
+    /// Enter one native-recursion level of the (unavoidably recursive) Codable path, throwing a
+    /// catchable `DecodingError` past `maxDecodeDepth` rather than overflowing the stack on deeply
+    /// nested (or self-referential) input. The counter is self-balanced on the throwing path so a
+    /// caller's `defer { popDepth() }` must NOT run when this throws — pair it as
+    /// `try pushDepth(); defer { popDepth() }`. Both the generic dispatch (`decodeValue`) and the
+    /// fast-container readers (`fastArray`/`fastDictionary`) flow through here, so every descent is
+    /// counted (the fast path used to bypass the guard — see `FastDecodeCursor`).
+    @inlinable func pushDepth() throws {
         decodeDepth += 1
-        defer { decodeDepth -= 1 }
         guard decodeDepth <= maxDecodeDepth else {
+            decodeDepth -= 1  // balance the counter before throwing (no matching `popDepth` runs)
             throw DecodingError.dataCorrupted(
                 .init(
                     codingPath: [],
                     debugDescription: "Decoding exceeded the maximum nesting depth (\(maxDecodeDepth))"))
         }
+    }
+
+    @inlinable func popDepth() { decodeDepth -= 1 }
+
+    /// Decode any Decodable at a tape index — fast path if the type opts in, else
+    /// the generic container path. The fast-path result is bound back to `T` with a
+    /// conditional cast (the conformer is `T` by construction); if that ever failed
+    /// we fall through to the generic decoder rather than trap.
+    @inlinable func decodeValue<T: Decodable>(_ type: T.Type, at index: Int) throws -> T {
+        try pushDepth()
+        defer { popDepth() }
         if let fast = T.self as? any ADJSONFastDecodable.Type {
             if let value = try fast.__adjsonDecode(_FastDecodeCursor(ctx: self, index: index)) as? T {
                 return value

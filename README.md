@@ -55,8 +55,8 @@ itself Foundation-free with no transitive deps)? Depend on the `ADJSONCore` prod
 `import ADJSON` re-exports `ADJSONCore`, so the full library is a strict superset: the `Data`
 conveniences, Codable, Schema, and the macros live only in the umbrella module.
 
-**Requirements:** Swift 6.3+ toolchain (developed and tested on 6.4); macOS 15+ / iOS 26 /
-tvOS 26 / watchOS 26 / visionOS 26.
+**Requirements:** Swift 6.3+ toolchain (developed and tested on 6.4); macOS 15+ / iOS 18+ /
+tvOS 18+ / watchOS 11+ / visionOS 2+ (the floor is set by `Synchronization.Mutex`).
 
 ## A quick tour
 
@@ -173,6 +173,82 @@ swift package --allow-writing-to-package-directory format   # apply formatting
 Without the fixtures, `swift test` still passes (corpus/conformance cases skip). See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer workflow — git hooks, the `ADJSON_DEV`
 flag, and build-time lint enforcement.
+
+## Roadmap & open items
+
+Work that is deliberately **not** done yet, with the rationale and the investigation each needs.
+Grouped by theme; none is a known correctness bug (the conformance suites stay green) — these are
+measured optimizations, native-API adoption decisions, larger refactors, and optional features.
+
+### Performance (each gated on adding a targeted benchmark first)
+
+The benchmark suite (`ordo-one/benchmark`) currently exercises the default parse/decode/encode/query
+paths only. Each item below lives on a path the suite does **not** measure, so the discipline is:
+add a focused benchmark, capture a baseline, optimize, then re-measure — no optimization lands
+without a before/after number.
+
+- [ ] **ECMA-262 number encoding allocates per value.** `JSONOutput.appendECMANumber` builds two
+  intermediate `[UInt8]` arrays; move them to `withUnsafeTemporaryAllocation` (digit buffers are
+  bounded, ~24 bytes, like `appendMagnitude`). Win is malloc-count (deterministic). Note
+  `Double.description` itself still allocates a `String`. Only on the `.javaScript` / `.ecma262`
+  profile, so add a JS-stringify encode benchmark first.
+- [ ] **Pretty / sorted Codable encode does a 4-stage round-trip** (encode → parse → materialize →
+  re-encode) and its number formatting diverges from the compact path. Stream sorted/pretty output
+  directly (or at least re-serialize only once) and reconcile the compact-vs-pretty number
+  divergence. Add a pretty/sorted encode benchmark.
+- [ ] **JSONPath slice selector materializes the whole array.** `JSONPathEvaluator.appendSlice`
+  calls `arrayValue` even for a small slice; iterate the slice indices without full materialization.
+  Add a JSONPath slice benchmark.
+- [ ] **Push-SAX `decodeString` re-scans for escapes** that `scanStringEnd` already detected; thread
+  the `hasEscape` flag through to skip the second pass. Add a streaming-reader benchmark.
+- [ ] **Escaped-key comparison re-allocates.** `JSONKey.matches(escaped: true)` re-unescapes and
+  allocates a `String` per comparison; explore an escape-aware byte compare or a decode-once cache
+  for objects with escaped keys. Add an escaped-key decode benchmark.
+
+### Native-API modernization
+
+- [ ] **`UnsafePointer` → `RawSpan` / `Span`** for the parser byte reads and the lazy `JSON`
+  accessors (bounds-safe by construction). Strictly benchmark-gated: `Span` carries bounds checks,
+  so keep raw pointers on the hot inner loops where it regresses. **Not** for `DecodeContext` —
+  Codable's `Decoder` must be `Escapable`, and a `Span` cannot be stored there (keep raw pointers +
+  asserts, as documented). Files: `Scanner`, `Bytes`, `JSON`, `KeyCompare`.
+- [ ] **`AsyncSequence` streaming.** Wrap `JSONEventStreamReader` as an `AsyncSequence<JSONEvent>`
+  that consumes `URLSession.AsyncBytes` / `FileHandle.AsyncBytes` (optionally via
+  `swift-async-algorithms`). Fills the async-streaming gap and pairs with the existing push reader.
+- [ ] **swift-nio `ByteBuffer` adapter.** `ByteBuffer` → `ByteSource` (zero-copy parse) and a
+  writer → `ByteBuffer` sink. Server-focused; ship as a dev-gated target / small `ADJSONNIO` product
+  so the core stays dependency-free.
+- [ ] **Decide on `UTF8Span` / `InlineArray`** (a decision, not an auto-adopt). Both raise the
+  deployment floor to the 2025 SDKs — above the current iOS 18 floor (pinned by
+  `Synchronization.Mutex`). Current recommendation: **do not adopt yet**; revisit only if the floor
+  rises for another reason.
+
+### Architecture & refactoring
+
+- [ ] **Extract a shared RFC-8259 tokenizer.** The number / string / escape / UTF-8 grammar is
+  copy-pasted across three readers (the tape scanner, the pull-SAX `JSONEventReader`, and the
+  push-SAX `JSONEventStreamReader`), so any grammar fix must be made in three places. Extract
+  resumability-aware tokenization helpers. Biggest maintainability win, but large and carries
+  conformance-suite (JSONTestSuite + JSONPath CTS) regression risk — deserves a focused PR.
+- [ ] **Derive the depth caps where sensible.** The unified failure-safety policy is documented (see
+  the *Depth Safety* DocC article); the individual caps could be made consistent/derived (e.g. a
+  stack-size-aware decode default) rather than fixed constants.
+
+### Optional features (to consider)
+
+- [ ] **JSON5 / lenient parity in the event readers** — the tape parser supports JSON5; the SAX
+  readers do not yet.
+- [ ] **`KeyEncodingStrategy.custom` / `KeyDecodingStrategy.custom`** — the streaming encoder/decoder
+  do not track the full coding path required for a custom key transform.
+- [ ] **Optional HTML-safe output escaping** — escape `<`, `>`, `&`, and U+2028 / U+2029 for
+  embedding JSON in HTML/JS contexts.
+
+### Tooling / CI (low priority)
+
+- [ ] **Make the benchmark regression gate real.** Commit a runner-generated `.benchmarkBaselines/main`,
+  then promote the advisory check toward a hard gate if the hosted runner proves stable enough.
+- [ ] **Coverage floor** in CI; promote the advisory Linux / fuzz jobs to required once a stable
+  toolchain ships; consider a comprehensive (non-regex) force-unwrap lint.
 
 ## License
 

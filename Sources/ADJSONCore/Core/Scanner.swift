@@ -15,11 +15,16 @@ struct TapeBuilder {
 
     // One open container being built. Stands in for a recursive-descent call frame, so nesting
     // lives on the heap and arbitrarily deep input can never overflow the call stack.
+    //
+    // `seenKeys` is initialized `[:]` for every frame, including arrays. An empty Swift dictionary
+    // literal is the shared empty-singleton — it allocates nothing until the first insert, and only
+    // `recordKey` (objects, in `.throwError` mode) ever inserts — so array frames and the default
+    // (no duplicate-check) path pay zero allocation here. (Measured: already optimal; left as-is.)
     struct Frame {
         let openIndex: Int
         var count: Int
         let isObject: Bool
-        var seenKeys: [UInt64: [(offset: Int, length: Int)]]
+        var seenKeys: [Int: [(offset: Int, length: Int)]]
     }
 
     init(_ p: UnsafePointer<UInt8>, _ n: Int, options: JSONParseOptions) {
@@ -230,25 +235,37 @@ struct TapeBuilder {
         slots[openIdx] = Slot.container(tag, count: count, next: slots.count)
     }
 
-    // Detects duplicate keys (RFC 7493 / `.throwError`) in O(1) expected time by bucketing
-    // keys under an FNV-1a hash of their raw bytes — avoiding the O(n^2) all-pairs scan that
-    // a hostile object with many keys could exploit (DoS). Hash collisions fall back to memcmp.
+    // Detects duplicate keys (RFC 7493 / `.throwError`) in O(1) expected time by bucketing keys
+    // under a hash of their raw bytes — avoiding the O(n²) all-pairs scan a hostile object with
+    // many keys could exploit (DoS). Hash collisions fall back to a byte compare.
+    //
+    // The hash is Swift's `Hasher` (SipHash), seeded randomly per process, so an attacker cannot
+    // precompute a flood of colliding keys to force the O(bucket²) fallback — the fixed-seed FNV-1a
+    // this replaced was vulnerable to exactly that HashDoS.
+    //
+    // NOTE: keys are compared by their RAW (still-escaped) bytes, so two keys equal only after
+    // unescaping (`"a"` vs `"a"`) are NOT reported as duplicates. This is a deliberate perf
+    // tradeoff — no per-key unescape on the scan path — and is acceptable under RFC 8259 (which
+    // leaves duplicate handling to the application); RFC 7493 I-JSON producers emit canonical keys.
     mutating func recordKey(_ keyStart: Int, frame: Int) throws(JSONError) {
         let keySlot = slots[slots.count - 1]
         let offset = Slot.low(keySlot)
         let length = Slot.length(keySlot)
-        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        for k in 0..<length {
-            hash = (hash ^ UInt64(p[offset + k])) &* 0x0000_0100_0000_01b3
+        var hasher = Hasher()
+        hasher.combine(bytes: UnsafeRawBufferPointer(start: p + offset, count: length))
+        let hash = hasher.finalize()
+        // Read the bucket for the collision check, then append in place. The `if let` binding is
+        // released before the `default:` subscript mutates, so the stored array keeps refcount 1 and
+        // the append doesn't copy-on-write the whole bucket on every key.
+        if let bucket = stack[frame].seenKeys[hash] {
+            for previous in bucket
+            where previous.length == length
+                && (length == 0 || JSONKey.bytesEqual(p + previous.offset, p + offset, length))
+            {
+                throw JSONError.duplicateKey(at: keyStart)
+            }
         }
-        var bucket = stack[frame].seenKeys[hash] ?? []
-        for previous in bucket
-        where previous.length == length && (length == 0 || JSONKey.bytesEqual(p + previous.offset, p + offset, length))
-        {
-            throw JSONError.duplicateKey(at: keyStart)
-        }
-        bucket.append((offset, length))
-        stack[frame].seenKeys[hash] = bucket
+        stack[frame].seenKeys[hash, default: []].append((offset, length))
     }
 
     // Records the string's content range + hasEscape flag; validates escapes and

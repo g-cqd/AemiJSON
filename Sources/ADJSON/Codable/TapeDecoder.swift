@@ -26,7 +26,6 @@ final class DecodeContext {
     @usableFromInline let keysAreUnique: Bool
     let userInfo: [CodingUserInfoKey: Any]
     let strategies: DecodeStrategies
-    var iso8601: ISO8601DateFormatter?  // lazy, single-operation cache
     // Native-recursion guard for the (unavoidably recursive) Codable path. `decodeValue` bumps
     // `decodeDepth` on entry and throws past `maxDecodeDepth`, converting a stack overflow on deeply
     // nested input into a catchable error — even when `maxDepth` is raised far past it.

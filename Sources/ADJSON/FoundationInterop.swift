@@ -10,8 +10,8 @@ public import Foundation
 // entry — the document retains the `Data` and reads it in place (copy-on-write keeps the borrowed
 // bytes stable if the caller mutates their copy afterward).
 //
-// The default `parse(_:Data)` deliberately keeps the *copy* path, though. Measurement (see the
-// roadmap notes) showed zero-copy is a wash on parse throughput — the one input copy is negligible
+// The default `parse(_:Data)` deliberately keeps the *copy* path, though. Measurement showed
+// zero-copy is a wash on parse throughput — the one input copy is negligible
 // against the single-pass scan — while it *regresses* every repeated lazy read (`json.a.b.string`,
 // `JSONValue(parsing:)`) by ~20%, because each `withBytePointer` then dispatches through the
 // `any ByteSource` existential rather than a directly-inlined `[UInt8]` buffer borrow. So the

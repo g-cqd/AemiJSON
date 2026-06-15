@@ -6,16 +6,23 @@ import ADJSONCore
 public struct _JSONByteWriter {
     @usableFromInline var bytes: [UInt8]
     @usableFromInline var options: JSONEncodingOptions
+    // Native-recursion guard, symmetric with `EncodeState.maxEncodeDepth`. `encode` bumps `depth`
+    // and throws past `maxDepth` so a recursive / self-referential fast (`@JSONCodable`) type fails
+    // closed rather than overflowing the stack. Threaded across the `EncodeState` boundary.
+    @usableFromInline var depth = 0
+    @usableFromInline var maxDepth: Int
 
-    @inlinable public init(capacity: Int = 0, options: JSONEncodingOptions = .rfc8259) {
+    @inlinable public init(capacity: Int = 0, options: JSONEncodingOptions = .rfc8259, maxDepth: Int = 2048) {
         bytes = []
         if capacity > 0 { bytes.reserveCapacity(capacity) }
         self.options = options
+        self.maxDepth = maxDepth
     }
 
-    init(adopting buffer: [UInt8], options: JSONEncodingOptions = .rfc8259) {
+    init(adopting buffer: [UInt8], options: JSONEncodingOptions = .rfc8259, maxDepth: Int = 2048) {
         bytes = buffer
         self.options = options
+        self.maxDepth = maxDepth
     }
 
     @inlinable public mutating func beginObject() { bytes.append(0x7B) }
@@ -53,6 +60,12 @@ public struct _JSONByteWriter {
     }
 
     @inlinable public mutating func encode<T: Encodable>(_ v: T) throws {
+        depth += 1
+        defer { depth -= 1 }
+        guard depth <= maxDepth else {
+            throw EncodingError.invalidValue(
+                v, .init(codingPath: [], debugDescription: "Encoding exceeded the maximum nesting depth (\(maxDepth))"))
+        }
         if let fast = v as? any ADJSONFastEncodable {
             try fast.__adjsonEncode(into: &self)
         } else {
@@ -66,7 +79,8 @@ public struct _JSONByteWriter {
     @usableFromInline mutating func encodeGeneric<T: Encodable>(_ v: T) throws {
         let writer = JSONWriter(adopting: bytes)
         bytes = []
-        let state = EncodeState(writer, options: options)
+        let state = EncodeState(writer, options: options, maxEncodeDepth: maxDepth)
+        state.encodeDepth = depth  // continue the depth count into the generic encoder (no reset)
         try v.encode(to: TapeEncoder(state: state))
         state.closeDownTo(0)
         bytes = writer.bytes

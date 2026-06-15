@@ -6,6 +6,13 @@
 /// Conformers must expose a single, stable view of the same bytes on every call (value-semantic
 /// owners like `Data` satisfy this for free). The tape stores byte *offsets*, so re-borrowing the
 /// same immutable owner later yields identical bytes regardless of the pointer's address.
+///
+/// CONCURRENCY: `withBytes` must support **concurrent** invocation — ``ADJSON/decodeArrayConcurrently(_:from:minimumBatch:maxDecodingDepth:)``
+/// borrows the source from many tasks at once, each binding its own pointer over the same immutable
+/// bytes. A read-only borrow of immutable storage is inherently safe, which value-semantic
+/// (copy-on-write) owners like `Data` provide for free; a custom conformer that mutates shared
+/// state inside `withBytes` (or hands out a pointer into a buffer it concurrently mutates) breaks
+/// this and must not be used with the concurrent decoder.
 public protocol ByteSource {
     func withBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R
 }

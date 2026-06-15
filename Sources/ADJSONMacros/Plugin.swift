@@ -19,6 +19,12 @@ private struct Property {
     let wrapped: String  // element type when optional, else == type
 }
 
+// Emits `ADJSONFast{Decodable,Encodable}` for a struct so its (de)serialization skips the Codable
+// container machinery. Type matching is SYNTACTIC (the written spelling): a scalar named unusually —
+// a typealias (`UserId = Int`) or a qualified name (`Swift.Int`) — isn't recognized as a scalar and
+// falls to the generic `decodeAt`/`encode` path. That is still CORRECT (unlike `@Schemable`, which
+// would emit a wrong schema); it only forgoes the monomorphic scalar fast path. Spell scalar field
+// types plainly to keep the fast path.
 struct JSONCodableMacro: ExtensionMacro {
     static func expansion(
         of node: AttributeSyntax,

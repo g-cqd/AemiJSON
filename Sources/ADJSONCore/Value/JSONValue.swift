@@ -26,8 +26,7 @@ extension JSONValue {
     // `OrderedDictionary`'s order-sensitive `==`).
     //
     // The walk is **iterative**: a work-stack of value pairs replaces structural recursion, so
-    // comparing two deeply nested trees can't overflow the call stack (a recursive `==` crashed at
-    // ~37k levels; see the depth-safety notes in `Architecture`). Order doesn't affect the result.
+    // comparing two deeply nested trees can't overflow the call stack. Order doesn't affect the result.
     public static func == (lhs: JSONValue, rhs: JSONValue) -> Bool {
         var stack: [(JSONValue, JSONValue)] = [(lhs, rhs)]
         while let (a, b) = stack.popLast() {
@@ -119,7 +118,7 @@ extension JSONValue {
         if let d = json.double { return .number(d) }
         if let s = json.string { return .string(s) }
         if json.isArray || json.isObject { return nil }
-        return .null  // missing sentinel materializes as null, matching the former recursion
+        return .null  // a missing sentinel materializes as null
     }
 
     /// One in-progress container in the iterative materializer. Children are walked in document
@@ -234,7 +233,9 @@ extension JSONValue {
         // regression the eager-tree parse had). Pretty/sorted output, or any subtree past
         // `maxFastDepth`, takes the iterative walk below; a deep subtree is handed off to it
         // mid-recursion, so the call stack stays bounded and the emitted bytes are identical either
-        // way. The 512 depth cap is enforced on the iterative path (recursion never reaches it).
+        // way. The only nesting limit is `maxEncodingDepth` (a high policy ceiling, see above),
+        // enforced on the iterative path — the recursive fast path hands off at `maxFastDepth` long
+        // before reaching it.
         if !options.prettyPrinted, options.keyOrder == .declaration {
             try writeCompact(self, into: writer, depth: depth, options: options)
         } else {

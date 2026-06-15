@@ -22,11 +22,14 @@ extension JSONDocument {
     /// Decode a contiguous range of array elements. Each call binds its own base
     /// pointer over the shared immutable storage, so it is safe to run from many
     /// tasks at once.
-    func decodeElementRange<T: Decodable>(_ type: T.Type, _ lo: Int, _ hi: Int, _ starts: [Int]) throws -> [T] {
+    func decodeElementRange<T: Decodable>(
+        _ type: T.Type, _ lo: Int, _ hi: Int, _ starts: [Int], maxDecodingDepth: Int
+    ) throws -> [T] {
         try withBuffers { byteBase, byteCount, tapeBase, tapeCount in
             let ctx = DecodeContext(
                 doc: self, bytes: byteBase, byteCount: byteCount,
-                tape: tapeBase, tapeCount: tapeCount, userInfo: [:], strategies: DecodeStrategies())
+                tape: tapeBase, tapeCount: tapeCount, userInfo: [:], strategies: DecodeStrategies(),
+                maxDecodeDepth: maxDecodingDepth)
             var out = [T]()
             out.reserveCapacity(hi - lo)
             for k in lo..<hi { out.append(try ctx.decodeValue(T.self, at: starts[k])) }
@@ -36,24 +39,42 @@ extension JSONDocument {
 }
 
 extension ADJSON {
+    /// Default per-element native-recursion cap for the concurrent path. The element decoders run on
+    /// the Swift cooperative pool, whose threads carry far smaller stacks (~512 KB) than the main
+    /// thread (~8 MB) — so the keyed-object decode that the main-thread default (2048) targets would
+    /// overflow ~16× shallower here. 128 (≈ 2048 / 16) throws a catchable `DecodingError` on an
+    /// over-nested element instead of crashing the pool thread; raise it via the `maxDecodingDepth`
+    /// parameter when elements are legitimately deeper and the data is trusted.
+    public static let concurrentDecodeDefaultDepth = 128
+
     /// Decode a top-level JSON array, scanning once on the calling task then
     /// decoding element batches in parallel across cores. Off the main actor.
     /// Static (no decoder instance) so nothing non-Sendable crosses isolation.
+    ///
+    /// - Important: This path uses the **default** decoding configuration — `.useDefaultKeys`,
+    ///   `.deferredToDate`, `.base64`, and an empty `userInfo`. It deliberately takes no
+    ///   ``ADJSON/JSONDecoder`` instance so nothing non-`Sendable` (e.g. a `.custom` strategy
+    ///   closure or arbitrary `userInfo`) crosses the task boundary. If you need snake_case keys, a
+    ///   date strategy, or `userInfo`, decode serially with a configured ``ADJSON/JSONDecoder``, or
+    ///   pre-transform the element types so the default mapping suffices.
     public static func decodeArrayConcurrently<T: Decodable & Sendable>(
-        _ type: T.Type, from data: Data, minimumBatch: Int = 512
+        _ type: T.Type, from data: Data, minimumBatch: Int = 512,
+        maxDecodingDepth: Int = concurrentDecodeDefaultDepth
     ) async throws -> [T] {
-        try await decodeArrayConcurrently(type, from: try ADJSON.parse(data), minimumBatch: minimumBatch)
+        try await decodeArrayConcurrently(
+            type, from: try ADJSON.parse(data), minimumBatch: minimumBatch, maxDecodingDepth: maxDecodingDepth)
     }
 
     public static func decodeArrayConcurrently<T: Decodable & Sendable>(
-        _ type: T.Type, from document: JSONDocument, minimumBatch: Int = 512
+        _ type: T.Type, from document: JSONDocument, minimumBatch: Int = 512,
+        maxDecodingDepth: Int = concurrentDecodeDefaultDepth
     ) async throws -> [T] {
         guard let starts = document.topLevelArrayElementStarts() else {
             return try JSONDecoder().decode([T].self, from: document)
         }
         let n = starts.count
         if n <= minimumBatch {
-            return try document.decodeElementRange(T.self, 0, n, starts)
+            return try document.decodeElementRange(T.self, 0, n, starts, maxDecodingDepth: maxDecodingDepth)
         }
         let cores = max(1, ProcessInfo.processInfo.activeProcessorCount)
         let chunkCount = min(cores, max(1, n / minimumBatch))
@@ -67,7 +88,7 @@ extension ADJSON {
                 let lo0 = lo
                 let idx = chunkIndex
                 group.addTask {
-                    (idx, try document.decodeElementRange(T.self, lo0, hi, starts))
+                    (idx, try document.decodeElementRange(T.self, lo0, hi, starts, maxDecodingDepth: maxDecodingDepth))
                 }
                 lo = hi
                 chunkIndex += 1

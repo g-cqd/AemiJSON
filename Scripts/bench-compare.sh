@@ -39,9 +39,12 @@ else
         export BENCHMARK_DISABLE_JEMALLOC=1
         echo "==> jemalloc not resolvable via pkg-config; building with BENCHMARK_DISABLE_JEMALLOC=1 (malloc metrics off)" >&2
     fi
+    # Build the executable *product* (not --target): with jemalloc in the graph, `swift build
+    # --target ADJSONSuite` compiles the module but skips linking the executable, leaving no binary.
     echo "==> Building ADJSONSuite (release)…" >&2
-    swift build -c release --target ADJSONSuite >&2
+    swift build -c release --product ADJSONSuite >&2
     bin="$(swift build -c release --show-bin-path)/ADJSONSuite"
+    [[ -x "$bin" ]] || { echo "bench-compare: build produced no executable at $bin" >&2; exit 1; }
 fi
 
 filter=()

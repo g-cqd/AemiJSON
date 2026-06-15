@@ -45,7 +45,7 @@ swift test --sanitize=address --sanitize=undefined  # OOB / use-after-free in th
 The test target already drives the large real-world corpora (canada/twitter/citm, JSONTestSuite,
 the JSONPath CTS) through the scanner and the shared-state concurrency layer, so `swift test
 --sanitize` doubles as the stress harness. These catch what `-enable-actor-data-race-checks`
-(actor-isolation only) cannot — the hot paths lean on `Unsafe*Pointer` / `Span`. For coverage-guided
+(actor-isolation only) cannot — the hot paths lean on `Unsafe*Pointer`. For coverage-guided
 input generation see the **libFuzzer** section below; for throughput numbers use
 `ADJSON_DEV=1 swift package benchmark` (never under a sanitizer — ASan changes allocation layout and
 TSan is ~5–15× slower, so a sanitized run is a correctness pass, not a measurement).

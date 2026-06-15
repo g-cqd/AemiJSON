@@ -30,7 +30,11 @@ mandates recursion), and it is bounded by an explicit guard that **throws instea
 | ``JSONValue`` serialize (``JSONValue/encodedBytes(options:)``) | **iterative** | serializes any holdable tree |
 | ``JSONValue`` equality (`==`) | **iterative** | compares any depth (an explicit work-stack) |
 | **Codable decode** (``ADJSON/JSONDecoder``) | recursive (protocol) | **throws** past `maxDecodingDepth` (default 2048) |
-| JSON Schema validate | recursive | bounded by `maxDepth` (keep it modest for untrusted deep input) |
+| **Codable encode** (``ADJSON/JSONEncoder``) | recursive (protocol) | **throws** past `maxEncodingDepth` (default 2048) |
+| Concurrent decode (`ADJSON.decodeArrayConcurrently`) | recursive (per element, on the pool) | **throws** past `maxDecodingDepth` (default 128 — pool stacks are small) |
+| JSON Schema validate | recursive | **fails closed** (records a `ValidationError`) past an independent cap (256) |
+| JSONPath filter parse (`length(length(…))`, `[?…[?…]]`) | recursive | **throws** `JSONPathError` past a cap (64) |
+| JSON Patch / Merge-Patch / SQLite mutate | recursive (per path / patch level) | **fails closed** past a cap (256): patch throws `JSONPatchError.depthExceeded`, merge/SQLite degrade safely |
 
 ### Tree deallocation is the one inherent limit
 
@@ -63,10 +67,32 @@ decoder.maxDecodingDepth = 256                          // but cap the recursive
 // A 100k-deep document now throws DecodingError instead of crashing.
 ```
 
+## The failure-safety policy at a glance
+
+ADJSON keeps the *iterative* paths effectively unbounded (limited only by ``JSONParseOptions/maxDepth``,
+which costs heap, not stack) and gives every *unavoidably recursive* path its own hard cap that
+**fails closed** — a catchable error, never a crash — independent of `maxDepth`. Each default is sized
+for the call site: the recursive frames are heavy where the cap is low.
+
+| Limit | Default | Applies to | Past it |
+|---|---|---|---|
+| ``JSONParseOptions/maxDepth`` | 512 | iterative parse / lazy / SAX / JSONPath descent | throws `JSONError.depthExceeded` |
+| ``ADJSON/JSONDecoder/maxDecodingDepth`` | 2048 | recursive Codable decode (main thread) | throws `DecodingError` |
+| ``ADJSON/JSONEncoder/maxEncodingDepth`` | 2048 | recursive Codable encode (main thread) | throws `EncodingError` |
+| concurrent-decode `maxDecodingDepth` | 128 | per-element decode on the cooperative pool (~512 KB stacks) | throws `DecodingError` |
+| schema validation cap | 256 | recursive schema + instance walk (heavy frames) | records a `ValidationError` |
+| JSONPath filter-parse cap | 64 | nested `length()` / bracket-filter recursion | throws `JSONPathError` |
+| value-mutation cap | 256 | JSON Patch / Merge-Patch / SQLite path recursion | patch throws; merge/SQLite degrade safely |
+
+The recursive caps differ because frame sizes differ: a Codable frame is light (2048 fits the ~8 MB
+main thread), a schema-validation frame copies a whole compiled node (so 256), and the concurrent
+decoder runs on small pool stacks (so 128 ≈ 2048 ÷ 16). Lower any of them when running untrusted
+input on a smaller stack; raise the decode/encode caps on a thread with a known-large stack.
+
 ## Recommendations
 
-- **Untrusted input?** Keep ``JSONParseOptions/maxDepth`` modest *if you will decode or
-  schema-validate it* (both are recursive). For pure parse / lazy / SAX / JSONPath workloads you can
+- **Untrusted input?** Keep ``JSONParseOptions/maxDepth`` modest *if you will decode, encode, or
+  schema-validate it* (all recursive). For pure parse / lazy / SAX / JSONPath workloads you can
   raise it freely — those never touch the call stack.
 - **Decoding on a worker thread** (default stack ~512 KB, ~16× smaller than the 8 MB main thread)?
   Lower ``ADJSON/JSONDecoder/maxDecodingDepth`` accordingly, or decode on a thread with a known large

@@ -110,6 +110,11 @@ extension _FastDecodeCursor {
         var out = [U]()
         out.reserveCapacity(count)
         var i = index + 1
+        // Count this container against the decode-depth budget: elements are decoded by calling
+        // `__adjsonDecode` directly (not via `ctx.decodeValue`), so without this a nest of fast
+        // containers (`[[[Int]]]`, recursive `@JSONCodable` types) would recurse unguarded.
+        try ctx.pushDepth()
+        defer { ctx.popDepth() }
         for _ in 0..<count {
             out.append(try U.__adjsonDecode(_FastDecodeCursor(ctx: ctx, index: i)))
             i = ctx.nextIndex(after: i)
@@ -144,6 +149,10 @@ extension _FastDecodeCursor {
         let count = ctx.count(index)
         var out = [String: V](minimumCapacity: count)
         var i = index + 1
+        // See `fastArray`: values are decoded via `__adjsonDecode` directly, so this container must
+        // be counted against the decode-depth budget to bound a nest of fast containers.
+        try ctx.pushDepth()
+        defer { ctx.popDepth() }
         for _ in 0..<count {
             let key = ctx.keyString(i)
             out[key] = try V.__adjsonDecode(_FastDecodeCursor(ctx: ctx, index: i + 1))

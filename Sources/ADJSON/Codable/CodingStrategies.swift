@@ -139,15 +139,6 @@ func convertFromSnakeCase(_ key: String) -> String {
     return String(key[leading]) + joined + String(key[trailing])
 }
 
-// A fresh ISO 8601 formatter configured like Foundation's `.iso8601` (internet date-time, no
-// fractional seconds). Created lazily per encode/decode operation — `ISO8601DateFormatter` is not
-// `Sendable`, and one `EncodeState`/`DecodeContext` is confined to a single operation.
-func makeISO8601Formatter() -> ISO8601DateFormatter {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = .withInternetDateTime
-    return f
-}
-
 // MARK: - Decode-side strategy application (intercepted by type in `decodeValue`)
 
 extension DecodeContext {
@@ -176,9 +167,12 @@ extension DecodeContext {
             return Date(timeIntervalSince1970: d / 1000)
         case .iso8601:
             guard let s = string(index) else { throw dateMismatch() }
-            let f = iso8601 ?? makeISO8601Formatter()
-            iso8601 = f
-            guard let date = f.date(from: s) else { throw dateCorrupted("Expected an ISO8601 date string") }
+            // `Date.ISO8601FormatStyle` (Sendable, value-type, allocation-free) replaces the
+            // non-Sendable `ISO8601DateFormatter` cache; its default is internet date-time in UTC,
+            // byte-identical to Foundation's `.iso8601` strategy.
+            guard let date = try? Date(s, strategy: .iso8601) else {
+                throw dateCorrupted("Expected an ISO8601 date string")
+            }
             return date
         case .formatted(let formatter):
             guard let s = string(index) else { throw dateMismatch() }

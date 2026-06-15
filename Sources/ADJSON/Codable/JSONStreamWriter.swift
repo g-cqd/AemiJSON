@@ -65,6 +65,9 @@ public struct JSONStreamWriter: ~Copyable {
     }
 
     public mutating func endObject() {
+        // A balanced caller always has a matching open object on top. Caught in debug; release stays
+        // lenient (pops what it can) rather than trapping on production misuse.
+        assert(stack.last?.isObject == true, "JSONStreamWriter.endObject() without a matching beginObject()")
         if !stack.isEmpty { stack.removeLast() }
         bytes.append(0x7D)
     }
@@ -76,6 +79,7 @@ public struct JSONStreamWriter: ~Copyable {
     }
 
     public mutating func endArray() {
+        assert(stack.last?.isObject == false, "JSONStreamWriter.endArray() without a matching beginArray()")
         if !stack.isEmpty { stack.removeLast() }
         bytes.append(0x5D)
     }

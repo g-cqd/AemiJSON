@@ -22,6 +22,12 @@ extension ADJSON {
         public var dataEncodingStrategy: DataEncodingStrategy = .base64
         /// How `CodingKey`s are converted to JSON keys (default `.useDefaultKeys`).
         public var keyEncodingStrategy: KeyEncodingStrategy = .useDefaultKeys
+        /// Maximum native recursion depth for the (necessarily recursive) Codable encode. Past this,
+        /// encoding throws `EncodingError.invalidValue` instead of overflowing the call stack — so a
+        /// recursive or self-referential `Encodable` fails closed. Symmetric with
+        /// ``JSONDecoder/maxDecodingDepth``; the default **2048** is sized for the ~8 MB main thread
+        /// (lower it when encoding untrusted graphs on a small-stack worker thread).
+        public var maxEncodingDepth: Int = 2048
 
         public init() {}
 
@@ -75,7 +81,8 @@ extension ADJSON {
             var keyStrategyActive = true
             if case .useDefaultKeys = keyEncodingStrategy { keyStrategyActive = false }
             if !keyStrategyActive, let fast = value as? any ADJSONFastEncodable {
-                var w = _JSONByteWriter(adopting: EncoderBufferPool.take(), options: options)
+                var w = _JSONByteWriter(
+                    adopting: EncoderBufferPool.take(), options: options, maxDepth: maxEncodingDepth)
                 do {
                     try fast.__adjsonEncode(into: &w)
                 } catch {
@@ -85,7 +92,7 @@ extension ADJSON {
                 return w.bytes
             }
             let writer = JSONWriter(adopting: EncoderBufferPool.take())
-            let state = EncodeState(writer, options: options, strategies: strategies)
+            let state = EncodeState(writer, options: options, strategies: strategies, maxEncodeDepth: maxEncodingDepth)
             do {
                 try state.encodeValue(value)
             } catch {

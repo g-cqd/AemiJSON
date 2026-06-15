@@ -50,14 +50,22 @@ extension SQLiteJSONPath {
 
     private enum Mode { case set, insert, replace, remove }
 
+    // Native-recursion cap. `mutate` recurses once per compiled path segment; a path parsed from a
+    // string is short, but the public API also accepts a programmatically-built path, so past this
+    // depth the mutation is a no-op (returns the node unchanged) — matching SQLite's lenient
+    // "bad input → no-op" behaviour — rather than overflowing the stack. Matches the other
+    // value-mutation caps (light frames).
+    private static let maxMutateDepth = 256
+
     // Recurses over the compiled path's segments (bounded by the path length — a handful — not the
     // document depth), folding the mutation into a fresh copy. Out-of-range indices, missing
     // parents, and kind mismatches are no-ops, matching SQLite's lenient behaviour.
     private func mutate(
-        _ node: JSONValue, _ segs: ArraySlice<Segment>, _ value: JSONValue?, _ mode: Mode
+        _ node: JSONValue, _ segs: ArraySlice<Segment>, _ value: JSONValue?, _ mode: Mode, _ depth: Int = 0
     )
         -> JSONValue
     {
+        guard depth < Self.maxMutateDepth else { return node }
         guard let segment = segs.first else {
             switch mode {
             case .set, .replace: return value ?? node
@@ -79,16 +87,16 @@ extension SQLiteJSONPath {
                 }
             } else {
                 guard let child = members[key] else { return node }
-                members[key] = mutate(child, rest, value, mode)
+                members[key] = mutate(child, rest, value, mode, depth + 1)
             }
             return .object(members)
 
         case .index(let index):
-            return mutateArrayElement(node, at: index, rest, value, mode)
+            return mutateArrayElement(node, at: index, rest, value, mode, depth)
 
         case .fromEnd(let n):
             guard case .array(let elements) = node else { return node }
-            return mutateArrayElement(node, at: elements.count - n, rest, value, mode)
+            return mutateArrayElement(node, at: elements.count - n, rest, value, mode, depth)
 
         case .append:
             guard case .array(var elements) = node, rest.isEmpty else { return node }
@@ -98,7 +106,7 @@ extension SQLiteJSONPath {
     }
 
     private func mutateArrayElement(
-        _ node: JSONValue, at index: Int, _ rest: ArraySlice<Segment>, _ value: JSONValue?, _ mode: Mode
+        _ node: JSONValue, at index: Int, _ rest: ArraySlice<Segment>, _ value: JSONValue?, _ mode: Mode, _ depth: Int
     ) -> JSONValue {
         guard case .array(var elements) = node, index >= 0, index < elements.count else { return node }
         if rest.isEmpty {
@@ -108,7 +116,7 @@ extension SQLiteJSONPath {
             case .remove: elements.remove(at: index)
             }
         } else {
-            elements[index] = mutate(elements[index], rest, value, mode)
+            elements[index] = mutate(elements[index], rest, value, mode, depth + 1)
         }
         return .array(elements)
     }
