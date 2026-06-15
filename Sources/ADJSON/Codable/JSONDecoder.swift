@@ -19,9 +19,15 @@ extension ADJSON {
         /// Maximum native recursion depth for the (necessarily recursive) Codable decode. Past this,
         /// decoding throws `DecodingError.dataCorrupted` instead of overflowing the call stack — so a
         /// deeply nested or self-referential `Decodable` fails closed. Independent of `options.maxDepth`
-        /// (which bounds the *iterative* parser and can be raised freely); default 512. Lower it when
-        /// decoding untrusted input on a small-stack worker thread; raise it only on a large stack.
-        public var maxDecodingDepth: Int = 512
+        /// (which bounds the *iterative* parser and can be raised freely).
+        ///
+        /// Default **2048** — 4× past Foundation's hard 512, and chosen to throw *before* overflow in
+        /// both debug and release on the ~8 MB main thread: the heaviest path (keyed-object decode)
+        /// overflows around ~3.8k levels in a debug build (release reaches ~8k–14k), so the guard must
+        /// sit safely below that. **Raise it** (to ~3000 on the main thread, more on a large stack) if
+        /// you decode legitimately deep data; **lower it** when decoding untrusted input on a
+        /// small-stack worker thread (a default ~512 KB thread overflows ~16× shallower).
+        public var maxDecodingDepth: Int = 2048
 
         /// Assume the top level of the input is an object even without enclosing braces, so
         /// `"a":1,"b":2` decodes as `{"a":1,"b":2}` (matches `Foundation.JSONDecoder`). Applies to

@@ -43,7 +43,7 @@ final class DecodeContext {
     init(
         doc: JSONDocument, bytes: UnsafePointer<UInt8>, byteCount: Int,
         tape: UnsafePointer<UInt64>, tapeCount: Int, userInfo: [CodingUserInfoKey: Any],
-        strategies: DecodeStrategies, maxDecodeDepth: Int = 512
+        strategies: DecodeStrategies, maxDecodeDepth: Int = 2048
     ) {
         self.doc = doc
         self.bytes = bytes

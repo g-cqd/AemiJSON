@@ -29,7 +29,7 @@ mandates recursion), and it is bounded by an explicit guard that **throws instea
 | ``JSONValue`` materialize (``JSONValue/init(_:)``) | **iterative** build | builds any depth; but see *tree deallocation* below |
 | ``JSONValue`` serialize (``JSONValue/encodedBytes(options:)``) | **iterative** | serializes any holdable tree |
 | ``JSONValue`` equality (`==`) | **iterative** | compares any depth (an explicit work-stack) |
-| **Codable decode** (``ADJSON/JSONDecoder``) | recursive (protocol) | **throws** past `maxDecodingDepth` (default 512) |
+| **Codable decode** (``ADJSON/JSONDecoder``) | recursive (protocol) | **throws** past `maxDecodingDepth` (default 2048) |
 | JSON Schema validate | recursive | bounded by `maxDepth` (keep it modest for untrusted deep input) |
 
 ### Tree deallocation is the one inherent limit
@@ -45,10 +45,16 @@ time (as opposed to a single bulk release) also avoids the recursion.
 ## The decoder guard
 
 The Codable path is unavoidably recursive (each `init(from:)` decodes its children). ADJSON caps
-that native recursion with ``ADJSON/JSONDecoder/maxDecodingDepth`` (default **512**), independent of
+that native recursion with ``ADJSON/JSONDecoder/maxDecodingDepth`` (default **2048**), independent of
 `maxDepth`: past it, decoding throws a catchable `DecodingError` rather than overflowing. So you can
 raise `maxDepth` to *parse / navigate* very deep documents iteratively, while a deeply nested (or
 self-referential) `Decodable` still **fails closed**.
+
+The default is chosen empirically: the heaviest path (keyed-object decode) overflows the ~8 MB main
+thread around ~3.8k levels in a *debug* build (release reaches ~8k–14k), so the guard sits safely
+below that — 4× past Foundation's hard 512, yet guaranteed to throw before the stack runs out in
+both build modes. Raise it (to ~3000 on the main thread, more on a large stack) for legitimately deep
+data; lower it on a small-stack worker thread (default ~512 KB → ~16× shallower).
 
 ```swift
 var decoder = ADJSON.JSONDecoder()
