@@ -109,7 +109,7 @@ public struct JSON: Sendable {
     // MARK: Lazy walks (no intermediate collection)
 
     /// Visit each array element in order without materializing an intermediate `[JSON]`.
-    func forEachElement(_ body: (JSON) -> Void) {
+    public func forEachElement(_ body: (JSON) -> Void) {
         guard tag == JSONKind.array.rawValue else { return }
         let c = Slot.count(slot)
         var i = index + 1
@@ -122,7 +122,7 @@ public struct JSON: Sendable {
     /// Visit each `(key, value)` member in document order without materializing an intermediate
     /// `[String: JSON]`. Duplicate keys are visited as they appear (callers that build a dictionary
     /// get last-value-wins for free).
-    func forEachMember(_ body: (String, JSON) -> Void) {
+    public func forEachMember(_ body: (String, JSON) -> Void) {
         guard tag == JSONKind.object.rawValue else { return }
         let c = Slot.count(slot)
         doc.withBytePointer { p in
