@@ -13,17 +13,39 @@ public enum JSONValue: Sendable, Equatable {
 }
 
 extension JSONValue {
+    /// The recursion-depth budget for `init(_:)`. Real-world JSON nests only a few levels, so the
+    /// fast direct-recursion path handles essentially everything; only a document parsed with a large
+    /// `maxDepth` that actually nests beyond this falls back to the iterative builder.
+    private static let maxFastDepth = 128
+
     /// Materialize from a lazy `JSON` view.
     ///
-    /// Built with an explicit frame stack rather than per-level recursion: a document parsed with a
-    /// large `maxDepth` can nest far deeper than the call stack tolerates, so structural recursion
-    /// here would be an overflow waiting to happen.
+    /// Direct recursion is the fast path: it inserts straight into the result `Array`/`Dictionary`
+    /// with no per-container intermediate buffers. Beyond `maxFastDepth` it hands the subtree to an
+    /// explicit-stack builder so a document parsed with a large `maxDepth` can't overflow the call
+    /// stack (the common shallow case never pays for that safety).
     public init(_ json: JSON) {
-        if let scalar = JSONValue.scalarValue(json) {
-            self = scalar
-            return
+        self = JSONValue.materialize(json, depth: 0)
+    }
+
+    private static func materialize(_ json: JSON, depth: Int) -> JSONValue {
+        if let scalar = scalarValue(json) { return scalar }
+        if depth >= maxFastDepth { return buildIteratively(json) }
+        if json.isArray {
+            var elements = [JSONValue]()
+            elements.reserveCapacity(json.count)
+            json.forEachElement { elements.append(materialize($0, depth: depth + 1)) }
+            return .array(elements)
         }
-        var stack = [JSONValue.BuildFrame(json)]
+        var members = [String: JSONValue](minimumCapacity: json.count)
+        json.forEachMember { members[$0] = materialize($1, depth: depth + 1) }
+        return .object(members)
+    }
+
+    /// Materialize a container subtree with an explicit frame stack — no call recursion, so depth is
+    /// unbounded. Used only past `maxFastDepth`.
+    private static func buildIteratively(_ root: JSON) -> JSONValue {
+        var stack = [BuildFrame(root)]
         var completed: JSONValue?
         while !stack.isEmpty {
             let top = stack.count - 1
@@ -35,13 +57,13 @@ extension JSONValue {
             case .scalarAdded:
                 continue
             case .descend(let node):
-                stack.append(JSONValue.BuildFrame(node))
+                stack.append(BuildFrame(node))
             case .done:
                 completed = stack[top].finished
                 stack.removeLast()
             }
         }
-        self = completed ?? .null
+        return completed ?? .null
     }
 
     /// A scalar (or the missing sentinel), or `nil` when `json` is a container to be walked.
