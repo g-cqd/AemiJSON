@@ -16,6 +16,12 @@ extension ADJSON {
         public var nonConformingFloatDecodingStrategy: NonConformingFloatDecodingStrategy = .throw
         /// How JSON keys are converted before matching `CodingKey`s (default `.useDefaultKeys`).
         public var keyDecodingStrategy: KeyDecodingStrategy = .useDefaultKeys
+        /// Maximum native recursion depth for the (necessarily recursive) Codable decode. Past this,
+        /// decoding throws `DecodingError.dataCorrupted` instead of overflowing the call stack — so a
+        /// deeply nested or self-referential `Decodable` fails closed. Independent of `options.maxDepth`
+        /// (which bounds the *iterative* parser and can be raised freely); default 512. Lower it when
+        /// decoding untrusted input on a small-stack worker thread; raise it only on a large stack.
+        public var maxDecodingDepth: Int = 512
 
         /// Assume the top level of the input is an object even without enclosing braces, so
         /// `"a":1,"b":2` decodes as `{"a":1,"b":2}` (matches `Foundation.JSONDecoder`). Applies to
@@ -54,7 +60,8 @@ extension ADJSON {
             try document.withBuffers { bytesBase, byteCount, tapeBase, tapeCount in
                 let ctx = DecodeContext(
                     doc: document, bytes: bytesBase, byteCount: byteCount,
-                    tape: tapeBase, tapeCount: tapeCount, userInfo: userInfo, strategies: strategies)
+                    tape: tapeBase, tapeCount: tapeCount, userInfo: userInfo, strategies: strategies,
+                    maxDecodeDepth: maxDecodingDepth)
                 return try ctx.decodeValue(T.self, at: 0)
             }
         }

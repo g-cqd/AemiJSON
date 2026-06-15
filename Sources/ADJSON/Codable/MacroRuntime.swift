@@ -42,6 +42,17 @@ extension DecodeContext {
     /// conditional cast (the conformer is `T` by construction); if that ever failed
     /// we fall through to the generic decoder rather than trap.
     @inlinable func decodeValue<T: Decodable>(_ type: T.Type, at index: Int) throws -> T {
+        // Recursion guard: the Codable path is unavoidably recursive, so cap native depth and throw
+        // a catchable error rather than overflow the stack on deeply nested (or self-referential)
+        // input. See `DecodeContext.maxDecodeDepth`.
+        decodeDepth += 1
+        defer { decodeDepth -= 1 }
+        guard decodeDepth <= maxDecodeDepth else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: [],
+                    debugDescription: "Decoding exceeded the maximum nesting depth (\(maxDecodeDepth))"))
+        }
         if let fast = T.self as? any ADJSONFastDecodable.Type {
             if let value = try fast.__adjsonDecode(_FastDecodeCursor(ctx: self, index: index)) as? T {
                 return value

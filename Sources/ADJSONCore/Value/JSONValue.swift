@@ -20,26 +20,38 @@ public enum JSONValue: Sendable, Equatable {
 }
 
 extension JSONValue {
-    // Custom value equality: `.int` and `.number` are the same JSON number domain, so they compare
+    // Custom value equality. `.int` and `.number` are the same JSON number domain, so they compare
     // numerically (`.int(5) == .number(5.0)`), which keeps every hand-built `.number(...)` test in
-    // step with parsed integers (now `.int`). Containers delegate to `Array`/`Dictionary` `==`,
-    // which recurse through this operator element-wise (no manual structural recursion here).
+    // step with parsed integers (now `.int`). Objects compare by membership (unordered — not
+    // `OrderedDictionary`'s order-sensitive `==`).
+    //
+    // The walk is **iterative**: a work-stack of value pairs replaces structural recursion, so
+    // comparing two deeply nested trees can't overflow the call stack (a recursive `==` crashed at
+    // ~37k levels; see the depth-safety notes in `Architecture`). Order doesn't affect the result.
     public static func == (lhs: JSONValue, rhs: JSONValue) -> Bool {
-        switch (lhs, rhs) {
-        case (.null, .null): return true
-        case let (.bool(a), .bool(b)): return a == b
-        case let (.int(a), .int(b)): return a == b
-        case let (.number(a), .number(b)): return a == b
-        case let (.int(a), .number(b)): return Double(a) == b
-        case let (.number(a), .int(b)): return a == Double(b)
-        case let (.string(a), .string(b)): return a == b
-        case let (.array(a), .array(b)): return a == b
-        case let (.object(a), .object(b)):
-            // JSON objects are unordered, so compare by membership (not OrderedDictionary's
-            // order-sensitive `==`); element values recurse through this operator.
-            return a.count == b.count && a.allSatisfy { b[$0.key] == $0.value }
-        default: return false
+        var stack: [(JSONValue, JSONValue)] = [(lhs, rhs)]
+        while let (a, b) = stack.popLast() {
+            switch (a, b) {
+            case (.null, .null): continue
+            case let (.bool(x), .bool(y)): if x != y { return false }
+            case let (.int(x), .int(y)): if x != y { return false }
+            case let (.number(x), .number(y)): if x != y { return false }
+            case let (.int(x), .number(y)): if Double(x) != y { return false }
+            case let (.number(x), .int(y)): if x != Double(y) { return false }
+            case let (.string(x), .string(y)): if x != y { return false }
+            case let (.array(x), .array(y)):
+                if x.count != y.count { return false }
+                for i in 0..<x.count { stack.append((x[i], y[i])) }
+            case let (.object(x), .object(y)):
+                if x.count != y.count { return false }
+                for (key, value) in x {
+                    guard let other = y[key] else { return false }
+                    stack.append((value, other))
+                }
+            default: return false
+            }
         }
+        return true
     }
 }
 
@@ -188,9 +200,12 @@ extension JSONValue {
         self.init(try ADJSON.parse(string, options: options).root)
     }
 
-    /// The deepest array/object nesting `encoded()` will serialize before failing. Mirrors
-    /// the parser's `maxDepth` so a value that round-trips through parse always re-encodes.
-    static let maxEncodingDepth = 512
+    /// A generous policy ceiling on serialization nesting. `write` is *iterative* (see below), so it
+    /// cannot overflow the stack at any depth — this cap only rejects pathological trees, and it sits
+    /// far above the depth at which a `JSONValue` tree could even be held (its ARC deallocation, like
+    /// any recursive Swift value type, recurses and overflows around ~30–40k). Raised well past the
+    /// old 512 so a value parsed with a high `maxDepth` still round-trips through `encoded()`.
+    static let maxEncodingDepth = 1_000_000
 
     /// Serialize to compact UTF-8 JSON bytes using the given profile. The default (`.rfc8259`) is
     /// strict and throws `EncodingError.invalidValue` on a non-finite number; pass `.javaScript`

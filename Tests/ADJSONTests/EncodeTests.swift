@@ -118,18 +118,20 @@ private let samples: [E] = [
     #expect(cursor == .number(1))
 }
 
-@Test func jsonValueEncodesDeepTreeIterativelyAtDepthCap() throws {
-    // 512 nested objects put the innermost number exactly at `maxEncodingDepth`; the iterative
-    // writer must serialize it (and round-trip it) without recursing, and reject one level deeper.
+@Test func jsonValueEncodesDeepTreeIteratively() throws {
+    // The iterative writer serializes well beyond the old 512 cap without recursing. 1000 nested
+    // objects (≈2× Foundation's hard 512) round-trip through parse → materialize → re-encode.
+    // (Bounded at 1000 here only because the *test* thread's small stack limits the bulk ARC
+    // deallocation of the deep JSONValue tree at scope exit — the writer itself is iterative and
+    // handles hundreds of thousands of levels on the main thread; see the depth-safety harness.)
+    let depth = 1000
     var deep = JSONValue.number(1)
-    for _ in 0..<512 { deep = .object(["x": deep]) }
+    for _ in 0..<depth { deep = .object(["x": deep]) }
     let bytes = try deep.encodedBytes()
-    let reEncoded = try JSONValue(try ADJSON.parse(bytes, options: JSONParseOptions(maxDepth: 600)).root).encodedBytes()
-    #expect(bytes == reEncoded)  // byte compare avoids recursive `==`
-
-    var tooDeep = JSONValue.number(1)
-    for _ in 0..<513 { tooDeep = .object(["x": tooDeep]) }
-    #expect(throws: EncodingError.self) { try tooDeep.encodedBytes() }
+    let reEncoded = try JSONValue(
+        try ADJSON.parse(bytes, options: JSONParseOptions(maxDepth: depth + 1)).root
+    ).encodedBytes()
+    #expect(bytes == reEncoded)  // byte compare avoids deep traversal in the assertion
 }
 
 @Test func codableEncoderSortsKeysAndRejectsNullNil() throws {

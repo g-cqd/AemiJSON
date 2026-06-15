@@ -10,9 +10,11 @@ import Foundation
 // Unlike the tape parser, lazy navigation, and `JSONValue` materialization — all iterative — this
 // decoder is necessarily recursive: the `Decodable` protocol drives nesting by having each value's
 // `init(from:)` decode its children, so one native-stack frame per container level is unavoidable.
-// That depth equals the document's nesting depth, which the parser caps at `JSONParseOptions.maxDepth`
-// (default 512); a document that parses therefore decodes without overflowing the stack, and the
-// safety of untrusted input rests on keeping `maxDepth` modest (see `JSONParseOptions.maxDepth`).
+// To keep that bounded *independently of* `JSONParseOptions.maxDepth` (which can be raised for the
+// iterative paths), `decodeValue` — the single choke point every nested / single-value decode flows
+// through — counts its own depth and throws a `DecodingError` past `maxDecodeDepth` rather than
+// overflowing the call stack. A self-referential `Decodable` (e.g. one recursing through
+// `singleValueContainer`) that adds no JSON structure is caught by the same guard.
 
 @usableFromInline
 final class DecodeContext {
@@ -25,6 +27,11 @@ final class DecodeContext {
     let userInfo: [CodingUserInfoKey: Any]
     let strategies: DecodeStrategies
     var iso8601: ISO8601DateFormatter?  // lazy, single-operation cache
+    // Native-recursion guard for the (unavoidably recursive) Codable path. `decodeValue` bumps
+    // `decodeDepth` on entry and throws past `maxDecodeDepth`, converting a stack overflow on deeply
+    // nested input into a catchable error — even when `maxDepth` is raised far past it.
+    @usableFromInline var decodeDepth = 0
+    @usableFromInline let maxDecodeDepth: Int
 
     // INVARIANT: `bytes`/`tape` are borrowed from `doc`'s storage for the duration of one
     // `withBuffers` scope (see Bytes.swift). `doc` is retained here so the storage outlives
@@ -36,7 +43,7 @@ final class DecodeContext {
     init(
         doc: JSONDocument, bytes: UnsafePointer<UInt8>, byteCount: Int,
         tape: UnsafePointer<UInt64>, tapeCount: Int, userInfo: [CodingUserInfoKey: Any],
-        strategies: DecodeStrategies
+        strategies: DecodeStrategies, maxDecodeDepth: Int = 512
     ) {
         self.doc = doc
         self.bytes = bytes
@@ -46,6 +53,7 @@ final class DecodeContext {
         self.keysAreUnique = doc.keysAreUnique
         self.userInfo = userInfo
         self.strategies = strategies
+        self.maxDecodeDepth = maxDecodeDepth
     }
 
     /// Bounds-checked tape read (the single choke point for tape navigation).
