@@ -52,6 +52,12 @@ var packageDependencies: [Package.Dependency] = [
 if isDev {
     packageDependencies.append(
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.0.0"))
+    // ordo-one's statistically-rigorous benchmark framework (p-percentile latencies, malloc /
+    // throughput metrics, CI-gated thresholds) — the project's single benchmark suite lives in
+    // `Benchmarks/ADJSONSuite` and runs via `swift package benchmark`. Dev-only: the suite target is
+    // added only under `ADJSON_DEV`, so consumers never resolve it.
+    packageDependencies.append(
+        .package(url: "https://github.com/ordo-one/benchmark", from: "1.4.0"))
 }
 
 let orderedCollections: Target.Dependency = .product(name: "OrderedCollections", package: "swift-collections")
@@ -103,9 +109,6 @@ let package = Package(
         .target(
             name: "ADJSON", dependencies: ["ADJSONCore", "ADJSONMacros", orderedCollections],
             swiftSettings: strictSettings, plugins: adjsonBuildPlugins),
-        .executableTarget(
-            name: "ADJSONBenchmarks", dependencies: ["ADJSON", orderedCollections],
-            swiftSettings: benchSettings),
         .testTarget(
             name: "ADJSONTests",
             dependencies: [
@@ -153,5 +156,22 @@ if isFuzz {
                 .unsafeFlags(["-parse-as-library", "-sanitize=fuzzer"])
             ],
             linkerSettings: [.unsafeFlags(["-sanitize=fuzzer"])]
+        ))
+}
+
+if isDev {
+    // ordo-one package-benchmark suite (ADJSON_DEV-gated): the `swift package benchmark` plugin runs
+    // these with statistical rigor and can gate CI on p-percentile thresholds. Lives under
+    // `Benchmarks/` per the framework's convention.
+    package.targets.append(
+        .executableTarget(
+            name: "ADJSONSuite",
+            dependencies: [
+                "ADJSON", orderedCollections,
+                .product(name: "Benchmark", package: "benchmark"),
+            ],
+            path: "Benchmarks/ADJSONSuite",
+            swiftSettings: strictSettings,
+            plugins: [.plugin(name: "BenchmarkPlugin", package: "benchmark")]
         ))
 }

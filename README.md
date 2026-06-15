@@ -106,9 +106,9 @@ See the [documentation](#documentation) for the full guides.
 
 ## Performance
 
-Apple M2 Pro (macOS 27), release build, strict mode. Medians across 15 runs (each itself the
-median of 60 iterations), run-to-run spread within ~±8%; treat these as ratios, not absolutes.
-Reproduce with `swift run -c release ADJSONBenchmarks`.
+Apple M2 Pro (macOS 27), release build, strict mode; treat these as ratios, not absolutes.
+Reproduce with `ADJSON_DEV=1 swift package benchmark` (the [ordo-one/benchmark](https://github.com/ordo-one/benchmark)
+suite under `Benchmarks/ADJSONSuite`).
 
 | Workload | ADJSON vs Foundation |
 |---|---|
@@ -165,7 +165,7 @@ corpus are third-party and fetched on demand:
 ```sh
 swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
 swift test                                             # full conformance + unit suite
-swift run -c release ADJSONBenchmarks                  # benchmarks (release)
+ADJSON_DEV=1 swift package benchmark                   # benchmark suite (ordo-one/benchmark)
 swift package lint                                     # formatting gate + shipped-library discipline
 swift package --allow-writing-to-package-directory format   # apply formatting
 ```

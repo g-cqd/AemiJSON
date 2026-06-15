@@ -308,6 +308,13 @@ struct JSONPathParser {
 
     // MARK: - Filter expressions
 
+    // Design note (intentional skip): the filter grammar is a hand-written precedence-climbing
+    // recursive descent (`parseOr` → `parseAnd` → `parseNot` → `parsePrimary` → `parseComparand`),
+    // NOT a Pratt parser / PDA. A Pratt rewrite was considered and deliberately not done: the only
+    // recursion here is structural (parenthesised sub-expressions and nested bracket-filters), and it
+    // is already bounded by `enter()` / `maxDepth` (64) and proven stack-safe — `&&`/`||` iterate and
+    // `!` folds by parity, so there is no unbounded recursion left for a rewrite to remove. It would
+    // be cosmetic and risk a CTS regression for no safety or correctness gain.
     mutating func parseFilter() throws(JSONPathError) -> FilterExpr { try parseOr() }
 
     mutating func parseOr() throws(JSONPathError) -> FilterExpr {

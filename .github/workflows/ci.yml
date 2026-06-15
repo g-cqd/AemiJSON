@@ -301,29 +301,29 @@ jobs:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
+          key: spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Benchmarks/ADJSONSuite/**') }}
           restore-keys: |
             spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-
             spm-${{ runner.os }}-bench-
-      - name: Build benchmarks (release)
-        run: swift build -c release --target ADJSONBenchmarks
+      - name: Install jemalloc (package-benchmark malloc metrics)
+        run: brew install jemalloc
       - name: Fetch conformance & benchmark fixtures
         run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
-      - name: Run benchmarks (ADJSON vs Foundation)
+      - name: Run the benchmark suite (ordo-one/benchmark)
+        env:
+          ADJSON_DEV: "1"
         run: |
           set -o pipefail
-          swift run -c release ADJSONBenchmarks | tee bench-output.txt
+          swift package --allow-writing-to-package-directory benchmark --format markdown | tee bench-output.md
       - name: Publish results to job summary
         if: always()
         run: |
           {
-            echo "## ADJSON benchmarks"
+            echo "## ADJSON benchmarks (ordo-one/benchmark)"
             echo ""
-            echo "Release build · runner \`${{ runner.os }}\` · commit \`${GITHUB_SHA:0:7}\`"
+            echo "Release · runner \`${{ runner.os }}\` · commit \`${GITHUB_SHA:0:7}\` · p50/p90/p99 wall-clock + throughput + malloc"
             echo ""
-            echo '```text'
-            cat bench-output.txt 2>/dev/null || echo "(no benchmark output captured)"
-            echo '```'
+            cat bench-output.md 2>/dev/null || echo "(no benchmark output captured)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   docs:

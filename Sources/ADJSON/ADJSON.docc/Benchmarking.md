@@ -4,33 +4,39 @@ How ADJSON is measured, how to reproduce the numbers, and how to read them.
 
 ## Running the benchmarks
 
-The benchmark harness is an executable target. The standard corpus is third-party and fetched
-on demand (not redistributed):
+The suite runs on [ordo-one's `Benchmark`](https://github.com/ordo-one/benchmark) framework
+(`Benchmarks/ADJSONSuite`), driven by the `benchmark` plugin. It is gated behind `ADJSON_DEV` so
+consumers never resolve the framework. The standard corpus is third-party and fetched on demand
+(not redistributed):
 
 ```sh
 swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
-swift run -c release ADJSONBenchmarks
+ADJSON_DEV=1 swift package benchmark            # all benchmarks
+ADJSON_DEV=1 swift package benchmark list       # just list them
+ADJSON_DEV=1 swift package benchmark run --filter "decode/.*"   # a subset
 ```
 
-Always benchmark a **release** build. Without the corpus the in-memory benchmarks still run;
-the corpus section prints a skip line per missing file.
+`Benchmark` measures malloc counts via **jemalloc** — `brew install jemalloc` (macOS) /
+`apt-get install -y libjemalloc-dev` (Linux). Without it, set `BENCHMARK_DISABLE_JEMALLOC=1` to run
+the time/throughput metrics only. Benchmarks always run in **release**. Without the corpus the
+in-memory benchmarks still run; the `corpus/*` benchmarks are simply not registered.
 
 ## Methodology
 
-The harness (`Sources/ADJSONBenchmarks`) is deliberately simple and honest:
+The suite is statistically rigorous and honest:
 
-- **Clock.** `ContinuousClock`; each case reports the **median** of 60 iterations after 12
-  warmup iterations (50/10 for the async case). Median resists outliers from scheduling.
-- **Throughput.** `MB/s = payloadBytes / median_time`. The min time is also printed for
-  reference.
-- **No dead-code elimination.** Every result is passed through a `@_optimize(none)` "black
-  hole" so the optimizer can't delete the work being measured.
-- **Correctness gates first.** Before timing, each path is checked to produce results equal to
-  Foundation's (and to round-trip). There is no point benchmarking a parser that skips work.
-- **Fair baselines.** Foundation's `JSONDecoder`/`JSONEncoder`/`JSONSerialization` instances
-  are created once and reused across iterations.
-- **Regression gate.** On the standard corpus, the run fails loudly if ADJSON's tape parse is
-  slower than `JSONSerialization` on any file.
+- **Percentiles, not an average.** `Benchmark` auto-tunes the iteration count and reports the full
+  wall-clock distribution (p50 / p90 / p99 / p100), so tail latency and jitter are visible — not
+  hidden behind a single mean.
+- **Metrics.** Wall-clock time, throughput (operations/second), and total `malloc` count per
+  iteration (allocations are often the real cost in a JSON pipeline).
+- **No dead-code elimination.** Every result is passed through the framework's `blackHole(_:)` so
+  the optimizer can't delete the work being measured.
+- **Side-by-side baselines.** Foundation's `JSONDecoder` / `JSONEncoder` / `JSONSerialization`
+  appear as their own `…/Foundation` benchmarks next to the ADJSON variants, so their percentiles
+  are directly comparable. Coders are created once and reused.
+- **CI-gateable.** `swift package benchmark baseline` can record a baseline and fail on a
+  threshold regression; CI publishes the percentile table to the run summary.
 
 ## What is measured
 
