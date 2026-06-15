@@ -7,10 +7,18 @@ public struct JSONPathError: Error, Sendable, Equatable {
 struct JSONPathParser {
     let chars: [Character]
     var i = 0
-    // Bounds recursive descent so a crafted query (`((((…))))`, `[?@[?@[?…]]]`) can't
-    // exhaust the stack. Incremented at the two mutual-recursion entry points below.
+    // Bounds the parser's structural recursion (parenthesised filter sub-expressions and nested
+    // bracket-filters / relative queries) so a crafted query (`((((…))))`, `[?@[?@[?…]]]`) can't
+    // exhaust the stack. `depth` is incremented at the two mutual-recursion entry points below
+    // (`parseSegments`, `parsePrimary`) and also bounds `evalFilter`'s walk of the resulting AST.
+    //
+    // The cap is deliberately small: each nesting level costs ~3 KB of native stack, so the former
+    // 256 overflowed a 512 KB secondary-thread stack (the realistic floor off the main thread) at
+    // ~160 levels — before the guard could fire. The RFC 9535 compliance suite never nests deeper
+    // than 3, so 64 keeps a 20× headroom over any real query while staying well inside a small
+    // stack (~205 KB worst case); anything deeper is pathological and is rejected, not crashed.
     var depth = 0
-    static let maxDepth = 256
+    static let maxDepth = 64
 
     init(_ s: String) { chars = Array(s) }
 
@@ -311,12 +319,19 @@ struct JSONPathParser {
     }
 
     mutating func parseNot() throws(JSONPathError) -> FilterExpr {
+        // Consume the whole run of leading `!` iteratively, tracking parity, so a crafted
+        // `[?!!!…!@]` (200k `!`) can't recurse one frame per `!` and overflow the stack.
+        // `!!x ≡ x`, so only an odd count negates; this is semantically identical to the
+        // former per-`!` recursion but runs in O(1) stack.
         skipWS()
-        if peek() == "!" {
+        var negate = false
+        while peek() == "!" {
+            negate.toggle()
             i += 1
-            return .not(try parseNot())
+            skipWS()
         }
-        return try parsePrimary()
+        let primary = try parsePrimary()
+        return negate ? .not(primary) : primary
     }
 
     mutating func parsePrimary() throws(JSONPathError) -> FilterExpr {
@@ -337,7 +352,7 @@ struct JSONPathParser {
             let b = try parseComparand()
             try expect(")")
             guard a.isValueType, b.isValueType else { throw err("match()/search() require value-type arguments") }
-            return .regex(a, pattern: b, anchored: fn == "match")
+            return .regex(a, pattern: try compileRegexOperand(b), anchored: fn == "match")
         }
         let left = try parseComparand()
         if let op = parseCompOp() {
@@ -349,6 +364,19 @@ struct JSONPathParser {
         }
         if case let .query(q) = left { return .existence(q) }
         throw err("expected comparison or existence test")
+    }
+
+    // A string-literal pattern is known now, so validate it against the I-Regexp safe subset and
+    // compile it once here — closing the ReDoS hole before any JSON is seen and avoiding an O(N)
+    // recompile per filtered node. A non-literal pattern (a query/function result) is untrusted
+    // until evaluation, so it is deferred and re-checked per node there.
+    mutating func compileRegexOperand(_ b: Comparand) throws(JSONPathError) -> RegexOperand {
+        guard case let .literal(.string(pat)) = b else { return .dynamic(b) }
+        if let reason = JSONPathEvaluator.iRegexpRejectionReason(pat) { throw err(reason) }
+        guard let re = try? Regex(JSONPathEvaluator.iRegexpToSwift(pat)) else {
+            throw err("invalid regular expression in match()/search()")
+        }
+        return .compiled(CompiledRegex(re))
     }
 
     func peekIdentifier() -> String? {

@@ -19,7 +19,23 @@ indirect enum FilterExpr: Sendable {
     case not(FilterExpr)
     case comparison(Comparand, CompOp, Comparand)
     case existence(RelQuery)
-    case regex(Comparand, pattern: Comparand, anchored: Bool)  // match() / search()
+    case regex(Comparand, pattern: RegexOperand, anchored: Bool)  // match() / search()
+}
+
+/// The pattern argument of `match()`/`search()`. A string-literal pattern is validated against the
+/// RFC 9485 I-Regexp safe subset and compiled to a `Regex` once at parse time (`compiled`); a
+/// pattern produced by a query/function is untrusted and re-validated + compiled per candidate node
+/// at evaluation time (`dynamic`).
+enum RegexOperand: Sendable {
+    case compiled(CompiledRegex)
+    case dynamic(Comparand)
+}
+
+/// A compiled `Regex` shared (by reference) across every node a filter visits. The compiled program
+/// is immutable and matching never mutates it, so concurrent reads from the `Sendable` AST are safe.
+final class CompiledRegex: @unchecked Sendable {
+    let regex: Regex<AnyRegexOutput>
+    init(_ regex: Regex<AnyRegexOutput>) { self.regex = regex }
 }
 
 enum CompOp: Sendable { case eq, ne, lt, le, gt, ge }

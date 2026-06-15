@@ -26,7 +26,7 @@ extension JSONDocument {
         try withBuffers { byteBase, byteCount, tapeBase, tapeCount in
             let ctx = DecodeContext(
                 doc: self, bytes: byteBase, byteCount: byteCount,
-                tape: tapeBase, tapeCount: tapeCount, userInfo: [:])
+                tape: tapeBase, tapeCount: tapeCount, userInfo: [:], strategies: DecodeStrategies())
             var out = [T]()
             out.reserveCapacity(hi - lo)
             for k in lo..<hi { out.append(try ctx.decodeValue(T.self, at: starts[k])) }

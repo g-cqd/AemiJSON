@@ -6,6 +6,13 @@ import Foundation
 // bytes against the tape and skip unread subtrees in O(1). A single shared
 // `DecodeContext` holds a stable base pointer for the duration of one decode, so scalar
 // access needs no per-value `withUnsafeBufferPointer`.
+//
+// Unlike the tape parser, lazy navigation, and `JSONValue` materialization — all iterative — this
+// decoder is necessarily recursive: the `Decodable` protocol drives nesting by having each value's
+// `init(from:)` decode its children, so one native-stack frame per container level is unavoidable.
+// That depth equals the document's nesting depth, which the parser caps at `JSONParseOptions.maxDepth`
+// (default 512); a document that parses therefore decodes without overflowing the stack, and the
+// safety of untrusted input rests on keeping `maxDepth` modest (see `JSONParseOptions.maxDepth`).
 
 @usableFromInline
 final class DecodeContext {
@@ -16,6 +23,8 @@ final class DecodeContext {
     @usableFromInline let tapeCount: Int
     @usableFromInline let keysAreUnique: Bool
     let userInfo: [CodingUserInfoKey: Any]
+    let strategies: DecodeStrategies
+    var iso8601: ISO8601DateFormatter?  // lazy, single-operation cache
 
     // INVARIANT: `bytes`/`tape` are borrowed from `doc`'s storage for the duration of one
     // `withBuffers` scope (see Bytes.swift). `doc` is retained here so the storage outlives
@@ -26,7 +35,8 @@ final class DecodeContext {
     @usableFromInline
     init(
         doc: JSONDocument, bytes: UnsafePointer<UInt8>, byteCount: Int,
-        tape: UnsafePointer<UInt64>, tapeCount: Int, userInfo: [CodingUserInfoKey: Any]
+        tape: UnsafePointer<UInt64>, tapeCount: Int, userInfo: [CodingUserInfoKey: Any],
+        strategies: DecodeStrategies
     ) {
         self.doc = doc
         self.bytes = bytes
@@ -35,6 +45,7 @@ final class DecodeContext {
         self.tapeCount = tapeCount
         self.keysAreUnique = doc.keysAreUnique
         self.userInfo = userInfo
+        self.strategies = strategies
     }
 
     /// Bounds-checked tape read (the single choke point for tape navigation).
@@ -97,14 +108,24 @@ final class DecodeContext {
     // consistent with `JSON.object` and JS / Foundation semantics).
     func memberValueIndex(of obj: Int, key: String) -> Int? {
         let c = Slot.count(slot(obj))
+        // When a key-decoding strategy is active, each JSON key is converted (e.g. snake_case →
+        // camelCase) before comparison — losing the byte-compare fast path, but only while the
+        // strategy is set.
+        let convert = keyConversionActive
         var i = obj + 1
         var found: Int? = nil
         for _ in 0..<c {
             let ks = slot(i)
             let valIdx = i + 1
-            let koff = Slot.low(ks), klen = Slot.length(ks)
-            assertBytes(koff, klen)
-            if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, key) {
+            let isMatch: Bool
+            if convert {
+                isMatch = applyKeyDecoding(keyString(i)) == key
+            } else {
+                let koff = Slot.low(ks), klen = Slot.length(ks)
+                assertBytes(koff, klen)
+                isMatch = JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, key)
+            }
+            if isMatch {
                 found = valIdx
                 if keysAreUnique { break }  // unique keys → first match is the only match
             }
@@ -154,7 +175,7 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
         out.reserveCapacity(c)
         var i = index + 1
         for _ in 0..<c {
-            if let k = Key(stringValue: ctx.keyString(i)) { out.append(k) }
+            if let k = Key(stringValue: ctx.applyKeyDecoding(ctx.keyString(i))) { out.append(k) }
             i = ctx.nextIndex(after: i + 1)
         }
         return out
@@ -181,13 +202,13 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
 
     func decode(_ type: Double.Type, forKey key: Key) throws -> Double {
         let vi = try requireIndex(key)
-        guard let d = ctx.double(vi) else { throw mismatch(type, key) }
+        guard let d = ctx.decodeFloatingPoint(vi) else { throw mismatch(type, key) }
         return d
     }
 
     func decode(_ type: Float.Type, forKey key: Key) throws -> Float {
         let vi = try requireIndex(key)
-        guard let d = ctx.double(vi) else { throw mismatch(type, key) }
+        guard let d = ctx.decodeFloatingPoint(vi) else { throw mismatch(type, key) }
         return Float(d)
     }
 
@@ -280,8 +301,10 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
 
     mutating func decode(_ type: Bool.Type) throws -> Bool { try scalar { c, i in c.bool(i) } }
     mutating func decode(_ type: String.Type) throws -> String { try scalar { c, i in c.string(i) } }
-    mutating func decode(_ type: Double.Type) throws -> Double { try scalar { c, i in c.double(i) } }
-    mutating func decode(_ type: Float.Type) throws -> Float { try scalar { c, i in c.double(i).map(Float.init) } }
+    mutating func decode(_ type: Double.Type) throws -> Double { try scalar { c, i in c.decodeFloatingPoint(i) } }
+    mutating func decode(_ type: Float.Type) throws -> Float {
+        try scalar { c, i in c.decodeFloatingPoint(i).map(Float.init) }
+    }
     mutating func decode(_ type: Int.Type) throws -> Int { try scalar { c, i in c.integer(i, type) } }
     mutating func decode(_ type: Int8.Type) throws -> Int8 { try scalar { c, i in c.integer(i, type) } }
     mutating func decode(_ type: Int16.Type) throws -> Int16 { try scalar { c, i in c.integer(i, type) } }
@@ -350,8 +373,8 @@ private struct SingleValueTapeDecodingContainer: SingleValueDecodingContainer {
 
     func decode(_ type: Bool.Type) throws -> Bool { try value(ctx.bool(index), type) }
     func decode(_ type: String.Type) throws -> String { try value(ctx.string(index), type) }
-    func decode(_ type: Double.Type) throws -> Double { try value(ctx.double(index), type) }
-    func decode(_ type: Float.Type) throws -> Float { try value(ctx.double(index).map(Float.init), type) }
+    func decode(_ type: Double.Type) throws -> Double { try value(ctx.decodeFloatingPoint(index), type) }
+    func decode(_ type: Float.Type) throws -> Float { try value(ctx.decodeFloatingPoint(index).map(Float.init), type) }
     func decode(_ type: Int.Type) throws -> Int { try value(ctx.integer(index, type), type) }
     func decode(_ type: Int8.Type) throws -> Int8 { try value(ctx.integer(index, type), type) }
     func decode(_ type: Int16.Type) throws -> Int16 { try value(ctx.integer(index, type), type) }

@@ -10,16 +10,79 @@ import Foundation
 final class EncodeState {
     let w: JSONWriter
     let options: JSONEncodingOptions
+    let strategies: EncodeStrategies
     var kinds: [Bool] = []  // true = object, false = array
     var counts: [Int] = []
+    private var iso8601: ISO8601DateFormatter?  // lazy, single-operation cache
 
-    init(_ w: JSONWriter, options: JSONEncodingOptions = .rfc8259) {
+    init(_ w: JSONWriter, options: JSONEncodingOptions = .rfc8259, strategies: EncodeStrategies = EncodeStrategies()) {
         self.w = w
         self.options = options
+        self.strategies = strategies
     }
 
     @inline(__always) func appendDouble(_ v: Double) throws {
         try JSONOutput.appendDouble(v, options: options, to: &w.bytes)
+    }
+
+    /// True when a key-encoding strategy is set, which forces the generic path so the transform in
+    /// `KeyedTapeEncodingContainer.member` applies to every object key (the fast writer can't).
+    var keyStrategyActive: Bool {
+        if case .useDefaultKeys = strategies.key { return false }
+        return true
+    }
+
+    /// Convert a `CodingKey` string to its JSON form under the active key-encoding strategy.
+    func transformedKey(_ key: String) -> String {
+        switch strategies.key {
+        case .useDefaultKeys: return key
+        case .convertToSnakeCase: return convertToSnakeCase(key)
+        }
+    }
+
+    /// Central value dispatch: `Date`/`Data` are intercepted by type and routed through their
+    /// configured strategy before the fast path or generic `encode(to:)`, matching Foundation. The
+    /// fast path is skipped when a key strategy is active so keys flow through `member`.
+    func encodeValue<T: Encodable>(_ value: T) throws {
+        if let date = value as? Date {
+            try encodeDate(date)
+        } else if let data = value as? Data {
+            try encodeData(data)
+        } else if !keyStrategyActive, let fast = value as? any ADJSONFastEncodable {
+            try encodeFast(fast)
+        } else {
+            try value.encode(to: TapeEncoder(state: self))
+        }
+    }
+
+    func encodeDate(_ date: Date) throws {
+        switch strategies.date {
+        case .deferredToDate:
+            try date.encode(to: TapeEncoder(state: self))
+        case .secondsSince1970:
+            try appendDouble(date.timeIntervalSince1970)
+        case .millisecondsSince1970:
+            try appendDouble(date.timeIntervalSince1970 * 1000)
+        case .iso8601:
+            let f = iso8601 ?? makeISO8601Formatter()
+            iso8601 = f
+            w.writeString(f.string(from: date))
+        case .formatted(let formatter):
+            w.writeString(formatter.string(from: date))
+        case .custom(let body):
+            try body(date, TapeEncoder(state: self))
+        }
+    }
+
+    func encodeData(_ data: Data) throws {
+        switch strategies.data {
+        case .deferredToData:
+            try data.encode(to: TapeEncoder(state: self))
+        case .base64:
+            w.writeString(data.base64EncodedString())
+        case .custom(let body):
+            try body(data, TapeEncoder(state: self))
+        }
     }
 
     @inline(__always) func open(object: Bool) -> Int {
@@ -82,7 +145,7 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
 
     @inline(__always) func member(_ key: Key) {
         state.beginMember(frame)
-        state.w.writeKey(key.stringValue)
+        state.w.writeKey(state.transformedKey(key.stringValue))
     }
 
     mutating func encodeNil(forKey key: Key) {
@@ -148,11 +211,7 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
 
     mutating func encode<T: Encodable>(_ v: T, forKey key: Key) throws {
         member(key)
-        if let fast = v as? any ADJSONFastEncodable {
-            try state.encodeFast(fast)
-        } else {
-            try v.encode(to: TapeEncoder(state: state))
-        }
+        try state.encodeValue(v)
     }
 
     mutating func nestedContainer<NK: CodingKey>(
@@ -249,11 +308,7 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
 
     mutating func encode<T: Encodable>(_ v: T) throws {
         elem()
-        if let fast = v as? any ADJSONFastEncodable {
-            try state.encodeFast(fast)
-        } else {
-            try v.encode(to: TapeEncoder(state: state))
-        }
+        try state.encodeValue(v)
     }
 
     mutating func nestedContainer<NK: CodingKey>(keyedBy keyType: NK.Type) -> KeyedEncodingContainer<NK> {
@@ -301,9 +356,6 @@ private struct SingleValueTapeEncodingContainer: SingleValueEncodingContainer {
     mutating func encode(_ v: UInt64) { state.w.writeInteger(v) }
 
     mutating func encode<T: Encodable>(_ v: T) throws {
-        if let fast = v as? any ADJSONFastEncodable {
-            return try state.encodeFast(fast)
-        }
-        try v.encode(to: TapeEncoder(state: state))
+        try state.encodeValue(v)
     }
 }

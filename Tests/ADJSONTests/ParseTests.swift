@@ -3,6 +3,51 @@ import Testing
 
 @testable import ADJSON
 
+@Test func parseDoubleMatchesDoubleStringBitExact() {
+    func adj(_ s: String) -> Double {
+        Array(s.utf8).withUnsafeBufferPointer { JSONNumber.parseDouble($0.baseAddress!, 0, $0.count) }
+    }
+    func check(_ s: String, _ sourceLocation: SourceLocation = #_sourceLocation) {
+        guard let reference = Double(s) else { return }
+        let mine = adj(s)
+        #expect(
+            mine.bitPattern == reference.bitPattern || (mine.isNaN && reference.isNaN),
+            "parseDouble(\(s)) = \(mine) but Double(\(s)) = \(reference)", sourceLocation: sourceLocation)
+    }
+
+    // Explicit edge cases: zeros, 2^53 boundary, subnormals, exponent extremes, the fast/slow seam.
+    for s in [
+        "0", "-0", "0.0", "0e0", "1", "-1", "3.14", "-2.5", "0.1", "0.2", "0.3", "12345.6789",
+        "9007199254740992", "9007199254740993", "9007199254740994",  // 2^53, 2^53+1, +2
+        "1e22", "1e23", "1e-22", "1e-23", "1.7976931348623157e308", "5e-324", "2.2250738585072014e-308",
+        "123456789012345", "1234567890123456", "12345678901234567", "100000000000000000000",
+        "1E5", "1.0e+1", "9.999999999999999e22", "0.0000001", "-0.0",
+    ] { check(s) }
+
+    var rng = SystemRandomNumberGenerator()
+    // Fast-path-targeted: significand ≤ 2^53 with an exponent in ±22 must be correctly rounded.
+    for _ in 0..<50_000 {
+        let sig = UInt64.random(in: 0...(1 << 53), using: &rng)
+        let e = Int.random(in: -22...22, using: &rng)
+        check("\(sig)e\(e)")
+        check(e >= 0 ? "\(sig)" : insertPoint("\(sig)", fromEnd: -e))
+    }
+    // Full-precision doubles exercise the slow-path fallback (which is `Double(_:)` itself).
+    for _ in 0..<20_000 {
+        let d = Double(bitPattern: UInt64.random(in: 0...UInt64.max, using: &rng))
+        if d.isFinite { check(d.description) }
+    }
+}
+
+// Insert a decimal point `places` digits from the right of an all-digit string (padding with
+// leading zeros when needed), e.g. ("12345", 3) -> "12.345", ("5", 7) -> "0.0000005".
+private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
+    guard places > 0 else { return digits }
+    if digits.count <= places { return "0." + String(repeating: "0", count: places - digits.count) + digits }
+    let idx = digits.index(digits.endIndex, offsetBy: -places)
+    return digits[..<idx] + "." + digits[idx...]
+}
+
 @Test func parsesAndNavigatesLazily() throws {
     let json = #"{"a":1,"b":[true,null,"x"],"c":{"d":3.5},"e":-42,"f":"a\"b"}"#
     let doc = try ADJSON.parse(json)

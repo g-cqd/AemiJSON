@@ -181,6 +181,21 @@ struct TapeBuilder {
         var j = start
         var esc: UInt64 = 0
         while j < n {
+            // SWAR fast-forward over a run of plain content bytes — printable ASCII that is neither a
+            // quote, a backslash, a control char, nor a non-ASCII lead. Eight bytes are tested per
+            // step; on a clean word `j` jumps by 8, otherwise to the first byte the scalar tail must
+            // inspect. Only whole words inside the buffer are loaded (`j + 8 <= n`).
+            while j + 8 <= n {
+                let word = UInt64(littleEndian: UnsafeRawPointer(p + j).loadUnaligned(as: UInt64.self))
+                let mask = Self.stringStopMask(word)
+                if mask == 0 {
+                    j += 8
+                    continue
+                }
+                j += mask.trailingZeroBitCount >> 3  // first stop byte (its 0x80 bit, /8)
+                break
+            }
+            guard j < n else { break }
             let c = p[j]
             if c == 0x22 { break }
             if c == 0x5C {
@@ -204,6 +219,23 @@ struct TapeBuilder {
         guard length <= Slot.maxLength else { throw JSONError.documentTooLarge }
         slots.append(Slot.scalar(JSONKind.string.rawValue, offset: start, length: length, flags: esc))
         i = j + 1
+    }
+
+    // SWAR: returns a word whose every byte holds `0x80` exactly where the corresponding input byte
+    // must stop the fast scan — a control char (`< 0x20`), a non-ASCII lead (`>= 0x80`), a quote
+    // (`"`), or a backslash (`\`). Zero means all eight bytes are plain string content. The set bits
+    // are only ever the per-byte `0x80`, so `trailingZeroBitCount >> 3` (little-endian) locates the
+    // first stop byte. Uses the classic "bytes < n" / "bytes == c" bit hacks (Bit Twiddling Hacks).
+    @inline(__always) static func stringStopMask(_ v: UInt64) -> UInt64 {
+        let ones: UInt64 = 0x0101_0101_0101_0101
+        let high: UInt64 = 0x8080_8080_8080_8080
+        let lessThan0x20 = (v &- (ones &* 0x20)) & ~v & high  // bytes < 0x20
+        let nonASCII = v & high  // bytes >= 0x80
+        let quote = v ^ (ones &* 0x22)  // zero byte where v == '"'
+        let isQuote = (quote &- ones) & ~quote & high
+        let backslash = v ^ (ones &* 0x5C)  // zero byte where v == '\'
+        let isBackslash = (backslash &- ones) & ~backslash & high
+        return lessThan0x20 | nonASCII | isQuote | isBackslash
     }
 
     // `p[j]` is a backslash; validates the escape and advances `j` past it.

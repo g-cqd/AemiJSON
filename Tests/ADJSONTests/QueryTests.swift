@@ -60,3 +60,56 @@ private let store = doc(
 @Test func jsonPathInvalidThrows() {
     #expect(throws: (any Error).self) { try doc("{}").query("store.book") }  // missing $
 }
+
+@Test func filterNotFloodParsesWithoutStackOverflow() throws {
+    // A 200k-long run of `!` would overflow a per-`!`-recursive filter parser; the iterative
+    // parity count must handle it in O(1) stack. `!!x ≡ x`, so an even count is a plain existence
+    // test and an odd count is a single negation.
+    let arr = try ADJSON.parse("[1,2,3]").root
+    let evenBangs = String(repeating: "!", count: 200_000)
+    #expect(try JSONPath("$[?\(evenBangs)@]").query(arr).count == 3)  // even → @ exists for all
+    #expect(try JSONPath("$[?\(evenBangs)!@]").query(arr).count == 0)  // odd → !@ false for all
+}
+
+@Test func deeplyNestedFilterStructureIsRejectedNotOverflowed() {
+    // The filter parser's only growing recursion is structural (parens / nested bracket-filters);
+    // the `enter()`/maxDepth guard must reject pathological nesting with an error rather than
+    // recurse to a crash. The guard fires at `maxDepth` (64) — far below the per-level stack budget —
+    // regardless of total length. (`&&`/`||`/`!` runs are already iterative, covered elsewhere.)
+    let deepParens = "$[?" + String(repeating: "(", count: 1_000) + "@" + String(repeating: ")", count: 1_000) + "]"
+    #expect(throws: JSONPathError.self) { try JSONPath(deepParens) }
+    let deepFilters = "$" + String(repeating: "[?@", count: 1_000) + "1" + String(repeating: "]", count: 1_000)
+    #expect(throws: JSONPathError.self) { try JSONPath(deepFilters) }
+}
+
+@Test func wildcardAndDescendantVisitDuplicateKeysInOrder() throws {
+    // Under the default last-value-wins parse the tape retains every member, so a wildcard must
+    // visit all of them in document order — `objectValue.values` would collapse the duplicate `a`
+    // and randomize order.
+    let j = try ADJSON.parse(#"{"a":1,"a":2,"b":3}"#).root
+    #expect(try j.query("$[*]").compactMap(\.int) == [1, 2, 3])
+    #expect(try j.query("$.*").compactMap(\.int) == [1, 2, 3])
+    #expect(try j.query("$..*").compactMap(\.int) == [1, 2, 3])
+}
+
+@Test func regexPatternSafetyAtParseTime() {
+    // Catastrophic-backtracking shapes and non-I-Regexp constructs are rejected when the path is
+    // compiled — before any JSON is matched — so a literal pattern can never reach the backtracking
+    // engine in an unsafe form.
+    let unsafe = [
+        #"$[?match(@.s, "(a+)+$")]"#,  // nested unbounded quantifier
+        #"$[?search(@.s, "(a*)*")]"#,  // nested unbounded quantifier
+        #"$[?match(@.s, "\\1")]"#,  // backreference (pattern is \1)
+        #"$[?match(@.s, "(?=a)")]"#,  // lookahead
+        #"$[?search(@.s, "(?:ab)+")]"#,  // non-capturing group extension
+    ]
+    for q in unsafe { #expect(throws: JSONPathError.self) { try JSONPath(q) } }
+
+    let safe = [
+        #"$[?search(@.s, "[AB]")]"#,
+        #"$[?search(@.s, "a.*b")]"#,
+        #"$[?search(@.s, "(ab)+")]"#,
+        #"$[?match(@.s, "a+b+")]"#,
+    ]
+    for q in safe { #expect(throws: Never.self) { try JSONPath(q) } }
+}

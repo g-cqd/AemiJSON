@@ -47,19 +47,25 @@ public struct JSONEncodingOptions: Sendable {
     /// Escape `/` as `\/`. RFC 8259 and `JSON.stringify` both leave it unescaped (default `false`).
     public var escapeSlashes: Bool
     public var nilStrategy: NilStrategy
+    /// Emit human-readable output: a newline after each `{`/`[`/`,`, two-space indentation per
+    /// nesting level, and a `" : "` key separator — matching `Foundation`'s `.prettyPrinted`
+    /// (default `false`). Empty containers stay on one line (`[]` / `{}`).
+    public var prettyPrinted: Bool
 
     public init(
         nonFinite: NonFiniteStrategy = .throw,
         numberFormat: NumberFormat = .swiftShortest,
         keyOrder: KeyOrder = .declaration,
         escapeSlashes: Bool = false,
-        nilStrategy: NilStrategy = .omit
+        nilStrategy: NilStrategy = .omit,
+        prettyPrinted: Bool = false
     ) {
         self.nonFinite = nonFinite
         self.numberFormat = numberFormat
         self.keyOrder = keyOrder
         self.escapeSlashes = escapeSlashes
         self.nilStrategy = nilStrategy
+        self.prettyPrinted = prettyPrinted
     }
 
     /// Strict RFC 8259 / ECMA-404: reject non-finite numbers, shortest numbers, declaration order.

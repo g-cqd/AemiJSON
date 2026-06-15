@@ -21,12 +21,20 @@ enum JSONPathEvaluator {
         // matching the former recursion exactly — but with no call-stack growth, so a
         // descendant query (`..`) over a deeply nested document can't overflow the stack.
         var stack = [node]
+        var kids: [JSON] = []
         while let n = stack.popLast() {
             visit(n)
+            // Buffer children in document order (`forEachMember` keeps every member — including
+            // duplicate keys — unlike `objectValue`, which collapses them into a dictionary), then
+            // push reversed so they pop back in document order.
             if n.isArray {
-                for e in n.arrayValue.reversed() { stack.append(e) }
+                kids.removeAll(keepingCapacity: true)
+                n.forEachElement { kids.append($0) }
+                for e in kids.reversed() { stack.append(e) }
             } else if n.isObject {
-                for v in n.objectValue.values.reversed() { stack.append(v) }
+                kids.removeAll(keepingCapacity: true)
+                n.forEachMember { _, v in kids.append(v) }
+                for v in kids.reversed() { stack.append(v) }
             }
         }
     }
@@ -39,10 +47,13 @@ enum JSONPathEvaluator {
                 if v.exists { out.append(v) }
             }
         case .wildcard:
+            // RFC 9535: visit every array element / object member in document order. The lazy
+            // walkers append directly (no intermediate `[JSON]`/dictionary) and preserve duplicate
+            // keys, which `objectValue.values` would collapse and reorder.
             if node.isArray {
-                out.append(contentsOf: node.arrayValue)
+                node.forEachElement { out.append($0) }
             } else if node.isObject {
-                out.append(contentsOf: node.objectValue.values)
+                node.forEachMember { _, v in out.append(v) }
             }
         case .index(let idx):
             if node.isArray {
@@ -54,9 +65,9 @@ enum JSONPathEvaluator {
             if node.isArray { appendSlice(node, start, end, step, &out) }
         case .filter(let expr):
             if node.isArray {
-                for e in node.arrayValue where evalFilter(expr, current: e, root: root) { out.append(e) }
+                node.forEachElement { e in if evalFilter(expr, current: e, root: root) { out.append(e) } }
             } else if node.isObject {
-                for v in node.objectValue.values where evalFilter(expr, current: v, root: root) { out.append(v) }
+                node.forEachMember { _, v in if evalFilter(expr, current: v, root: root) { out.append(v) } }
             }
         }
     }
@@ -92,6 +103,10 @@ enum JSONPathEvaluator {
 
     // MARK: - Filters
 
+    // Recurses over the filter AST for the nested `&&`/`||`/`!` structure (the leaf tests —
+    // existence, comparison, regex — bottom out into the iterative `evaluate`). The AST is produced
+    // by `JSONPathParser`, whose `enter()`/`maxDepth` guard caps logical nesting, so this recursion
+    // is bounded (≤ `JSONPathParser.maxDepth`) and a crafted query can't drive it to overflow.
     static func evalFilter(_ e: FilterExpr, current: JSON, root: JSON) -> Bool {
         switch e {
         case .or(let xs): return xs.contains { evalFilter($0, current: current, root: root) }
@@ -184,11 +199,26 @@ enum JSONPathEvaluator {
         }
     }
 
-    static func evalRegex(_ sc: Comparand, _ pc: Comparand, _ anchored: Bool, current: JSON, root: JSON) -> Bool {
-        guard case let .string(s) = evalComparand(sc, current: current, root: root),
-            case let .string(pat) = evalComparand(pc, current: current, root: root),
-            let re = try? Regex(iRegexpToSwift(pat))
-        else { return false }
+    static func evalRegex(
+        _ sc: Comparand, _ pattern: RegexOperand, _ anchored: Bool, current: JSON, root: JSON
+    )
+        -> Bool
+    {
+        guard case let .string(s) = evalComparand(sc, current: current, root: root) else { return false }
+        let re: Regex<AnyRegexOutput>
+        switch pattern {
+        case .compiled(let c):
+            re = c.regex  // literal pattern: validated + compiled once at parse time
+        case .dynamic(let pc):
+            // A pattern sourced from the (untrusted) JSON document must be re-validated against the
+            // I-Regexp safe subset before it reaches the backtracking engine; an unsafe or malformed
+            // pattern simply doesn't match (eval can't throw).
+            guard case let .string(pat) = evalComparand(pc, current: current, root: root),
+                iRegexpRejectionReason(pat) == nil,
+                let compiled = try? Regex(iRegexpToSwift(pat))
+            else { return false }
+            re = compiled
+        }
         // RFC 9535: `match()` is a full (anchored) match; `search()` finds a substring. Swift's
         // standard-library `Regex` (not Foundation) provides both via `wholeMatch` / `firstMatch`.
         // `try?` flattens the optional `Match`, so a `nil` result already means "no match".
@@ -227,5 +257,101 @@ enum JSONPathEvaluator {
             }
         }
         return out
+    }
+
+    // RFC 9485 I-Regexp is a *regular* (backtrack-free) language, so a conforming pattern can be
+    // matched in linear time. Swift's `Regex`, however, is a backtracking engine, so the trust
+    // boundary for `match()`/`search()` is: (a) reject backreferences and (b) lookaround/group
+    // extensions — neither is valid I-Regexp, and both let the engine run super-linearly; and
+    // (c) reject an unbounded quantifier (`*`/`+`/`{n,}`) wrapped around a group that itself
+    // contains one (`(a+)+`), the classic catastrophic-backtracking shape. Returns a human-readable
+    // reason when the pattern is outside this safe subset, or `nil` when it is acceptable.
+    static func iRegexpRejectionReason(_ pattern: String) -> String? {
+        let s = Array(pattern.unicodeScalars)
+        var i = 0
+        var inClass = false
+        var classStart = false  // just inside `[`/`[^`, where a leading `]` is literal
+        var groupHasUnbounded = [false]  // per open group; index 0 is the top level
+        func isDigit(_ u: Unicode.Scalar) -> Bool { (0x30...0x39).contains(u.value) }
+
+        // If a quantifier begins at `i`, consume it and report whether it is unbounded.
+        func takeQuantifier() -> (present: Bool, unbounded: Bool) {
+            guard i < s.count else { return (false, false) }
+            switch s[i] {
+            case "*", "+":
+                i += 1
+                return (true, true)
+            case "?":
+                i += 1
+                return (true, false)
+            case "{":
+                var j = i + 1
+                let lowStart = j
+                while j < s.count, isDigit(s[j]) { j += 1 }
+                guard j > lowStart else { return (false, false) }  // `{` not starting a quantity
+                var unbounded = false
+                if j < s.count, s[j] == "," {
+                    j += 1
+                    let highStart = j
+                    while j < s.count, isDigit(s[j]) { j += 1 }
+                    if j == highStart { unbounded = true }  // `{n,}` — no upper bound
+                }
+                guard j < s.count, s[j] == "}" else { return (false, false) }
+                i = j + 1
+                return (true, unbounded)
+            default:
+                return (false, false)
+            }
+        }
+
+        while i < s.count {
+            let c = s[i]
+            if c == "\\" {
+                guard i + 1 < s.count else { return "trailing backslash in pattern" }
+                if !inClass, isDigit(s[i + 1]) { return "backreferences are not allowed in match()/search()" }
+                i += 2
+                classStart = false
+                continue
+            }
+            if inClass {
+                if c == "]" && !classStart { inClass = false } else { classStart = false }
+                i += 1
+                continue
+            }
+            switch c {
+            case "[":
+                inClass = true
+                classStart = true
+                if i + 1 < s.count, s[i + 1] == "^" { i += 1 }
+                i += 1
+            case "(":
+                if i + 1 < s.count, s[i + 1] == "?" {
+                    return "lookaround / group extensions are not allowed in match()/search()"
+                }
+                groupHasUnbounded.append(false)
+                i += 1
+            case ")":
+                let inner = groupHasUnbounded.count > 1 ? groupHasUnbounded.removeLast() : false
+                i += 1
+                let q = takeQuantifier()
+                if q.present, q.unbounded {
+                    if inner { return "nested unbounded quantifier may cause catastrophic backtracking" }
+                    groupHasUnbounded[groupHasUnbounded.count - 1] = true
+                }
+            case "*", "+":
+                groupHasUnbounded[groupHasUnbounded.count - 1] = true
+                i += 1
+            case "{":
+                let q = takeQuantifier()
+                if q.present {
+                    if q.unbounded { groupHasUnbounded[groupHasUnbounded.count - 1] = true }
+                } else {
+                    i += 1  // a literal `{`
+                }
+            default:
+                i += 1
+            }
+        }
+        return nil
     }
 }

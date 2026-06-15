@@ -19,10 +19,12 @@ public struct JSONParseOptions: Sendable {
 
     public var validation: Validation
     public var duplicateKeys: DuplicateKeyStrategy
-    /// Maximum container nesting accepted while parsing. It also bounds the *native-stack* recursion
-    /// of the recursive consumers — `Codable` decoding, ``JSONValue`` materialization, and schema
-    /// validation — so the default (512) keeps them safe. Raising it for untrusted input risks a
-    /// stack overflow when that input is deeply nested; keep it modest unless the source is trusted.
+    /// Maximum container nesting accepted while parsing. The tape parser, lazy navigation,
+    /// ``JSONValue`` materialization/serialization, and JSONPath evaluation are all iterative, so
+    /// they stay safe at any depth. It still bounds the remaining *native-stack* recursive
+    /// consumers — `Codable` decoding (the protocol mandates recursion) and schema validation — so
+    /// the default (512) keeps them safe. Raising it for untrusted input risks a stack overflow in
+    /// those paths when the input is deeply nested; keep it modest unless the source is trusted.
     public var maxDepth: Int
 
     public init(

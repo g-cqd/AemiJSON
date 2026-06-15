@@ -14,27 +14,118 @@ public enum JSONValue: Sendable, Equatable {
 
 extension JSONValue {
     /// Materialize from a lazy `JSON` view.
+    ///
+    /// Built with an explicit frame stack rather than per-level recursion: a document parsed with a
+    /// large `maxDepth` can nest far deeper than the call stack tolerates, so structural recursion
+    /// here would be an overflow waiting to happen.
     public init(_ json: JSON) {
-        if json.isNull {
-            self = .null
-        } else if let b = json.bool {
-            self = .bool(b)
-        } else if let d = json.double {
-            self = .number(d)
-        } else if let s = json.string {
-            self = .string(s)
-        } else if json.isArray {
-            var elements = [JSONValue]()
-            elements.reserveCapacity(json.count)
-            json.forEachElement { elements.append(JSONValue($0)) }
-            self = .array(elements)
-        } else if json.isObject {
-            var members = [String: JSONValue](minimumCapacity: json.count)
-            json.forEachMember { members[$0] = JSONValue($1) }
-            self = .object(members)
-        } else {
-            self = .null
+        if let scalar = JSONValue.scalarValue(json) {
+            self = scalar
+            return
         }
+        var stack = [JSONValue.BuildFrame(json)]
+        var completed: JSONValue?
+        while !stack.isEmpty {
+            let top = stack.count - 1
+            if let child = completed {
+                completed = nil
+                stack[top].fold(child)
+            }
+            switch stack[top].advance() {
+            case .scalarAdded:
+                continue
+            case .descend(let node):
+                stack.append(JSONValue.BuildFrame(node))
+            case .done:
+                completed = stack[top].finished
+                stack.removeLast()
+            }
+        }
+        self = completed ?? .null
+    }
+
+    /// A scalar (or the missing sentinel), or `nil` when `json` is a container to be walked.
+    private static func scalarValue(_ json: JSON) -> JSONValue? {
+        if json.isNull { return .null }
+        if let b = json.bool { return .bool(b) }
+        if let d = json.double { return .number(d) }
+        if let s = json.string { return .string(s) }
+        if json.isArray || json.isObject { return nil }
+        return .null  // missing sentinel materializes as null, matching the former recursion
+    }
+
+    /// One in-progress container in the iterative materializer. Children are walked in document
+    /// order via a forward cursor (`next`); `openKey` holds the object key whose (container) value
+    /// is currently being built one frame deeper.
+    private struct BuildFrame {
+        enum Step { case scalarAdded, descend(JSON), done }
+
+        let isObject: Bool
+        let nodes: [JSON]
+        let keys: [String]
+        var next = 0
+        var array: [JSONValue]
+        var object: [String: JSONValue]
+        var openKey: String?
+
+        init(_ node: JSON) {
+            let c = node.count
+            if node.isObject {
+                isObject = true
+                var ks: [String] = []
+                var vs: [JSON] = []
+                ks.reserveCapacity(c)
+                vs.reserveCapacity(c)
+                node.forEachMember { k, v in
+                    ks.append(k)
+                    vs.append(v)
+                }
+                keys = ks
+                nodes = vs
+                array = []
+                object = [String: JSONValue](minimumCapacity: c)
+            } else {
+                isObject = false
+                var vs: [JSON] = []
+                vs.reserveCapacity(c)
+                node.forEachElement { vs.append($0) }
+                nodes = vs
+                keys = []
+                array = []
+                array.reserveCapacity(c)
+                object = [:]
+            }
+        }
+
+        /// Fold a finished child container into this frame under the remembered `openKey`.
+        mutating func fold(_ value: JSONValue) {
+            if isObject {
+                object[openKey!] = value
+                openKey = nil
+            } else {
+                array.append(value)
+            }
+        }
+
+        /// Consume the next child: scalars are added in place; a container is handed back to descend.
+        mutating func advance() -> Step {
+            guard next < nodes.count else { return .done }
+            let node = nodes[next]
+            let key = isObject ? keys[next] : nil
+            next += 1
+            if let scalar = JSONValue.scalarValue(node) {
+                if isObject {
+                    object[key!] = scalar
+                } else {
+                    array.append(scalar)
+                }
+                return .scalarAdded
+            }
+            openKey = key
+            return .descend(node)
+        }
+
+        var finished: JSONValue { isObject ? .object(object) : .array(array) }
     }
 
     public init(parsing string: String, options: JSONParseOptions = .strict) throws(JSONError) {
@@ -56,36 +147,91 @@ extension JSONValue {
         return writer.bytes
     }
 
+    /// One unit of serialization work on the explicit stack: emit a value, write an object key,
+    /// emit a single structural byte, or (when pretty-printing) a newline-plus-indent — optionally
+    /// preceded by a comma — at a nesting level.
+    private enum WriteOp {
+        case value(JSONValue, depth: Int)
+        case key(String, pretty: Bool)
+        case byte(UInt8)
+        case indent(level: Int, comma: Bool)
+    }
+
     func write(into writer: JSONWriter, depth: Int, options: JSONEncodingOptions) throws {
-        guard depth <= Self.maxEncodingDepth else {
-            throw EncodingError.invalidValue(
-                self, .init(codingPath: [], debugDescription: "Nesting exceeds \(Self.maxEncodingDepth)"))
-        }
-        switch self {
-        case .null:
-            writer.writeNull()
-        case .bool(let b):
-            writer.writeBool(b)
-        case .number(let d):
-            try writeNumber(d, into: writer, options: options)
-        case .string(let s):
-            writer.writeString(s)
-        case .array(let elements):
-            writer.byte(0x5B)
-            for (i, element) in elements.enumerated() {
-                if i > 0 { writer.byte(0x2C) }
-                try element.write(into: writer, depth: depth + 1, options: options)
+        // Explicit-stack preorder emission: containers push their closing byte, then their children
+        // interleaved with separators in reverse, so a deeply nested tree serializes with no call
+        // recursion. Output order is identical to the former recursive walk.
+        let pretty = options.prettyPrinted
+        var stack: [WriteOp] = [.value(self, depth: depth)]
+        while let op = stack.popLast() {
+            switch op {
+            case .byte(let b):
+                writer.byte(b)
+            case .key(let k, let pretty):
+                if pretty {
+                    writer.writeString(k)
+                    writer.raw(" : ")
+                } else {
+                    writer.writeKey(k)
+                }
+            case .indent(let level, let comma):
+                if comma { writer.byte(0x2C) }
+                writer.byte(0x0A)
+                for _ in 0..<(level * 2) { writer.byte(0x20) }
+            case .value(let value, let depth):
+                guard depth <= Self.maxEncodingDepth else {
+                    throw EncodingError.invalidValue(
+                        value, .init(codingPath: [], debugDescription: "Nesting exceeds \(Self.maxEncodingDepth)"))
+                }
+                switch value {
+                case .null:
+                    writer.writeNull()
+                case .bool(let b):
+                    writer.writeBool(b)
+                case .number(let d):
+                    try writeNumber(d, into: writer, options: options)
+                case .string(let s):
+                    writer.writeString(s)
+                case .array(let elements):
+                    writer.byte(0x5B)
+                    if elements.isEmpty {
+                        writer.byte(0x5D)
+                    } else {
+                        stack.append(.byte(0x5D))
+                        if pretty { stack.append(.indent(level: depth, comma: false)) }
+                        var i = elements.count - 1
+                        while i >= 0 {
+                            stack.append(.value(elements[i], depth: depth + 1))
+                            if pretty {
+                                stack.append(.indent(level: depth + 1, comma: i > 0))
+                            } else if i > 0 {
+                                stack.append(.byte(0x2C))
+                            }
+                            i -= 1
+                        }
+                    }
+                case .object(let members):
+                    writer.byte(0x7B)
+                    let pairs = options.keyOrder == .sorted ? members.sorted { $0.key < $1.key } : Array(members)
+                    if pairs.isEmpty {
+                        writer.byte(0x7D)
+                    } else {
+                        stack.append(.byte(0x7D))
+                        if pretty { stack.append(.indent(level: depth, comma: false)) }
+                        var i = pairs.count - 1
+                        while i >= 0 {
+                            stack.append(.value(pairs[i].value, depth: depth + 1))
+                            stack.append(.key(pairs[i].key, pretty: pretty))
+                            if pretty {
+                                stack.append(.indent(level: depth + 1, comma: i > 0))
+                            } else if i > 0 {
+                                stack.append(.byte(0x2C))
+                            }
+                            i -= 1
+                        }
+                    }
+                }
             }
-            writer.byte(0x5D)
-        case .object(let members):
-            writer.byte(0x7B)
-            let pairs = options.keyOrder == .sorted ? members.sorted { $0.key < $1.key } : Array(members)
-            for (i, pair) in pairs.enumerated() {
-                if i > 0 { writer.byte(0x2C) }
-                writer.writeKey(pair.key)
-                try pair.value.write(into: writer, depth: depth + 1, options: options)
-            }
-            writer.byte(0x7D)
         }
     }
 

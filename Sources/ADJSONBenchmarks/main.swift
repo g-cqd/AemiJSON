@@ -203,6 +203,16 @@ let adDoubles = bench("ADJSON JSONDecoder", bytes: dData.count) {
 report(fDoubles, vs: nil)
 report(adDoubles, vs: fDoubles)
 
+// Isolated number parsing (no Codable container overhead): parse + read every value through the
+// lazy `.double` accessor. This is the Eisel-Lemire hot path — `JSONNumber.parseDouble`.
+let adNumWalk = bench("ADJSON parse + sum doubles (lazy)", bytes: dData.count) {
+    let root = try! ADJSON.parse(dData).root
+    var s = 0.0
+    root.forEachElement { s += $0.doubleValue }
+    blackHole(s)
+}
+report(adNumWalk, vs: fDoubles)
+
 // MARK: - Query (JSONPath, RFC 9535) — pre-parsed root, no Foundation equivalent
 
 section("QUERY  JSONPath over pre-parsed [User]  (ADJSON only)")
@@ -219,6 +229,21 @@ let queryWildcard = bench("wildcard  \(pathWildcard)", bytes: userData.count) {
 }
 report(queryFilter, vs: nil)
 report(queryWildcard, vs: nil)
+
+// JSONPath compilation (string -> AST). Exercises the path parser itself (the byte-vs-`[Character]`
+// target), independent of evaluation; each iteration compiles the set 1000x for stable timing.
+section("COMPILE  JSONPath string -> AST  (ADJSON only)")
+let pathStrings = [
+    "$.store.book[*].title",
+    #"$[?(@.followers > 50000 && @.login != "abc")].login"#,
+    "$..profile.bio",
+    "$['a']['b'][0:10:2].c",
+]
+let pathSrcBytes = pathStrings.reduce(0) { $0 + $1.utf8.count } * 1000
+let pathCompile = bench("compile 4 paths x1000", bytes: pathSrcBytes, iters: 200, warmup: 40) {
+    for _ in 0..<1000 { for p in pathStrings { blackHole(try? JSONPath(p)) } }
+}
+report(pathCompile, vs: nil)
 
 // MARK: - Schema validation (Draft 2020-12 subset) — compile once, validate many
 

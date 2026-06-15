@@ -100,6 +100,88 @@ private let samples: [E] = [
     #expect(throws: EncodingError.self) { try JSONValue.number(.nan).encoded() }
 }
 
+@Test func jsonValueMaterializesDeepDocumentWithoutOverflow() throws {
+    // Parsed with a large maxDepth, the document nests far deeper than the call stack tolerates;
+    // the now-iterative `JSONValue.init(_:)` must materialize it without recursing. (`==` on the
+    // result is itself recursive, so navigate iteratively instead.)
+    let depth = 5_000
+    let nested = String(repeating: #"{"x":"#, count: depth) + "1" + String(repeating: "}", count: depth)
+    let root = try ADJSON.parse(nested, options: JSONParseOptions(maxDepth: depth + 1)).root
+    var cursor = JSONValue(root)
+    var levels = 0
+    while case .object(let o) = cursor, let next = o["x"] {
+        cursor = next
+        levels += 1
+    }
+    #expect(levels == depth)
+    #expect(cursor == .number(1))
+}
+
+@Test func jsonValueEncodesDeepTreeIterativelyAtDepthCap() throws {
+    // 512 nested objects put the innermost number exactly at `maxEncodingDepth`; the iterative
+    // writer must serialize it (and round-trip it) without recursing, and reject one level deeper.
+    var deep = JSONValue.number(1)
+    for _ in 0..<512 { deep = .object(["x": deep]) }
+    let bytes = try deep.encodedBytes()
+    let reEncoded = try JSONValue(try ADJSON.parse(bytes, options: JSONParseOptions(maxDepth: 600)).root).encodedBytes()
+    #expect(bytes == reEncoded)  // byte compare avoids recursive `==`
+
+    var tooDeep = JSONValue.number(1)
+    for _ in 0..<513 { tooDeep = .object(["x": tooDeep]) }
+    #expect(throws: EncodingError.self) { try tooDeep.encodedBytes() }
+}
+
+@Test func codableEncoderSortsKeysAndRejectsNullNil() throws {
+    struct P: Encodable {
+        var b = 2
+        var a = 1
+        var c = 3
+    }
+    // keyOrder: .sorted is now honored on the Codable path (via the JSONValue model).
+    var sorted = ADJSON.JSONEncoder()
+    sorted.options = JSONEncodingOptions(keyOrder: .sorted)
+    #expect(String(decoding: try sorted.encode(P()), as: UTF8.self) == #"{"a":1,"b":2,"c":3}"#)
+
+    // nilStrategy: .null still can't be honored (omitted nils are never seen) — must throw.
+    var nullNil = ADJSON.JSONEncoder()
+    nullNil.options = JSONEncodingOptions(nilStrategy: .null)
+    #expect(throws: EncodingError.self) { try nullNil.encode(P()) }
+}
+
+@Test func codableEncoderPrettyPrintsLikeFoundation() throws {
+    struct N: Encodable {
+        var a = 1
+        var b = [2, 3]
+        var c = ["x": 9]
+    }
+    var adj = ADJSON.JSONEncoder()
+    adj.prettyPrinted = true
+    adj.options = JSONEncodingOptions(keyOrder: .sorted)  // deterministic key order for comparison
+    let fnd = Foundation.JSONEncoder()
+    fnd.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    let mine = try adj.encode(N())
+    let theirs = try fnd.encode(N())
+    #expect(String(decoding: mine, as: UTF8.self) == String(decoding: theirs, as: UTF8.self))
+}
+
+@Test func jsonValuePrettyPrintsNestedStructure() throws {
+    let v = JSONValue.object(["a": .number(1), "b": .array([.number(2), .string("x")]), "e": .object([:])])
+    let out = String(
+        decoding: try v.encodedBytes(options: JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true)),
+        as: UTF8.self)
+    #expect(
+        out == """
+            {
+              "a" : 1,
+              "b" : [
+                2,
+                "x"
+              ],
+              "e" : {}
+            }
+            """)
+}
+
 @Test func codableEncoderHonorsOptionsProfile() throws {
     struct F: Encodable {
         var a: Double

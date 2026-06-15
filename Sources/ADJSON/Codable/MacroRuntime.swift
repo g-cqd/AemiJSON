@@ -53,6 +53,12 @@ extension DecodeContext {
     /// Generic container fallback. Not `@inlinable` (it touches the internal
     /// `TapeDecoder`), but reachable from the inlinable `decodeValue`.
     @usableFromInline func decodeGeneric<T: Decodable>(_ type: T.Type, at index: Int) throws -> T {
-        try T(from: TapeDecoder(ctx: self, index: index, codingPath: []))
+        // `Date`/`Data` are intercepted here (this body is not serialized, so it can reference the
+        // internal-imported Foundation types) and routed through their decoding strategy; neither is
+        // a fast type, so a `Date`/`Data` always falls through `decodeValue` to here. The `as?` casts
+        // always succeed (the metatype is checked first); the fall-through is unreachable.
+        if T.self == Date.self, let date = try decodeDate(at: index) as? T { return date }
+        if T.self == Data.self, let data = try decodeData(at: index) as? T { return data }
+        return try T(from: TapeDecoder(ctx: self, index: index, codingPath: []))
     }
 }

@@ -51,17 +51,19 @@ let adjsonBuildPlugins: [Target.PluginUsage] = isDev ? ["LintBuild"] : []
 
 let package = Package(
     name: "ADJSON",
-    // macOS is intentionally one generation below the device platforms: everything the library
-    // needs is available there (`Synchronization`'s Atomic/Mutex ship in macOS 15, and
-    // `Span`/`RawSpan` back-deploy further still), so there's no reason to force macOS 26. Types
-    // gated to the 2025 SDKs (`UTF8Span`, `InlineArray`) are therefore not adopted yet — that
-    // would raise this floor or fragment the code with availability shims.
+    // The deployment floor is pinned by `Synchronization`'s `Mutex`/`Atomic` (the library's only
+    // OS-version-sensitive dependency), which ship in macOS 15 / iOS 18 / tvOS 18 / watchOS 11 /
+    // visionOS 2. No code uses a newer-SDK API and there are no `@available` shims, so these are the
+    // true minimums. Types gated to the 2025 SDKs (`UTF8Span`, `InlineArray`) are deliberately not
+    // adopted, and `Span`/`RawSpan` back-deploy further still — adopting `UTF8Span`/`InlineArray`
+    // would raise this floor or fragment the code with availability shims. (The Swift 6.3
+    // tools-version is a *toolchain* requirement, not a deployment one.)
     platforms: [
         .macOS(.v15),
-        .iOS(.v26),
-        .tvOS(.v26),
-        .watchOS(.v26),
-        .visionOS(.v26),
+        .iOS(.v18),
+        .tvOS(.v18),
+        .watchOS(.v11),
+        .visionOS(.v2),
     ],
     products: [
         // The full library: the engine plus Foundation interop, Codable, Schema, and the macros.

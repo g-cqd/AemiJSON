@@ -51,8 +51,92 @@ jobs:
         run: swift build
       - name: Fetch conformance & benchmark fixtures
         run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
-      - name: Test (full conformance suite)
+      - name: Test (full conformance suite, with coverage)
+        run: swift test --enable-code-coverage
+      - name: Coverage summary
+        if: always()
+        run: |
+          set -o pipefail
+          BIN=$(swift build --show-bin-path)
+          PROF="$BIN/codecov/default.profdata"
+          XCTEST=$(find "$BIN" -name '*.xctest' -maxdepth 1 | head -1)
+          if [ -n "$XCTEST" ] && [ -f "$PROF" ]; then
+            TOOL="$XCTEST/Contents/MacOS/$(basename "$XCTEST" .xctest)"
+            {
+              echo "## Code coverage"
+              echo '```text'
+              xcrun llvm-cov report "$TOOL" -instr-profile "$PROF" \
+                -ignore-filename-regex='(Tests|\.build|Benchmarks)/' 2>/dev/null | tail -25
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  release-test:
+    name: Test (macOS, release / no asserts)
+    needs: build-test
+    # The shipping decoder compiles its bounds `assert`s out in release, so the unchecked raw-pointer
+    # path is only exercised by a release test run. Slow (a full release rebuild), so gate it like the
+    # other heavy jobs: main / on demand, not every PR.
+    if: github.event_name != 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select latest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+      - name: Cache SwiftPM
+        uses: actions/cache@v5
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-release-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Tests/**') }}
+          restore-keys: |
+            spm-${{ runner.os }}-release-${{ hashFiles('Package.swift') }}-
+            spm-${{ runner.os }}-release-
+      - name: Fetch conformance & benchmark fixtures
+        run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
+      - name: Test (release)
+        run: swift test -c release
+
+  linux:
+    name: Build & test (Linux)
+    needs: build-test
+    # ADJSONCore is Foundation-free; building it on Linux guards portability for zero-dependency
+    # consumers. The full package (umbrella + macros + tests) is built/tested too, since swift-syntax,
+    # Foundation, and Synchronization are all available on Linux.
+    #
+    # Advisory (continue-on-error) for now: the package's tools-version (6.3) tracks an unreleased
+    # toolchain, so this runs the main-nightly Linux container, which can be unstable independent of
+    # the code. Promote to a required gate once a matching stable Linux toolchain ships.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    container: swiftlang/swift:nightly-main-jammy
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - name: Show toolchain
+        run: swift --version
+      - name: Build Foundation-free core
+        run: swift build --target ADJSONCore
+      - name: Build & test full package
         run: swift test
+
+  api-stability:
+    name: API breaking changes
+    needs: build-test
+    # Catch accidental public-API removals/changes in PRs (additions are fine). Compares the PR head
+    # against the PR's base commit on main.
+    if: github.event_name == 'pull_request'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Select latest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+      - name: Diagnose API breaking changes vs base
+        run: swift package diagnose-api-breaking-changes "${{ github.event.pull_request.base.sha }}"
 
   platforms:
     name: Build (${{ matrix.platform }})

@@ -8,8 +8,22 @@ extension ADJSON {
         public var userInfo: [CodingUserInfoKey: Any] = [:]
         /// Parsing strictness / duplicate-key policy (default: RFC 8259 strict).
         public var options: JSONParseOptions = .strict
+        /// How `Date` values are decoded (default `.deferredToDate`, matching Foundation).
+        public var dateDecodingStrategy: DateDecodingStrategy = .deferredToDate
+        /// How `Data` values are decoded (default `.base64`, matching Foundation).
+        public var dataDecodingStrategy: DataDecodingStrategy = .base64
+        /// How `±Infinity`/`NaN` are decoded (default `.throw`, matching Foundation).
+        public var nonConformingFloatDecodingStrategy: NonConformingFloatDecodingStrategy = .throw
+        /// How JSON keys are converted before matching `CodingKey`s (default `.useDefaultKeys`).
+        public var keyDecodingStrategy: KeyDecodingStrategy = .useDefaultKeys
 
         public init() {}
+
+        private var strategies: DecodeStrategies {
+            DecodeStrategies(
+                date: dateDecodingStrategy, data: dataDecodingStrategy,
+                nonConformingFloat: nonConformingFloatDecodingStrategy, key: keyDecodingStrategy)
+        }
 
         public func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
             try decode(type, from: try ADJSON.parse(data, options: options))
@@ -24,7 +38,7 @@ extension ADJSON {
             try document.withBuffers { bytesBase, byteCount, tapeBase, tapeCount in
                 let ctx = DecodeContext(
                     doc: document, bytes: bytesBase, byteCount: byteCount,
-                    tape: tapeBase, tapeCount: tapeCount, userInfo: userInfo)
+                    tape: tapeBase, tapeCount: tapeCount, userInfo: userInfo, strategies: strategies)
                 return try ctx.decodeValue(T.self, at: 0)
             }
         }

@@ -3,18 +3,19 @@ import Testing
 
 @testable import ADJSON
 
+// The CTS corpus is vendored on demand (run `scripts/fetch-fixtures.sh`); locate it once so the
+// test can be *skipped* — not silently passed — when it is absent.
+private func jsonPathCTSURL() -> URL? {
+    Bundle.module.url(forResource: "cts", withExtension: "json", subdirectory: "Resources/JSONPathCTS")
+}
+
 // RFC 9535 JSONPath Compliance Test Suite. The engine rejects every invalid selector and returns
 // the expected nodelist for all valid queries except a handful of I-Regexp (RFC 9485) edge cases
 // (`.` vs the U+2028/U+2029 line separators under Swift's regex engine), so this asserts full
 // invalid-rejection and a high valid-query floor.
-@Test func jsonPathComplianceSuite() throws {
-    guard
-        let url = Bundle.module.url(
-            forResource: "cts", withExtension: "json", subdirectory: "Resources/JSONPathCTS")
-    else {
-        // Fixtures are vendored on demand; run `scripts/fetch-fixtures.sh` to enable.
-        return
-    }
+@Test(.enabled(if: jsonPathCTSURL() != nil, "JSONPath CTS fixtures absent; run scripts/fetch-fixtures.sh"))
+func jsonPathComplianceSuite() throws {
+    let url = try #require(jsonPathCTSURL())
     let root = try ADJSON.parse(Data(contentsOf: url)).root
     let tests = root["tests"].arrayValue
 
