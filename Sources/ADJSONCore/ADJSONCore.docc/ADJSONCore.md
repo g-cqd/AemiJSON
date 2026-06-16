@@ -55,6 +55,7 @@ let value = JSONValue(doc.root)                // materialize when you need an e
 - ``JSONEvent``
 - ``JSONEventReader``
 - ``JSONEventStreamReader``
+- ``JSONEventAsyncSequence``
 - ``JSONEachSequence``
 - ``JSONTreeSequence``
 

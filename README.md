@@ -219,9 +219,10 @@ without a before/after number.
   so keep raw pointers on the hot inner loops where it regresses. **Not** for `DecodeContext` —
   Codable's `Decoder` must be `Escapable`, and a `Span` cannot be stored there (keep raw pointers +
   asserts, as documented). Files: `Scanner`, `Bytes`, `JSON`, `KeyCompare`.
-- [ ] **`AsyncSequence` streaming.** Wrap `JSONEventStreamReader` as an `AsyncSequence<JSONEvent>`
-  that consumes `URLSession.AsyncBytes` / `FileHandle.AsyncBytes` (optionally via
-  `swift-async-algorithms`). Fills the async-streaming gap and pairs with the existing push reader.
+- [x] **`AsyncSequence` streaming.** `JSONEventAsyncSequence` wraps `JSONEventStreamReader` as an
+  `AsyncSequence<JSONEvent>` over any async byte stream (`URLSession.AsyncBytes` /
+  `FileHandle.AsyncBytes` compose directly — both are `AsyncSequence<UInt8>`). Dependency-free in
+  `ADJSONCore`.
 - [ ] **swift-nio `ByteBuffer` adapter.** `ByteBuffer` → `ByteSource` (zero-copy parse) and a
   writer → `ByteBuffer` sink. Server-focused; ship as a dev-gated target / small `ADJSONNIO` product
   so the core stays dependency-free.
