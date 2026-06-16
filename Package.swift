@@ -23,12 +23,24 @@ let timingWarningFlags: [SwiftSetting] = [
     ])
 ]
 
+// Tests use the same per-EXPRESSION budget (a single >100ms expression is a real type-checker
+// pathology worth flagging), but a looser whole-FUNCTION-body budget: a thorough test fans out into
+// many `#expect` macro expansions whose summed type-check time clears 100ms even when every
+// individual expression is fast, so 100ms here is pure noise (and the flagged set drifts by
+// toolchain). 250ms still catches a genuinely pathological body without penalizing expressive tests.
+let testTimingWarningFlags: [SwiftSetting] = [
+    .unsafeFlags([
+        "-Xfrontend", "-warn-long-function-bodies=250",
+        "-Xfrontend", "-warn-long-expression-type-checking=100",
+    ])
+]
+
 // Benchmarks: strict + timing warnings only (no runtime instrumentation, so timings stay clean).
 let benchSettings: [SwiftSetting] = strictSettings + timingWarningFlags
 
-// Tests: additionally enable runtime actor data-race checks.
+// Tests: looser function-body timing budget + runtime actor data-race checks.
 let testSettings: [SwiftSetting] =
-    strictSettings + timingWarningFlags + [.unsafeFlags(["-enable-actor-data-race-checks"])]
+    strictSettings + testTimingWarningFlags + [.unsafeFlags(["-enable-actor-data-race-checks"])]
 
 // Dev-only tooling is gated behind `ADJSON_DEV` so packages that depend on ADJSON never resolve it
 // (consumers keep just swift-syntax, which the macro needs). Contributors and CI set `ADJSON_DEV=1`

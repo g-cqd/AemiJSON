@@ -86,7 +86,12 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
     // The word-at-a-time compare must agree with a byte reference across the 8-byte boundary,
     // including near-misses at the first/middle/last byte where tail bugs would hide.
     for len in 1...40 {
-        let a = (0..<len).map { UInt8(($0 &* 31 &+ 7) & 0xFF) }
+        // Fully typed steps: the untyped integer literals + overflow operators inside `UInt8(…)`
+        // otherwise make this one expression ~230ms to type-check.
+        let a: [UInt8] = (0..<len).map { (i: Int) -> UInt8 in
+            let mixed: Int = i &* 31 &+ 7
+            return UInt8(mixed & 0xFF)
+        }
         let aCopy = a
         a.withUnsafeBufferPointer { pa in
             guard let ba = pa.baseAddress else { return }
@@ -148,7 +153,10 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
 }
 
 @Test func json5GrammarParsesExtensions() throws {
-    func parse5(_ s: String) throws -> JSON { try ADJSON.parse(s, options: .json5).root }
+    func parse5(_ s: String) throws(JSONError) -> JSON {
+        let doc = try ADJSON.parse(s, options: .json5)
+        return doc.root
+    }
 
     // Comments, unquoted keys, single-quoted strings, trailing commas.
     let j = try parse5(
