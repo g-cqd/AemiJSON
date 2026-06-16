@@ -144,12 +144,20 @@ bounds-checked under `assert` (debug/test builds trap on any out-of-range index;
 raw-pointer speed). The tape itself is a `ContiguousArray<UInt64>` to guarantee contiguous
 storage.
 
-### Why not `Span` / `UTF8Span` yet
+### Why not `Span` / `UTF8Span` / `InlineArray` yet
 
 `Span`/`RawSpan` are not used on the decode path because Codable's `Decoder` must be
 `Escapable` — a `Span` cannot be stored in the shared decode context — and the current
 toolchain's lifetime-dependence support can't yet thread spans through it. The single-pass
 scanner is also blocked: storing a `Span` as a struct stored property currently requires the
-experimental `LifetimeDependence` feature. `UTF8Span` would force a separate validation pass
-over the bytes, defeating the single-pass design. These remain deferred deliberately, with the
-unsafe surface kept small and `assert`-guarded in the meantime.
+experimental `LifetimeDependence` feature. `Span`/`RawSpan` themselves back-deploy, so they remain
+a candidate for the *borrowed-buffer* entry and cold accessors (see the roadmap); the unsafe
+surface stays small and `assert`-guarded in the meantime.
+
+**`UTF8Span` and `InlineArray` are a deliberate "do not adopt yet" decision, not an oversight.**
+Both ship only in the 2025 SDKs (iOS 26 / macOS 26 …), so adopting either would raise the library's
+deployment floor above the current iOS 18 / macOS 15 minimum — which is pinned by
+`Synchronization.Mutex`, the one OS-version-sensitive dependency. Beyond the floor, `UTF8Span` would
+force a *separate* UTF-8 validation pass over the bytes, defeating the single-pass tape design (the
+scanner validates inline as it tokenizes). The recommendation is revisited only if the floor rises
+for another reason. (`Package.swift` carries the same note next to the `platforms:` declaration.)

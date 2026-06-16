@@ -226,10 +226,11 @@ without a before/after number.
 - [ ] **swift-nio `ByteBuffer` adapter.** `ByteBuffer` → `ByteSource` (zero-copy parse) and a
   writer → `ByteBuffer` sink. Server-focused; ship as a dev-gated target / small `ADJSONNIO` product
   so the core stays dependency-free.
-- [ ] **Decide on `UTF8Span` / `InlineArray`** (a decision, not an auto-adopt). Both raise the
-  deployment floor to the 2025 SDKs — above the current iOS 18 floor (pinned by
-  `Synchronization.Mutex`). Current recommendation: **do not adopt yet**; revisit only if the floor
-  rises for another reason.
+- [x] **Decide on `UTF8Span` / `InlineArray`** — decision recorded: **do not adopt yet** (both ship
+  only in the 2025 SDKs, raising the deployment floor above the iOS 18 floor pinned by
+  `Synchronization.Mutex`; `UTF8Span` also forces a second validation pass over the single-pass
+  scanner). See the *Architecture* DocC article + the `Package.swift` `platforms:` note. Revisit only
+  if the floor rises for another reason.
 
 ### Architecture & refactoring
 
@@ -238,9 +239,11 @@ without a before/after number.
   push-SAX `JSONEventStreamReader`), so any grammar fix must be made in three places. Extract
   resumability-aware tokenization helpers. Biggest maintainability win, but large and carries
   conformance-suite (JSONTestSuite + JSONPath CTS) regression risk — deserves a focused PR.
-- [ ] **Derive the depth caps where sensible.** The unified failure-safety policy is documented (see
-  the *Depth Safety* DocC article); the individual caps could be made consistent/derived (e.g. a
-  stack-size-aware decode default) rather than fixed constants.
+- [x] **Depth caps — audited and documented.** The *Depth Safety* DocC article maps every cap and the
+  per-call-site rationale (frame size drives the value), and now records why the remaining recursion
+  stays guarded rather than rewritten iteratively. Decision: keep the documented per-site caps;
+  runtime stack-size derivation adds platform-specific complexity for marginal benefit (callers can
+  already lower the caps on small-stack threads), so it is deliberately not adopted.
 
 ### Optional features (to consider)
 

@@ -89,6 +89,23 @@ main thread), a schema-validation frame copies a whole compiled node (so 256), a
 decoder runs on small pool stacks (so 128 ≈ 2048 ÷ 16). Lower any of them when running untrusted
 input on a smaller stack; raise the decode/encode caps on a thread with a known-large stack.
 
+### Why some recursion is kept (guarded) rather than rewritten iteratively
+
+The parser, lazy navigation, SAX readers, `JSONValue` build/serialize/equality, and JSONPath descent
+are all iterative. The remaining recursive paths are kept recursive *on purpose*, because each is
+already overflow-safe and an explicit-stack rewrite would cost clarity for no safety gain:
+
+- **JSON Merge Patch** recurses on the *patch* object's nesting, and past its cap degrades to a
+  whole-object replace — so it cannot overflow regardless of input.
+- **JSON Patch / value mutation** recurses along the *pointer path*, whose depth is the number of
+  path tokens (a finite, caller-supplied string), not the data depth — bounded and tiny in practice.
+- **Schema validation** is the only one that recurses on data depth; it fails closed at its cap by
+  recording a `ValidationError`. Its many-branch structure makes an iterative rewrite the riskiest
+  for the least benefit, so it stays guarded.
+
+Codable encode/decode recursion is mandated by the `Codable` protocol and cannot be removed at all;
+it is bounded by the encode/decode caps above. New engine code is written iteratively from the start.
+
 ## Recommendations
 
 - **Untrusted input?** Keep ``/ADJSONCore/JSONParseOptions/maxDepth`` modest *if you will decode, encode, or
