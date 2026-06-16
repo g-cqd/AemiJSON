@@ -6,7 +6,7 @@ Validate, infer, and describe JSON with a JSON Schema (Draft 2020-12) subset.
 
 A ``JSONSchema`` compiles its source into a flat, value-type node table and is `Sendable`, so
 one compiled schema can validate concurrently across tasks. Validation runs against the lazy
-``JSON`` value with no instance materialization.
+``/ADJSONCore/JSON`` value with no instance materialization.
 
 ```swift
 let schema = try JSONSchema(parsing: schemaText)

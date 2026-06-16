@@ -124,7 +124,7 @@ public enum JSONPatchError: Error, Sendable, Equatable {
     case pathNotFound
     case testFailed
     case invalidOperation
-    /// A pointer path nested past ``JSONValue/maxMutationDepth`` — rejected to bound native
+    /// A pointer path nested past the mutation depth cap — rejected to bound native
     /// recursion (a pathologically deep, usually attacker-supplied, path).
     case depthExceeded
 }

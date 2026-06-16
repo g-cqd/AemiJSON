@@ -4,11 +4,11 @@ How ADJSON is built, and the reasoning behind the choices that shaped it.
 
 ## Two modules: a Foundation-free core
 
-ADJSON ships as two layers. **`ADJSONCore`** is the engine — the tape parser, lazy ``JSON`` /
-``JSONDocument`` / ``JSONValue``, and the query types (``JSONPath``, ``JSONPointer``,
-``JSONPatch``, ``JSONMergePatch``) — and is **Foundation-free and swift-syntax-free**. Its one
+ADJSON ships as two layers. **`ADJSONCore`** is the engine — the tape parser, lazy ``/ADJSONCore/JSON`` /
+``/ADJSONCore/JSONDocument`` / ``/ADJSONCore/JSONValue``, and the query types (``/ADJSONCore/JSONPath``, ``/ADJSONCore/JSONPointer``,
+``/ADJSONCore/JSONPatch``, ``/ADJSONCore/JSONMergePatch``) — and is **Foundation-free and swift-syntax-free**. Its one
 dependency is **swift-collections' `OrderedCollections`**, which backs the order-preserving eager
-``JSONValue/object(_:)``: it is itself Foundation-free with zero transitive package dependencies
+``/ADJSONCore/JSONValue/object(_:)``: it is itself Foundation-free with zero transitive package dependencies
 (measured), so the core stays lean and portable. **`ADJSON`** is the umbrella that re-exports the
 core (`@_exported import`) and layers the `Data` conveniences, the Codable coders, JSON Schema, and
 the `@JSONCodable` / `@Schemable` macros on top.
@@ -25,9 +25,9 @@ inlines into *your* module), so the split is performance-neutral.
 
 ### Why `OrderedDictionary` for eager objects
 
-The lazy ``JSON`` view always preserved member order (it walks the tape), but the eager
-``JSONValue`` used a plain `Dictionary`, which dropped it — so materialize → mutate → re-encode
-could reorder keys. Switching ``JSONValue/object(_:)`` to `OrderedDictionary` fixes that **and** is
+The lazy ``/ADJSONCore/JSON`` view always preserved member order (it walks the tape), but the eager
+``/ADJSONCore/JSONValue`` used a plain `Dictionary`, which dropped it — so materialize → mutate → re-encode
+could reorder keys. Switching ``/ADJSONCore/JSONValue/object(_:)`` to `OrderedDictionary` fixes that **and** is
 *faster* for the small objects JSON is made of: its compact array-backed layout beat `Dictionary`'s
 hashing by ~33% on a 10-key build+lookup micro-benchmark, ~2.5% on end-to-end materialization, and
 ~6.7% on encode. Object value-equality stays order-insensitive (JSON objects are unordered), so the
@@ -38,7 +38,7 @@ order is preserved for serialization without making `==` order-sensitive.
 `parse` scans the input **once** into a flat `[UInt64]` **tape**: a preorder flattening of the
 document with one slot per value (and one per object key). There is no per-node heap
 allocation and no object graph — just one contiguous integer array held inside an immutable
-``JSONDocument`` alongside the original UTF-8 bytes.
+``/ADJSONCore/JSONDocument`` alongside the original UTF-8 bytes.
 
 Each 64-bit slot packs a tag and two payload fields:
 
@@ -68,25 +68,25 @@ follows simdjson's On-Demand design and Foundation's own `JSONMap`.
 
 Because `aux` is 28 bits and `low` is 32 bits, a single container holds at most 2^28−1
 elements and the whole input is capped at 4 GiB. Exceeding either is rejected as
-``JSONError/documentTooLarge`` rather than silently wrapping — a deliberate integrity guard.
+``/ADJSONCore/JSONError/documentTooLarge`` rather than silently wrapping — a deliberate integrity guard.
 
 ## Lazy materialization
 
-``JSON`` is a `struct` of `{ document, tapeIndex }`. Navigation moves the index along the
+``/ADJSONCore/JSON`` is a `struct` of `{ document, tapeIndex }`. Navigation moves the index along the
 tape; typed accessors decode a Swift value from the borrowed bytes only when read. A missing
 path is represented by a sentinel index, so `a.b.c.string` returns `nil` instead of trapping.
 
-``JSONValue`` is the opposite end: a fully-materialized, mutable enum for editing and patching.
+``/ADJSONCore/JSONValue`` is the opposite end: a fully-materialized, mutable enum for editing and patching.
 You opt into materialization explicitly by converting.
 
 ### Random access is linear — materialize once for repeated reads
 
-The tape preserves member/element order rather than hashing it, so a single ``JSON`` key lookup
+The tape preserves member/element order rather than hashing it, so a single ``/ADJSONCore/JSON`` key lookup
 (`json["k"]`, `json.k`) or array index (`json[i]`) is an **O(n)** walk over that container's
 children. Reading one or two fields out of a large object is exactly the cheap case the tape is
 built for. But resolving *many* keys against the same object — or repeatedly indexing the same
-array — is O(n·k); for that pattern, materialize the container once with ``JSON/object`` /
-``JSON/array`` (each O(n), then O(1) per key/index against the returned `Dictionary`/`Array`) and
+array — is O(n·k); for that pattern, materialize the container once with ``/ADJSONCore/JSON/object`` /
+``/ADJSONCore/JSON/array`` (each O(n), then O(1) per key/index against the returned `Dictionary`/`Array`) and
 read from the result. No secondary hash index is kept on the lazy view: it would cost every parse
 to benefit only the repeated-random-access minority, against a design whose whole point is to
 defer work you may never do.
@@ -95,7 +95,7 @@ defer work you may never do.
 
 The scanner is iterative: an explicit heap stack of open containers replaces recursive
 descent, so arbitrarily deep input costs heap (O(depth)) instead of call-stack frames and can
-never overflow the stack. Nesting is additionally bounded by ``JSONParseOptions`` (`maxDepth`,
+never overflow the stack. Nesting is additionally bounded by ``/ADJSONCore/JSONParseOptions`` (`maxDepth`,
 default 512). The same recursion-free posture is applied to the other depth-sensitive paths
 (schema compilation, structural equality, JSONPath descent).
 
@@ -115,12 +115,12 @@ surface uses Foundation's `DecodingError`/`EncodingError` as required by the pro
 
 ## Concurrency model
 
-A ``JSONDocument`` is an immutable `final class` and `Sendable`: once parsed it can be shared
+A ``/ADJSONCore/JSONDocument`` is an immutable `final class` and `Sendable`: once parsed it can be shared
 across tasks and actors with no synchronization. `ADJSON.decodeArrayConcurrently`
 exploits this — it scans once, then hands disjoint element ranges to a task group; each worker
 binds **its own** base pointer over the shared read-only storage, so there is no shared mutable
 state and the work is data-race free under Swift 6's strict checking. Process-wide
-``ADJSON/Metrics`` use `Atomic` from the Synchronization framework; the encoder's scratch-buffer
+``/ADJSONCore/ADJSON/Metrics`` use `Atomic` from the Synchronization framework; the encoder's scratch-buffer
 pool uses `Mutex`.
 
 ## The `@JSONCodable` fast path
@@ -138,7 +138,7 @@ adoption is incremental and never a correctness risk.
 
 The scanner and Codable decoder use `UnsafePointer` over the document's contiguous, immutable
 storage for speed. The lifetime invariant — pointers are borrowed only inside a
-`withBuffers`/`withBytePointer` scope while the owning ``JSONDocument`` is retained — is
+`withBuffers`/`withBytePointer` scope while the owning ``/ADJSONCore/JSONDocument`` is retained — is
 documented at each boundary, and every tape and byte access in the decode path is
 bounds-checked under `assert` (debug/test builds trap on any out-of-range index; release keeps
 raw-pointer speed). The tape itself is a `ContiguousArray<UInt64>` to guarantee contiguous

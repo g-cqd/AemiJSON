@@ -422,9 +422,14 @@ jobs:
             spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
             spm-${{ runner.os }}-docs-
       - name: Build DocC site (static hosting)
+        # Combined documentation covers both products — the umbrella `ADJSON` and the Foundation-free
+        # `ADJSONCore` engine (where `JSON`/`JSONDocument`/`JSONValue`/query types live and are
+        # re-exported from). A single-target build can't resolve cross-module symbol links to them.
         run: |
           swift package --allow-writing-to-directory "$PWD/_site" \
-            generate-documentation --target ADJSON \
+            generate-documentation \
+            --enable-experimental-combined-documentation \
+            --target ADJSONCore --target ADJSON \
             --disable-indexing \
             --transform-for-static-hosting \
             --hosting-base-path ADJSON \

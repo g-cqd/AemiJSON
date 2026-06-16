@@ -357,7 +357,7 @@ public struct JSONEventReader {
 }
 
 /// A push-based (incremental / chunked) JSON event reader. Feed UTF-8 bytes as they arrive with
-/// ``feed(_:)`` — each call returns every ``JSONEvent`` that is now fully available — and call
+/// `feed(_:)` — each call returns every ``JSONEvent`` that is now fully available — and call
 /// ``finish()`` once the stream ends. The reader suspends mid-token at any chunk boundary (a string,
 /// number, escape, or multi-byte UTF-8 sequence split across feeds is resumed transparently) and
 /// tracks nesting on a heap stack, so depth is bounded by ``JSONParseOptions/maxDepth`` and never by

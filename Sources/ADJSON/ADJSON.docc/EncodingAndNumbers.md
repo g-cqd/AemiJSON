@@ -4,11 +4,11 @@ Control serialization with profiles, and understand exactly how numbers are rend
 
 ## Encoding profiles
 
-``JSONEncodingOptions`` controls serialization. Two presets cover the common cases:
+``/ADJSONCore/JSONEncodingOptions`` controls serialization. Two presets cover the common cases:
 
-- ``JSONEncodingOptions/rfc8259`` (default) — strict RFC 8259 / ECMA-404: reject non-finite
+- ``/ADJSONCore/JSONEncodingOptions/rfc8259`` (default) — strict RFC 8259 / ECMA-404: reject non-finite
   numbers, shortest numbers, declaration order.
-- ``JSONEncodingOptions/javaScript`` — byte-for-byte JavaScript `JSON.stringify`: non-finite
+- ``/ADJSONCore/JSONEncodingOptions/javaScript`` — byte-for-byte JavaScript `JSON.stringify`: non-finite
   → `null`, ECMA-262 number formatting.
 
 ```swift
@@ -22,7 +22,7 @@ Knobs: `nonFinite` (throw / `null` / string literals), `numberFormat` (`.swiftSh
 `.ecma262`), `keyOrder` (`.declaration` / `.sorted`), `escapeSlashes`, and `nilStrategy`
 (`.omit` / `.null`).
 
-> Note: `keyOrder` and `nilStrategy` are honored by ``JSONValue/encoded(options:)`` and
+> Note: `keyOrder` and `nilStrategy` are honored by ``/ADJSON/ADJSONCore/JSONValue/encoded(options:)`` and
 > ``JSONStreamWriter``, not by the streaming Codable path (which emits in the encoder's call
 > order and omits `nil` optionals, matching Foundation).
 
@@ -34,14 +34,14 @@ three deliberate choices under the default `.swiftShortest` format:
 | Path | Input | Output | Why |
 |---|---|---|---|
 | Codable encoder | `Double(2)` | `2.0` | The static type is `Double`; render it faithfully. |
-| ``JSONValue`` | `.number(2)` | `2` | The value model stores only `Double`; collapsing integral magnitudes lets a JSON integer round-trip unchanged. |
+| ``/ADJSONCore/JSONValue`` | `.number(2)` | `2` | The value model stores only `Double`; collapsing integral magnitudes lets a JSON integer round-trip unchanged. |
 | Foundation (for reference) | `Double(2)` | `2` | Foundation collapses integral doubles. |
 
 In other words:
 
 - A value **typed `Double`** through the Codable encoder keeps its fractional form (`2.0`),
   because the type says it is a floating-point value.
-- A ``JSONValue/number(_:)`` collapses an integral magnitude (below 2^53) to integer form
+- A ``/ADJSONCore/JSONValue/number(_:)`` collapses an integral magnitude (below 2^53) to integer form
   (`2`), so parsing `2` and re-encoding yields `2` again — important for JSON Patch/Merge
   round-trips where the model has no separate integer case.
 

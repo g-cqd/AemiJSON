@@ -15,7 +15,7 @@ In `Package.swift`:
 ```
 
 Where Foundation is also imported, reference the namespaced types explicitly —
-``ADJSON/JSONDecoder`` and ``ADJSON/JSONEncoder`` — to avoid colliding with Foundation's
+``/ADJSON/ADJSONCore/ADJSON/JSONDecoder`` and ``/ADJSON/ADJSONCore/ADJSON/JSONEncoder`` — to avoid colliding with Foundation's
 same-named types.
 
 ## Three ways to read JSON
@@ -53,7 +53,7 @@ For a higher-throughput path, annotate the type with ``JSONCodable()``. It keeps
 
 ### 3. Mutable value tree (edit, patch)
 
-``JSONValue`` is the fully-materialized, editable counterpart used by JSON Patch and Merge
+``/ADJSONCore/JSONValue`` is the fully-materialized, editable counterpart used by JSON Patch and Merge
 Patch.
 
 ```swift
@@ -65,7 +65,7 @@ See <doc:Querying>.
 
 ## Strictness & profiles
 
-The default is RFC 8259 strict. Override per call or per coder via ``JSONParseOptions``.
+The default is RFC 8259 strict. Override per call or per coder via ``/ADJSONCore/JSONParseOptions``.
 
 ```swift
 let lenient = try ADJSON.parse(data, options: .lenient)   // permissive scanning
@@ -81,7 +81,7 @@ decoder.options = .iJSON                                    // RFC 7493: reject 
 
 ## Next steps
 
-- <doc:ParsingAndNavigation> — the lazy ``JSON`` view in depth.
+- <doc:ParsingAndNavigation> — the lazy ``/ADJSONCore/JSON`` view in depth.
 - <doc:CodableInterop> — Codable, the `@JSONCodable` fast path, and concurrent decode.
 - <doc:Querying> — Pointer, Path, Patch, Merge Patch.
 - <doc:Architecture> — how the tape works and why.

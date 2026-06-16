@@ -13,7 +13,7 @@ signal. Foundation defuses this in its **scanner** with a hard cap: a document n
 `singleValueContainer` (adding no JSON structure) overflows at ~12k–19k levels.
 
 ADJSON is built the opposite way: the **parser is iterative** (an explicit heap stack, not call
-frames), so nesting costs heap, not stack. With ``JSONParseOptions/maxDepth`` raised, parsing, lazy
+frames), so nesting costs heap, not stack. With ``/ADJSONCore/JSONParseOptions/maxDepth`` raised, parsing, lazy
 navigation, SAX reading, and JSONPath descent all handle **1,000,000+** levels with no overflow —
 roughly 2000× Foundation's cap. The only stack-using consumer is the Codable decoder (the protocol
 mandates recursion), and it is bounded by an explicit guard that **throws instead of crashing**.
@@ -22,15 +22,15 @@ mandates recursion), and it is bounded by an explicit guard that **throws instea
 
 | Path | Strategy | Deep-input behavior |
 |---|---|---|
-| Tape parse (``ADJSON/parse(_:options:)-(_,_)``) | **iterative** | survives any depth up to `maxDepth`; then throws `.depthExceeded` |
+| Tape parse (``/ADJSONCore/ADJSON/parse(_:options:)-([UInt8],_)``) | **iterative** | survives any depth up to `maxDepth`; then throws `.depthExceeded` |
 | Lazy navigation (`json.a.b…`) | **iterative** | O(1) per step, no recursion |
-| SAX (``JSONEventReader`` / ``JSONEventStreamReader``) | **iterative** | survives any depth |
+| SAX (``/ADJSONCore/JSONEventReader`` / ``/ADJSONCore/JSONEventStreamReader``) | **iterative** | survives any depth |
 | JSONPath `..` descent | **iterative** | survives any depth |
-| ``JSONValue`` materialize (``JSONValue/init(_:)``) | **iterative** build | builds any depth; but see *tree deallocation* below |
-| ``JSONValue`` serialize (``JSONValue/encodedBytes(options:)``) | **iterative** | serializes any holdable tree |
-| ``JSONValue`` equality (`==`) | **iterative** | compares any depth (an explicit work-stack) |
-| **Codable decode** (``ADJSON/JSONDecoder``) | recursive (protocol) | **throws** past `maxDecodingDepth` (default 2048) |
-| **Codable encode** (``ADJSON/JSONEncoder``) | recursive (protocol) | **throws** past `maxEncodingDepth` (default 2048) |
+| ``/ADJSONCore/JSONValue`` materialize (``/ADJSONCore/JSONValue/init(_:)``) | **iterative** build | builds any depth; but see *tree deallocation* below |
+| ``/ADJSONCore/JSONValue`` serialize (``/ADJSONCore/JSONValue/encodedBytes(options:)``) | **iterative** | serializes any holdable tree |
+| ``/ADJSONCore/JSONValue`` equality (`==`) | **iterative** | compares any depth (an explicit work-stack) |
+| **Codable decode** (``/ADJSON/ADJSONCore/ADJSON/JSONDecoder``) | recursive (protocol) | **throws** past `maxDecodingDepth` (default 2048) |
+| **Codable encode** (``/ADJSON/ADJSONCore/ADJSON/JSONEncoder``) | recursive (protocol) | **throws** past `maxEncodingDepth` (default 2048) |
 | Concurrent decode (`ADJSON.decodeArrayConcurrently`) | recursive (per element, on the pool) | **throws** past `maxDecodingDepth` (default 128 — pool stacks are small) |
 | JSON Schema validate | recursive | **fails closed** (records a `ValidationError`) past an independent cap (256) |
 | JSONPath filter parse (`length(length(…))`, `[?…[?…]]`) | recursive | **throws** `JSONPathError` past a cap (64) |
@@ -38,18 +38,18 @@ mandates recursion), and it is bounded by an explicit guard that **throws instea
 
 ### Tree deallocation is the one inherent limit
 
-Building a ``JSONValue`` is iterative, but the resulting value tree — like *any* recursive Swift
+Building a ``/ADJSONCore/JSONValue`` is iterative, but the resulting value tree — like *any* recursive Swift
 value type, and like Foundation's decoded `[Any]` / `NSDictionary` graphs — is **released
 recursively** by ARC. Holding a tree deeper than ~30–40k levels (less on a small-stack worker
 thread) and letting it deallocate overflows the stack. The fix is structural, not a bug to patch:
-process very deep documents through the **lazy ``JSON`` view or the SAX readers**, which never
+process very deep documents through the **lazy ``/ADJSONCore/JSON`` view or the SAX readers**, which never
 materialize a tree, or bound input depth. Dismantling a deep tree by walking it down a level at a
 time (as opposed to a single bulk release) also avoids the recursion.
 
 ## The decoder guard
 
 The Codable path is unavoidably recursive (each `init(from:)` decodes its children). ADJSON caps
-that native recursion with ``ADJSON/JSONDecoder/maxDecodingDepth`` (default **2048**), independent of
+that native recursion with ``/ADJSON/ADJSONCore/ADJSON/JSONDecoder/maxDecodingDepth`` (default **2048**), independent of
 `maxDepth`: past it, decoding throws a catchable `DecodingError` rather than overflowing. So you can
 raise `maxDepth` to *parse / navigate* very deep documents iteratively, while a deeply nested (or
 self-referential) `Decodable` still **fails closed**.
@@ -69,16 +69,16 @@ decoder.maxDecodingDepth = 256                          // but cap the recursive
 
 ## The failure-safety policy at a glance
 
-ADJSON keeps the *iterative* paths effectively unbounded (limited only by ``JSONParseOptions/maxDepth``,
+ADJSON keeps the *iterative* paths effectively unbounded (limited only by ``/ADJSONCore/JSONParseOptions/maxDepth``,
 which costs heap, not stack) and gives every *unavoidably recursive* path its own hard cap that
 **fails closed** — a catchable error, never a crash — independent of `maxDepth`. Each default is sized
 for the call site: the recursive frames are heavy where the cap is low.
 
 | Limit | Default | Applies to | Past it |
 |---|---|---|---|
-| ``JSONParseOptions/maxDepth`` | 512 | iterative parse / lazy / SAX / JSONPath descent | throws `JSONError.depthExceeded` |
-| ``ADJSON/JSONDecoder/maxDecodingDepth`` | 2048 | recursive Codable decode (main thread) | throws `DecodingError` |
-| ``ADJSON/JSONEncoder/maxEncodingDepth`` | 2048 | recursive Codable encode (main thread) | throws `EncodingError` |
+| ``/ADJSONCore/JSONParseOptions/maxDepth`` | 512 | iterative parse / lazy / SAX / JSONPath descent | throws `JSONError.depthExceeded` |
+| ``/ADJSON/ADJSONCore/ADJSON/JSONDecoder/maxDecodingDepth`` | 2048 | recursive Codable decode (main thread) | throws `DecodingError` |
+| ``/ADJSON/ADJSONCore/ADJSON/JSONEncoder/maxEncodingDepth`` | 2048 | recursive Codable encode (main thread) | throws `EncodingError` |
 | concurrent-decode `maxDecodingDepth` | 128 | per-element decode on the cooperative pool (~512 KB stacks) | throws `DecodingError` |
 | schema validation cap | 256 | recursive schema + instance walk (heavy frames) | records a `ValidationError` |
 | JSONPath filter-parse cap | 64 | nested `length()` / bracket-filter recursion | throws `JSONPathError` |
@@ -91,14 +91,14 @@ input on a smaller stack; raise the decode/encode caps on a thread with a known-
 
 ## Recommendations
 
-- **Untrusted input?** Keep ``JSONParseOptions/maxDepth`` modest *if you will decode, encode, or
+- **Untrusted input?** Keep ``/ADJSONCore/JSONParseOptions/maxDepth`` modest *if you will decode, encode, or
   schema-validate it* (all recursive). For pure parse / lazy / SAX / JSONPath workloads you can
   raise it freely — those never touch the call stack.
 - **Decoding on a worker thread** (default stack ~512 KB, ~16× smaller than the 8 MB main thread)?
-  Lower ``ADJSON/JSONDecoder/maxDecodingDepth`` accordingly, or decode on a thread with a known large
+  Lower ``/ADJSON/ADJSONCore/ADJSON/JSONDecoder/maxDecodingDepth`` accordingly, or decode on a thread with a known large
   stack.
-- **Very deep documents?** Use the lazy ``JSON`` view or ``JSONEventReader`` / ``JSONEventStreamReader``
-  rather than materializing a ``JSONValue`` (whose deallocation recurses).
+- **Very deep documents?** Use the lazy ``/ADJSONCore/JSON`` view or ``/ADJSONCore/JSONEventReader`` / ``/ADJSONCore/JSONEventStreamReader``
+  rather than materializing a ``/ADJSONCore/JSONValue`` (whose deallocation recurses).
 - **Always treat decode as fallible** at the boundary: catch `DecodingError`, never `try!`. A guarded
   throw is recoverable; a stack overflow is not.
 

@@ -29,7 +29,7 @@ extension ADJSON {
     /// Parse UTF-8 `Data` into an immutable, lazily-navigable document. Copies the input once into
     /// the document's owned buffer, which keeps lazy navigation on the fast inlined path; for a
     /// zero-copy alternative (at the cost of slower repeated lazy reads) parse the `Data` through the
-    /// generic ``parse(_:options:)-(some_ByteSource_&_Sendable,_)`` overload instead.
+    /// generic `ByteSource` overload of `ADJSON.parse(_:options:)` instead.
     public static func parse(_ data: Data, options: JSONParseOptions = .strict) throws(JSONError) -> JSONDocument {
         try parse(Array(data), options: options)
     }

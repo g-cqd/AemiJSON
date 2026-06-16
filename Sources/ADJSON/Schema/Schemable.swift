@@ -5,7 +5,7 @@ public protocol ADJSONSchemaProviding {
 
     /// The schema as a rooted JSON document, carrying `$schema` when the type opts into a dialect via
     /// `@Schemable(dialect:)`. This is the canonical text to embed in a larger document (e.g. an MCP
-    /// `tools/list` payload). Unlike ``__adjsonSchemaText`` it is API, not SPI.
+    /// `tools/list` payload). Unlike `__adjsonSchemaText` it is API, not SPI.
     static var jsonSchemaText: String { get }
 
     /// SPI used by `@Schemable` to compose nested types into a parent's schema text. A *bare*

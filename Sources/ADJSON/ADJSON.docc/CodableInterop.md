@@ -5,7 +5,7 @@ path when you want it.
 
 ## Drop-in coders
 
-``ADJSON/JSONDecoder`` and ``ADJSON/JSONEncoder`` mirror Foundation's API surface.
+``/ADJSON/ADJSONCore/ADJSON/JSONDecoder`` and ``/ADJSON/ADJSONCore/ADJSON/JSONEncoder`` mirror Foundation's API surface.
 
 ```swift
 struct User: Codable { var id: Int; var name: String; var tags: [String] }
@@ -21,7 +21,7 @@ intermediate object tree.
 
 ### Decoding from an already-parsed document
 
-If you already have a ``JSONDocument`` (e.g. from lazy inspection), decode from it directly to
+If you already have a ``/ADJSONCore/JSONDocument`` (e.g. from lazy inspection), decode from it directly to
 skip re-scanning:
 
 ```swift
@@ -33,8 +33,8 @@ if doc.root.kind.string == "user" {
 
 ### Options
 
-The decoder exposes ``JSONParseOptions`` via its `options` property; the encoder exposes
-``JSONEncodingOptions``. See <doc:EncodingAndNumbers>.
+The decoder exposes ``/ADJSONCore/JSONParseOptions`` via its `options` property; the encoder exposes
+``/ADJSONCore/JSONEncodingOptions``. See <doc:EncodingAndNumbers>.
 
 ```swift
 var decoder = ADJSON.JSONDecoder()
@@ -47,7 +47,7 @@ encoder.options = .javaScript            // JSON.stringify number/non-finite par
 ## The `@JSONCodable` fast path
 
 Annotate a `Codable` `struct` with ``JSONCodable()`` to generate a monomorphic decode/encode
-that ``ADJSON/JSONDecoder`` and ``ADJSON/JSONEncoder`` use **automatically**. The type keeps
+that ``/ADJSON/ADJSONCore/ADJSON/JSONDecoder`` and ``/ADJSON/ADJSONCore/ADJSON/JSONEncoder`` use **automatically**. The type keeps
 its normal `Codable` conformance as a fallback.
 
 ```swift
@@ -91,7 +91,7 @@ free. `Row` must be `Decodable & Sendable`. The batch size is tunable
 
 ## Process-wide metrics
 
-``ADJSON/Metrics`` exposes lock-free counters (via `Atomic`) for documents and bytes parsed:
+``/ADJSONCore/ADJSON/Metrics`` exposes lock-free counters (via `Atomic`) for documents and bytes parsed:
 
 ```swift
 let m = ADJSON.Metrics.snapshot()

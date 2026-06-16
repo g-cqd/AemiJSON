@@ -100,6 +100,11 @@ let patched = try JSONPatch(patchData).apply(to: JSONValue(parsing: targetData))
 // 7. Profiles — strict by default; opt into lenient or RFC 7493 I-JSON.
 let lenient = try ADJSON.parse(data, options: .lenient)
 var decoder = ADJSON.JSONDecoder(); decoder.options = .iJSON   // reject duplicate keys
+
+// 8. Hot-path accessors — alloc-free compare, zero-copy bytes, JS-semantics, borrowed parse.
+if doc.root.kind.utf8Equals("paragraph") { … }   // no String allocation on the unescaped path
+buffer.withUnsafeBytes { raw in use(try ADJSON.parse(raw).root) }   // zero-copy borrowed parse
+let text = doc.root.tags.jsString                // ECMAScript coercion ("a,b,c"); also .isTruthy
 ```
 
 See the [documentation](#documentation) for the full guides.
@@ -153,8 +158,10 @@ deployed by CI). Build it locally:
 
 ```sh
 # Xcode: Product ▸ Build Documentation
-# CLI (the DocC plugin is dev-only, gated behind ADJSON_DEV so consumers don't resolve it):
-ADJSON_DEV=1 swift package generate-documentation --target ADJSON
+# CLI (the DocC plugin is dev-only, gated behind ADJSON_DEV so consumers don't resolve it).
+# Combined docs cover both the umbrella (ADJSON) and the Foundation-free engine (ADJSONCore):
+ADJSON_DEV=1 swift package generate-documentation \
+  --enable-experimental-combined-documentation --target ADJSONCore --target ADJSON
 ```
 
 ## Testing & benchmarks
