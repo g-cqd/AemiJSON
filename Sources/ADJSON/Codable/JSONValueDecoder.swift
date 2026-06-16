@@ -41,8 +41,16 @@ struct JSONValueDecoderImpl: Decoder {
     // MARK: - Unboxing
 
     func unbox<T: Decodable>(_ value: JSONValue, as type: T.Type, _ codingPath: [any CodingKey]) throws -> T {
-        if type == Date.self { return try unboxDate(value, codingPath) as! T }
-        if type == Data.self { return try unboxData(value, codingPath) as! T }
+        // Conditional cast (never a force cast): the metatype guard guarantees the type matches, so it
+        // always succeeds and satisfies the shipped-library no-force rule; the else is unreachable.
+        if type == Date.self {
+            guard let date = try unboxDate(value, codingPath) as? T else { throw typeMismatch(type, value, codingPath) }
+            return date
+        }
+        if type == Data.self {
+            guard let data = try unboxData(value, codingPath) as? T else { throw typeMismatch(type, value, codingPath) }
+            return data
+        }
         guard depth < maxDepth else {
             throw DecodingError.dataCorrupted(
                 .init(
