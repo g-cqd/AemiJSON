@@ -265,65 +265,17 @@ public struct JSONEventReader {
 
     private mutating func readNumber() throws(JSONError) -> Double {
         let start = i
-        // Find the token extent with the same grammar as the tape scanner.
-        if strict {
-            try scanNumberStrict()
-        } else {
-            try scanNumberLenient()
+        // Shared number grammar (Core/Tokenizer.swift). The pull reader holds the whole input, so
+        // `complete: true` — the buffer end is final, never `.incomplete`.
+        let outcome = bytes.withUnsafeBufferPointer { buf -> JSONNumber.ScanOutcome in
+            guard let p = buf.baseAddress else { return .invalid }
+            return JSONNumber.scanLexeme(p, start, n, strict: strict, complete: true)
         }
-        let length = i - start
-        let begin = start
+        guard case .ok(let end) = outcome else { throw JSONError.invalidNumber(at: start) }
+        i = end
         return bytes.withUnsafeBufferPointer { buf in
             guard let p = buf.baseAddress else { return .nan }
-            return JSONNumber.parseDouble(p, begin, length)
-        }
-    }
-
-    private mutating func scanNumberStrict() throws(JSONError) {
-        let start = i
-        if i < n, bytes[i] == 0x2D { i += 1 }
-        guard i < n else { throw JSONError.invalidNumber(at: start) }
-        if bytes[i] == 0x30 {
-            i += 1
-            if i < n, isDigit(bytes[i]) { throw JSONError.invalidNumber(at: start) }  // no leading zero
-        } else if bytes[i] >= 0x31 && bytes[i] <= 0x39 {
-            i += 1
-            while i < n, isDigit(bytes[i]) { i += 1 }
-        } else {
-            throw JSONError.invalidNumber(at: start)
-        }
-        if i < n, bytes[i] == 0x2E {
-            i += 1
-            guard i < n, isDigit(bytes[i]) else { throw JSONError.invalidNumber(at: start) }
-            while i < n, isDigit(bytes[i]) { i += 1 }
-        }
-        if i < n, bytes[i] == 0x65 || bytes[i] == 0x45 {
-            i += 1
-            if i < n, bytes[i] == 0x2B || bytes[i] == 0x2D { i += 1 }
-            guard i < n, isDigit(bytes[i]) else { throw JSONError.invalidNumber(at: start) }
-            while i < n, isDigit(bytes[i]) { i += 1 }
-        }
-    }
-
-    private mutating func scanNumberLenient() throws(JSONError) {
-        let start = i
-        if i < n, bytes[i] == 0x2D || bytes[i] == 0x2B { i += 1 }
-        let intStart = i
-        while i < n, isDigit(bytes[i]) { i += 1 }
-        var sawDigits = i > intStart
-        if i < n, bytes[i] == 0x2E {
-            i += 1
-            let fracStart = i
-            while i < n, isDigit(bytes[i]) { i += 1 }
-            sawDigits = sawDigits || i > fracStart
-        }
-        guard sawDigits else { throw JSONError.invalidNumber(at: start) }
-        if i < n, bytes[i] == 0x65 || bytes[i] == 0x45 {
-            i += 1
-            if i < n, bytes[i] == 0x2B || bytes[i] == 0x2D { i += 1 }
-            let expStart = i
-            while i < n, isDigit(bytes[i]) { i += 1 }
-            guard i > expStart else { throw JSONError.invalidNumber(at: start) }
+            return JSONNumber.parseDouble(p, start, end - start)
         }
     }
 
@@ -670,63 +622,17 @@ public struct JSONEventStreamReader {
     // Loosely consume the number alphabet, then validate. Mid-stream a number that runs to the
     // buffer end is `.incomplete` (digits could continue); at `finish()` it is validated as-is.
     private func scanNumberEnd(_ start: Int) throws(JSONError) -> ScanOutcome {
-        var j = start
-        while j < count {
-            let b = buffer[j]
-            if isDigit(b) || b == 0x2D || b == 0x2B || b == 0x2E || b == 0x65 || b == 0x45 {
-                j += 1
-            } else {
-                break
-            }
+        // Shared grammar (Core/Tokenizer.swift). `complete: finished` makes a lexeme that runs to the
+        // buffer end `.incomplete` mid-stream but final once `finish()` has been signalled.
+        let outcome = buffer.withUnsafeBufferPointer { buf -> JSONNumber.ScanOutcome in
+            guard let p = buf.baseAddress else { return .incomplete }
+            return JSONNumber.scanLexeme(p, start, count, strict: strict, complete: finished)
         }
-        if j >= count && !finished { return .incomplete }
-        try validateNumber(start, j)
-        return .ok(j)
-    }
-
-    // Validate `[start, end)` against the strict (or lenient) number grammar.
-    private func validateNumber(_ start: Int, _ end: Int) throws(JSONError) {
-        var k = start
-        func digit() -> Bool { k < end && isDigit(buffer[k]) }
-        if k < end, buffer[k] == 0x2D || (!strict && buffer[k] == 0x2B) { k += 1 }
-        guard k < end else { throw JSONError.invalidNumber(at: start) }
-        if strict {
-            if buffer[k] == 0x30 {
-                k += 1
-                if digit() { throw JSONError.invalidNumber(at: start) }  // no leading zero
-            } else if buffer[k] >= 0x31 && buffer[k] <= 0x39 {
-                k += 1
-                while digit() { k += 1 }
-            } else {
-                throw JSONError.invalidNumber(at: start)
-            }
-            if k < end, buffer[k] == 0x2E {
-                k += 1
-                guard digit() else { throw JSONError.invalidNumber(at: start) }
-                while digit() { k += 1 }
-            }
-        } else {
-            var sawDigits = false
-            while digit() {
-                k += 1
-                sawDigits = true
-            }
-            if k < end, buffer[k] == 0x2E {
-                k += 1
-                while digit() {
-                    k += 1
-                    sawDigits = true
-                }
-            }
-            guard sawDigits else { throw JSONError.invalidNumber(at: start) }
+        switch outcome {
+        case .ok(let end): return .ok(end)
+        case .incomplete: return .incomplete
+        case .invalid: throw JSONError.invalidNumber(at: start)
         }
-        if k < end, buffer[k] == 0x65 || buffer[k] == 0x45 {
-            k += 1
-            if k < end, buffer[k] == 0x2B || buffer[k] == 0x2D { k += 1 }
-            guard digit() else { throw JSONError.invalidNumber(at: start) }
-            while digit() { k += 1 }
-        }
-        guard k == end else { throw JSONError.invalidNumber(at: start) }
     }
 
     // `hasEscape` is threaded from `scanStringEnd` (which already detected it), so the body is decoded
