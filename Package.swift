@@ -159,6 +159,11 @@ let package = Package(
             capability: .command(
                 intent: .custom(verb: "coverage-check", description: "Gate line coverage against a floor"))),
         .plugin(
+            name: "BenchCompare",
+            capability: .command(
+                intent: .custom(
+                    verb: "bench-compare", description: "Render the ADJSON-vs-Foundation benchmark table"))),
+        .plugin(
             name: "FetchFixtures",
             capability: .command(
                 intent: .custom(

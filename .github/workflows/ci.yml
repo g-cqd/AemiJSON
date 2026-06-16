@@ -392,20 +392,19 @@ jobs:
           fi
       - name: ADJSON-vs-Foundation comparison table
         # Pairs each Foundation baseline with the ADJSON variant(s) in its workload and reports the
-        # speedup — the at-a-glance headline the flat per-benchmark table above doesn't give. Reuses
-        # the suite binary the step above already built (BENCH_NO_BUILD=1: no rebuild; the binary is
-        # jemalloc-instrumented here, so the malloc column is populated), re-running only the
-        # comparison workloads standalone to capture the debug histograms the parser reads.
+        # speedup — the at-a-glance headline the flat per-benchmark table above doesn't give. The
+        # `bench-compare` command plugin reuses the jemalloc-instrumented suite binary the step above
+        # already built (so the malloc column is populated; no rebuild), re-running only the comparison
+        # workloads standalone to capture the debug histograms it parses.
         env:
-          BENCH_NO_BUILD: "1"
-          BENCH_FILTER: "(parse|decode|encode|numbers|corpus)/.*"
+          ADJSON_DEV: "1"
         run: |
           {
             echo "## ADJSON vs Foundation (speedup)"
             echo ""
             echo "Release · runner \`${{ runner.os }}\` · commit \`${GITHUB_SHA:0:7}\` · p50 wall-clock, higher speedup = ADJSON faster"
             echo ""
-            Scripts/bench-compare.sh
+            swift package bench-compare --filter '(parse|decode|encode|numbers|corpus)/.*'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Publish results to job summary
         if: always()
