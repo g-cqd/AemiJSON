@@ -1,6 +1,16 @@
 // RFC 3629 UTF-8 well-formedness. Rejects invalid lead/continuation bytes, overlong
 // encodings, surrogate code points (U+D800–U+DFFF), and values above U+10FFFF.
 enum JSONUTF8 {
+    /// The expected byte length (2–4) of a multi-byte sequence from its lead byte, or `nil` for an
+    /// invalid lead (a continuation byte or a 5+/6-byte form). Lets a resumable scanner decide how
+    /// many bytes it must wait for before validating the full sequence.
+    static func leadLength(_ b: UInt8) -> Int? {
+        if b & 0xE0 == 0xC0 { return 2 }
+        if b & 0xF0 == 0xE0 { return 3 }
+        if b & 0xF8 == 0xF0 { return 4 }
+        return nil
+    }
+
     /// Validate the multi-byte UTF-8 sequence starting at `j` (where `p[j] >= 0x80`),
     /// returning its length in bytes. Throws `JSONError.invalidUTF8` if malformed.
     @inline(__always)

@@ -92,3 +92,91 @@ extension JSONNumber {
         return k == end
     }
 }
+
+extension JSONString {
+    /// Outcome of scanning one `"…"` string lexeme. `.ok(end, hasEscape)` gives the index just past
+    /// the closing quote and whether the body contained a backslash (so the caller can skip a second
+    /// escape scan). `.incomplete` means the buffer ended mid-string / mid-escape / mid-sequence
+    /// (streaming only). `.invalid` means malformed (control byte, bad escape, bad UTF-8).
+    public enum ScanOutcome: Equatable, Sendable {
+        case ok(end: Int, hasEscape: Bool)
+        case incomplete
+        case invalid
+    }
+
+    /// Scan a `"…"` string starting at the opening quote `open` within `p[..<count]`. `strict`
+    /// validates escapes and UTF-8 (RFC 8259 / RFC 3629); lenient skips that. Returns `.incomplete`
+    /// the moment the buffer ends mid-token; each caller decides what that means — the streaming
+    /// reader waits for more bytes, the whole-buffer readers treat it as truncated input. Does not
+    /// decode — the caller materializes via `unescape` when `hasEscape`.
+    ///
+    /// Not `@inlinable`: it references the internal UTF-8 validator. It is only called from within the
+    /// engine module, where the optimizer inlines it regardless.
+    public static func scanLexeme(
+        _ p: UnsafePointer<UInt8>, _ open: Int, _ count: Int, strict: Bool
+    ) -> ScanOutcome {
+        var j = open + 1
+        var hasEscape = false
+        while true {
+            guard j < count else { return .incomplete }
+            let c = p[j]
+            if c == 0x22 { return .ok(end: j + 1, hasEscape: hasEscape) }
+            if c == 0x5C {  // escape
+                hasEscape = true
+                guard j + 1 < count else { return .incomplete }
+                if strict {
+                    switch p[j + 1] {
+                    case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
+                        j += 2
+                    case 0x75:  // \uXXXX, possibly a surrogate pair
+                        guard j + 6 <= count else { return .incomplete }
+                        guard let high = hex4(p, j + 2) else { return .invalid }
+                        if high >= 0xD800 && high <= 0xDBFF {
+                            guard j + 12 <= count else { return .incomplete }
+                            guard p[j + 6] == 0x5C, p[j + 7] == 0x75 else { return .invalid }
+                            guard let low = hex4(p, j + 8), low >= 0xDC00 && low <= 0xDFFF else { return .invalid }
+                            j += 12
+                        } else if high >= 0xDC00 && high <= 0xDFFF {
+                            return .invalid  // lone low surrogate
+                        } else {
+                            j += 6
+                        }
+                    default:
+                        return .invalid
+                    }
+                } else {
+                    j += 2
+                }
+                continue
+            }
+            if c < 0x20 { return .invalid }  // unescaped control byte
+            if strict && c >= 0x80 {
+                guard let length = JSONUTF8.leadLength(c) else { return .invalid }
+                guard j + length <= count else { return .incomplete }
+                guard (try? JSONUTF8.sequenceLength(p, j, count)) != nil else { return .invalid }
+                j += length
+                continue
+            }
+            j += 1
+        }
+    }
+
+    /// Four hex digits at `at` (caller guarantees `at + 4` in bounds), or `nil` if any byte is not a
+    /// hex digit.
+    @inlinable
+    public static func hex4(_ p: UnsafePointer<UInt8>, _ at: Int) -> UInt16? {
+        var value: UInt16 = 0
+        for k in 0..<4 {
+            let b = p[at + k]
+            let digit: UInt16
+            switch b {
+            case 0x30...0x39: digit = UInt16(b - 0x30)
+            case 0x61...0x66: digit = UInt16(b - 0x61 + 10)
+            case 0x41...0x46: digit = UInt16(b - 0x41 + 10)
+            default: return nil
+            }
+            value = (value << 4) | digit
+        }
+        return value
+    }
+}

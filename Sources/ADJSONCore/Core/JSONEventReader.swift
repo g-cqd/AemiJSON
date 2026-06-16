@@ -173,94 +173,29 @@ public struct JSONEventReader {
     // MARK: - Scalar tokenizers (one borrow per token; control flow above uses index access)
 
     private mutating func readString() throws(JSONError) -> String {
-        var cursor = i
-        let count = n
-        let isStrict = strict
-        let result: Result<String, JSONError> = bytes.withUnsafeBufferPointer { buf in
-            guard let p = buf.baseAddress else { return .failure(.unexpectedEndOfInput) }
-            return Result { () throws(JSONError) in
-                let value = try Self.scanString(p, &cursor, count, strict: isStrict)
-                return value
+        let open = i
+        // Shared string grammar (Core/Tokenizer.swift); the pull reader holds the whole input, so
+        // `.incomplete` means truncated. Decode here once the extent + escape flag are known.
+        let outcome = bytes.withUnsafeBufferPointer { buf -> JSONString.ScanOutcome in
+            guard let p = buf.baseAddress else { return .incomplete }
+            return JSONString.scanLexeme(p, open, n, strict: strict)
+        }
+        switch outcome {
+        case .incomplete:
+            throw JSONError.unexpectedEndOfInput
+        case .invalid:
+            throw JSONError.invalidString(at: open)
+        case .ok(let end, let hasEscape):
+            let start = open + 1
+            let length = end - 1 - start
+            i = end
+            return bytes.withUnsafeBufferPointer { buf in
+                guard let p = buf.baseAddress else { return "" }
+                return hasEscape
+                    ? JSONString.unescape(p, start, length)
+                    : String(decoding: UnsafeBufferPointer(start: p + start, count: length), as: UTF8.self)
             }
         }
-        i = cursor
-        return try result.get()
-    }
-
-    // Scan + decode a `"…"` string starting at `i` (the opening quote); advances `i` past the close.
-    private static func scanString(
-        _ p: UnsafePointer<UInt8>, _ i: inout Int, _ n: Int, strict: Bool
-    ) throws(JSONError) -> String {
-        let start = i + 1
-        var j = start
-        var esc = false
-        while j < n {
-            let c = p[j]
-            if c == 0x22 { break }
-            if c == 0x5C {
-                esc = true
-                if strict {
-                    try validateEscape(p, &j, n)
-                } else {
-                    j += 2
-                }
-                continue
-            }
-            if c < 0x20 { throw JSONError.invalidString(at: j) }
-            if strict && c >= 0x80 {
-                j += try JSONUTF8.sequenceLength(p, j, n)
-                continue
-            }
-            j += 1
-        }
-        guard j < n else { throw JSONError.unexpectedEndOfInput }
-        let length = j - start
-        let decoded =
-            esc
-            ? JSONString.unescape(p, start, length)
-            : String(decoding: UnsafeBufferPointer(start: p + start, count: length), as: UTF8.self)
-        i = j + 1
-        return decoded
-    }
-
-    // `p[j]` is a backslash; validate the strict-JSON escape and advance `j` past it.
-    private static func validateEscape(_ p: UnsafePointer<UInt8>, _ j: inout Int, _ n: Int) throws(JSONError) {
-        guard j + 1 < n else { throw JSONError.invalidString(at: j) }
-        switch p[j + 1] {
-        case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
-            j += 2
-        case 0x75:  // \uXXXX (with surrogate pairing)
-            let high = try hex4(p, j + 2, n)
-            if high >= 0xD800 && high <= 0xDBFF {
-                guard j + 7 < n, p[j + 6] == 0x5C, p[j + 7] == 0x75 else { throw JSONError.invalidString(at: j) }
-                let low = try hex4(p, j + 8, n)
-                guard low >= 0xDC00 && low <= 0xDFFF else { throw JSONError.invalidString(at: j) }
-                j += 12
-            } else if high >= 0xDC00 && high <= 0xDFFF {
-                throw JSONError.invalidString(at: j)
-            } else {
-                j += 6
-            }
-        default:
-            throw JSONError.invalidString(at: j)
-        }
-    }
-
-    private static func hex4(_ p: UnsafePointer<UInt8>, _ at: Int, _ n: Int) throws(JSONError) -> UInt16 {
-        guard at + 4 <= n else { throw JSONError.invalidString(at: at) }
-        var value: UInt16 = 0
-        for k in 0..<4 {
-            let b = p[at + k]
-            let digit: UInt16
-            switch b {
-            case 0x30...0x39: digit = UInt16(b - 0x30)
-            case 0x61...0x66: digit = UInt16(b - 0x61 + 10)
-            case 0x41...0x46: digit = UInt16(b - 0x41 + 10)
-            default: throw JSONError.invalidString(at: at)
-            }
-            value = (value << 4) | digit
-        }
-        return value
     }
 
     private mutating func readNumber() throws(JSONError) -> Double {
@@ -515,83 +450,18 @@ public struct JSONEventStreamReader {
     // ends mid-string.
     private enum StringScanOutcome { case ok(Int, Bool), incomplete }
 
-    // Scan a `"…"` string from the opening quote `open`. `.ok(end, hasEscape)` past the close;
-    // `.incomplete` if the buffer ends mid-string / mid-escape / mid-sequence. Throws on malformed.
+    // Scan a `"…"` string from the opening quote `open` via the shared grammar (Core/Tokenizer.swift).
+    // `.incomplete` (buffer ended mid-token) means "wait for the next feed"; `.invalid` is malformed.
     private func scanStringEnd(_ open: Int) throws(JSONError) -> StringScanOutcome {
-        var j = open + 1
-        var hasEscape = false
-        while true {
-            guard j < count else { return .incomplete }
-            let c = buffer[j]
-            if c == 0x22 { return .ok(j + 1, hasEscape) }
-            if c == 0x5C {  // escape
-                hasEscape = true
-                guard j + 1 < count else { return .incomplete }
-                if strict {
-                    switch buffer[j + 1] {
-                    case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74: j += 2
-                    case 0x75:  // \uXXXX, possibly a surrogate pair
-                        guard j + 6 <= count else { return .incomplete }
-                        let high = try hex4Indexed(j + 2)
-                        if high >= 0xD800 && high <= 0xDBFF {
-                            guard j + 12 <= count else { return .incomplete }
-                            guard buffer[j + 6] == 0x5C, buffer[j + 7] == 0x75 else {
-                                throw JSONError.invalidString(at: j)
-                            }
-                            let low = try hex4Indexed(j + 8)
-                            guard low >= 0xDC00 && low <= 0xDFFF else { throw JSONError.invalidString(at: j) }
-                            j += 12
-                        } else if high >= 0xDC00 && high <= 0xDFFF {
-                            throw JSONError.invalidString(at: j)
-                        } else {
-                            j += 6
-                        }
-                    default: throw JSONError.invalidString(at: j)
-                    }
-                } else {
-                    j += 2
-                }
-                continue
-            }
-            if c < 0x20 { throw JSONError.invalidString(at: j) }
-            if strict && c >= 0x80 {
-                let length = try leadLength(c, at: j)
-                guard j + length <= count else { return .incomplete }
-                _ = try buffer.withUnsafeBufferPointer { buf throws(JSONError) -> Int in
-                    // Reached only with a byte at `j` (c >= 0x80), so the buffer is non-empty and
-                    // `baseAddress` is non-nil.
-                    try JSONUTF8.sequenceLength(buf.baseAddress!, j, count)  // lint:allow
-                }
-                j += length
-                continue
-            }
-            j += 1
+        let outcome = buffer.withUnsafeBufferPointer { buf -> JSONString.ScanOutcome in
+            guard let p = buf.baseAddress else { return .incomplete }
+            return JSONString.scanLexeme(p, open, count, strict: strict)
         }
-    }
-
-    // Four hex digits at `at` (caller guaranteed in-bounds); throws on a non-hex digit.
-    private func hex4Indexed(_ at: Int) throws(JSONError) -> UInt16 {
-        var value: UInt16 = 0
-        for k in 0..<4 {
-            let b = buffer[at + k]
-            let digit: UInt16
-            switch b {
-            case 0x30...0x39: digit = UInt16(b - 0x30)
-            case 0x61...0x66: digit = UInt16(b - 0x61 + 10)
-            case 0x41...0x46: digit = UInt16(b - 0x41 + 10)
-            default: throw JSONError.invalidString(at: at)
-            }
-            value = (value << 4) | digit
+        switch outcome {
+        case .ok(let end, let hasEscape): return .ok(end, hasEscape)
+        case .incomplete: return .incomplete
+        case .invalid: throw JSONError.invalidString(at: open)
         }
-        return value
-    }
-
-    // UTF-8 lead-byte length (2–4); throws on an invalid lead. Bounds are checked by the caller.
-    private func leadLength(_ b: UInt8, at j: Int) throws(JSONError) -> Int {
-        if b & 0xE0 == 0xC0 { return 2 }
-        if b & 0xF0 == 0xE0 { return 3 }
-        if b & 0xF8 == 0xF0 { return 4 }
-        throw JSONError.invalidUTF8(at: j)
     }
 
     // A literal (`true` / `false` / `null`). `.incomplete` if only a matching prefix is present and
