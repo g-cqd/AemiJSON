@@ -188,24 +188,32 @@ public enum JSONToken {
                     i += 1
                     continue
                 }
-                if c == 0x2F, i + 1 < count {  // '/'
+                if c == 0x2F {  // '/'
+                    // On `.incomplete` we report the comment's *start*, so a streaming reader rescans
+                    // it (rather than dropping the `//`/`/*` it had already consumed) on the next feed.
+                    let commentStart = i
+                    if i + 1 >= count {
+                        if complete { break }  // a lone trailing '/' is significant (rejected later)
+                        return SkipResult(end: commentStart, incomplete: true)  // might begin a comment
+                    }
                     if p[i + 1] == 0x2F {  // line comment
-                        i += 2
-                        while i < count, p[i] != 0x0A, p[i] != 0x0D { i += 1 }
-                        if i >= count && !complete { return SkipResult(end: i, incomplete: true) }
+                        var k = i + 2
+                        while k < count, p[k] != 0x0A, p[k] != 0x0D { k += 1 }
+                        if k >= count && !complete { return SkipResult(end: commentStart, incomplete: true) }
+                        i = k
                         continue
                     }
                     if p[i + 1] == 0x2A {  // block comment
-                        i += 2
-                        while i + 1 < count, !(p[i] == 0x2A && p[i + 1] == 0x2F) { i += 1 }
-                        if i + 1 < count {  // found closing '*/'
-                            i += 2
+                        var k = i + 2
+                        while k + 1 < count, !(p[k] == 0x2A && p[k + 1] == 0x2F) { k += 1 }
+                        if k + 1 < count {  // found closing '*/'
+                            i = k + 2
                             continue
                         }
-                        // Unterminated at the buffer end: consume to EOF when complete, else wait.
-                        if complete { return SkipResult(end: count, incomplete: false) }
-                        return SkipResult(end: i, incomplete: true)
+                        if complete { return SkipResult(end: count, incomplete: false) }  // unterminated → EOF
+                        return SkipResult(end: commentStart, incomplete: true)
                     }
+                    break  // lone '/' not starting a comment (significant; rejected by the value parser)
                 }
             }
             break
@@ -385,14 +393,17 @@ extension JSONString {
     }
 
     /// Scan a JSON5 unquoted object key (an ECMAScript IdentifierName) starting at `start`.
-    /// `.ok(end, hasEscape: false)` past the identifier; `.incomplete` if it runs to the buffer end.
-    public static func scanIdentifier(_ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int) -> ScanOutcome {
+    /// `.ok(end, hasEscape: false)` past the identifier; `.incomplete` (streaming only) if it runs to
+    /// the buffer end, where more identifier bytes might still arrive.
+    public static func scanIdentifier(
+        _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, complete: Bool
+    ) -> ScanOutcome {
         guard start < count, isIdentStart(p[start]) else { return .invalid }
         var i = start
         if p[i] >= 0x80 {
-            guard let length = JSONUTF8.leadLength(p[i]), i + length <= count,
-                (try? JSONUTF8.sequenceLength(p, i, count)) != nil
-            else { return .invalid }
+            guard let length = JSONUTF8.leadLength(p[i]) else { return .invalid }
+            if i + length > count { return complete ? .invalid : .incomplete }
+            guard (try? JSONUTF8.sequenceLength(p, i, count)) != nil else { return .invalid }
             i += length
         } else {
             i += 1
@@ -400,17 +411,17 @@ extension JSONString {
         while i < count {
             let c = p[i]
             if c >= 0x80 {
-                guard let length = JSONUTF8.leadLength(c), i + length <= count,
-                    (try? JSONUTF8.sequenceLength(p, i, count)) != nil
-                else { return .invalid }
+                guard let length = JSONUTF8.leadLength(c) else { return .invalid }
+                if i + length > count { return complete ? .invalid : .incomplete }
+                guard (try? JSONUTF8.sequenceLength(p, i, count)) != nil else { return .invalid }
                 i += length
             } else if isIdentStart(c) || (c >= 0x30 && c <= 0x39) {
                 i += 1
             } else {
-                break
+                return .ok(end: i, hasEscape: false)  // stopped at a non-identifier byte
             }
         }
-        return .ok(end: i, hasEscape: false)
+        return complete ? .ok(end: i, hasEscape: false) : .incomplete  // reached the buffer end
     }
 
     @usableFromInline

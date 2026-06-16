@@ -86,3 +86,84 @@ private func readerValue(_ text: String, options: JSONParseOptions) throws -> JS
         }
     }
 }
+
+// MARK: push (streaming) reader
+
+private func valueFromEvents(_ events: [JSONEvent]) throws -> JSONValue {
+    var pos = 0
+    func value() throws -> JSONValue {
+        guard pos < events.count else { throw JSONError.unexpectedEndOfInput }
+        let ev = events[pos]
+        pos += 1
+        switch ev {
+        case .null: return .null
+        case .bool(let b): return .bool(b)
+        case .number(let d): return .number(d)
+        case .string(let s): return .string(s)
+        case .beginArray:
+            var arr: [JSONValue] = []
+            while pos < events.count {
+                if case .endArray = events[pos] {
+                    pos += 1
+                    return .array(arr)
+                }
+                arr.append(try value())
+            }
+            throw JSONError.unexpectedEndOfInput
+        case .beginObject:
+            var obj = OrderedDictionary<String, JSONValue>()
+            while pos < events.count {
+                if case .endObject = events[pos] {
+                    pos += 1
+                    return .object(obj)
+                }
+                guard case .key(let k) = events[pos] else { throw JSONError.unexpectedEndOfInput }
+                pos += 1
+                obj[k] = try value()
+            }
+            throw JSONError.unexpectedEndOfInput
+        case .endArray, .endObject, .key: throw JSONError.unexpectedEndOfInput
+        }
+    }
+    return try value()
+}
+
+private func streamValue(_ text: String, chunkSize: Int, options: JSONParseOptions) throws -> JSONValue {
+    var reader = JSONEventStreamReader(options: options)
+    var events: [JSONEvent] = []
+    let bytes = Array(text.utf8)
+    var idx = 0
+    while idx < bytes.count {
+        let end = Swift.min(idx + chunkSize, bytes.count)
+        events.append(contentsOf: try reader.feed(Array(bytes[idx..<end])))
+        idx = end
+    }
+    events.append(contentsOf: try reader.finish())
+    return try valueFromEvents(events)
+}
+
+@Test func pushReaderJSON5MatchesTapeAcrossChunkSizes() throws {
+    let docs = [
+        "{a:1}", "{'a':1, b:2,}", "[1,2,3,]", "// c\n{x: 0xFF}", "{inf: Infinity, pos: +3}",
+        #"{s:'it\'s', t:"a\nb"}"#, "/* block */ [.5, 5., -2.5e1, 0x10]", "{a:1,/*c*/b:2}",
+        "{ $id: 1, _x: 2 }", "[ {a:1}, {b:[2,3,]}, ]", "{a /* gap */ : 1}",
+    ]
+    for doc in docs {
+        let tape = JSONValue(try ADJSON.parse(doc, options: .json5).root)
+        for chunkSize in [1, 2, 3, 5, 64] {
+            let streamed = try streamValue(doc, chunkSize: chunkSize, options: .json5)
+            #expect(streamed == tape, "JSON5 stream mismatch at chunk \(chunkSize) for: \(doc)")
+        }
+    }
+}
+
+@Test func pushReaderStrictUnaffectedByJSON5Work() throws {
+    // Strict streaming still parses plain JSON and rejects JSON5 constructs.
+    let plain = #"{"a":[1,2,{"b":true}],"c":null}"#
+    for chunkSize in [1, 3, 7, 64] {
+        let streamed = try streamValue(plain, chunkSize: chunkSize, options: .strict)
+        #expect(streamed == JSONValue(try ADJSON.parse(plain).root))
+    }
+    #expect(throws: JSONError.self) { _ = try streamValue("{a:1}", chunkSize: 2, options: .strict) }
+    #expect(throws: JSONError.self) { _ = try streamValue("[1,2,]", chunkSize: 1, options: .strict) }
+}
