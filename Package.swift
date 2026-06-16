@@ -155,6 +155,10 @@ let package = Package(
             capability: .command(
                 intent: .custom(verb: "lint", description: "Check formatting and shipped-library discipline"))),
         .plugin(
+            name: "CoverageCheck",
+            capability: .command(
+                intent: .custom(verb: "coverage-check", description: "Gate line coverage against a floor"))),
+        .plugin(
             name: "FetchFixtures",
             capability: .command(
                 intent: .custom(

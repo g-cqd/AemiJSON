@@ -64,41 +64,21 @@ jobs:
           ADJSON_NIO: "1"
         run: swift test --filter ADJSONNIOTests
       - name: Coverage summary + floor gate
+        # The gate is the `coverage-check` command plugin (Swift, not inline awk/python): it reads the
+        # profile from the test step above, prints the per-file report into the job summary, parses the
+        # total line coverage, and exits non-zero below the floor. The floor is set conservatively below
+        # the ~86% currently measured so runner/toolchain variance can't flake it; ratchet it up as
+        # coverage climbs. `pipefail` propagates the plugin's failure through `tee`.
         if: always()
-        env:
-          # Line-coverage floor for the shipped library sources (Tests/.build/Benchmarks excluded). Set
-          # conservatively below the ~86% currently measured so ordinary toolchain/runner variance can't
-          # flake it; ratchet it upward as coverage climbs. A drop below the floor fails the job — this
-          # is the project's coverage gate.
-          COVERAGE_FLOOR: "80"
         run: |
           set -o pipefail
           BIN=$(swift build --show-bin-path)
-          PROF="$BIN/codecov/default.profdata"
-          XCTEST=$(find "$BIN" -name '*.xctest' -maxdepth 1 | head -1)
-          if [ -z "$XCTEST" ] || [ ! -f "$PROF" ]; then
+          if [ -f "$BIN/codecov/default.profdata" ]; then
+            swift package coverage-check --floor 80 --bin-path "$BIN" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
             echo "_No coverage profile (tests did not produce one); coverage gate skipped._" \
               >> "$GITHUB_STEP_SUMMARY"
-            exit 0
           fi
-          TOOL="$XCTEST/Contents/MacOS/$(basename "$XCTEST" .xctest)"
-          IGNORE='(Tests|\.build|Benchmarks)/'
-          {
-            echo "## Code coverage"
-            echo '```text'
-            xcrun llvm-cov report "$TOOL" -instr-profile "$PROF" \
-              -ignore-filename-regex="$IGNORE" 2>/dev/null | tail -25
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          # Parse total line-coverage % from the machine-readable export (robust to column drift) and
-          # gate on the floor.
-          PCT=$(xcrun llvm-cov export -summary-only "$TOOL" -instr-profile "$PROF" \
-            -ignore-filename-regex="$IGNORE" 2>/dev/null \
-            | python3 -c 'import json,sys; print("%.2f" % json.load(sys.stdin)["data"][0]["totals"]["lines"]["percent"])')
-          echo "Line coverage: **${PCT}%** (floor ${COVERAGE_FLOOR}%)" >> "$GITHUB_STEP_SUMMARY"
-          echo "Line coverage: ${PCT}% (floor ${COVERAGE_FLOOR}%)"
-          awk -v p="$PCT" -v f="$COVERAGE_FLOOR" \
-            'BEGIN { if (p+0 < f+0) { printf "::error::line coverage %s%% is below the floor %s%%\n", p, f; exit 1 } }'
 
   changes:
     name: Detect unsafe / concurrency changes
