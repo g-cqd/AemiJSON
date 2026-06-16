@@ -83,7 +83,13 @@ private func JSONPathEvaluator_descendAll(_ root: JSON) -> Int {
     var sum = 0
     var stack = [root]
     while let node = stack.popLast() {
-        if let i = node.int { sum &+= i } else if let d = node.double { sum &+= Int(d.isFinite ? d : 0) }
+        // `Int(exactly:)` (not `Int(_:)`) — a finite-but-out-of-range double like 1e308 would trap the
+        // bare initializer; the sum is only a read-stressing sink, so out-of-range values are skipped.
+        if let i = node.int {
+            sum &+= i
+        } else if let d = node.double, let di = Int(exactly: d.rounded(.towardZero)) {
+            sum &+= di
+        }
         _ = node.string
         _ = node.bool
         if node.isArray {
