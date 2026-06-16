@@ -19,6 +19,15 @@ struct FuzzRecord: Codable {
     var nested: [FuzzRecord]
 }
 
+// Decode-only macro (`@JSONDecodable`): a `Decodable`-only type, exercising the generated
+// `__adjsonDecode` fast path without dragging in an encode conformance.
+@JSONDecodable
+struct FuzzDecodeOnly: Decodable {
+    var id: Int
+    var label: String?
+    var values: [Double]
+}
+
 @_cdecl("LLVMFuzzerTestOneInput")
 public func LLVMFuzzerTestOneInput(_ start: UnsafePointer<UInt8>?, _ count: Int) -> CInt {
     guard let start, count > 0 else { return 0 }
@@ -44,11 +53,20 @@ public func LLVMFuzzerTestOneInput(_ start: UnsafePointer<UInt8>?, _ count: Int)
     if let path = try? JSONPath(text), let document = try? ADJSON.parse(bytes) {
         _ = path.query(document.root)
     }
-    _ = try? SQLiteJSONPath(text)
+    // SQLite-dialect path: compile it, and if it compiles, exercise the mutation engine
+    // (set/insert/replace/remove) against a materialized value — all total and depth-guarded.
+    if let sqlitePath = try? SQLiteJSONPath(text), let document = try? ADJSON.parse(bytes) {
+        let value = JSONValue(document.root)
+        _ = value.setting(sqlitePath, to: .int(1), mode: .set)
+        _ = value.setting(sqlitePath, to: value, mode: .insert)
+        _ = value.setting(sqlitePath, to: .string("x"), mode: .replace)
+        _ = value.removing(sqlitePath)
+    }
 
-    // Codable decoder — the macro fast path + nested collections, all depth-guarded.
+    // Codable decoder — the macro fast path (full + decode-only) + nested collections, all depth-guarded.
     let decoder = ADJSON.JSONDecoder()
     _ = try? decoder.decode(FuzzRecord.self, from: bytes)
+    _ = try? decoder.decode(FuzzDecodeOnly.self, from: bytes)
     _ = try? decoder.decode([[Int]].self, from: bytes)
     _ = try? decoder.decode([String: Double].self, from: bytes)
 
@@ -59,6 +77,11 @@ public func LLVMFuzzerTestOneInput(_ start: UnsafePointer<UInt8>?, _ count: Int)
         let schema = JSONSchema(document.root)
         _ = schema.validate(document.root)
         let value = JSONValue(document.root)
+        // Decode straight from the materialized value (no serialize+reparse), and SQLite-dialect encode.
+        _ = try? decoder.decode(FuzzRecord.self, from: value)
+        _ = try? decoder.decode([[Int]].self, from: value)
+        _ = try? decoder.decode([String: Double].self, from: value)
+        _ = try? value.encodedBytes(options: .sqlite)
         if let patch = try? JSONPatch(document.root) { _ = try? patch.apply(to: value) }
         _ = JSONMergePatch.apply(value, to: value)
     }
