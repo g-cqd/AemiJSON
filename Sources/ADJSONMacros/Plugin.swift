@@ -7,7 +7,7 @@ import SwiftSyntaxMacros
 @main
 struct ADJSONMacrosPlugin: CompilerPlugin {
     let providingMacros: [any Macro.Type] = [
-        JSONCodableMacro.self, SchemableMacro.self,
+        JSONCodableMacro.self, JSONDecodableMacro.self, JSONEncodableMacro.self, SchemableMacro.self,
         SchemaNumberMacro.self, SchemaStringMacro.self, SchemaEnumMacro.self, SchemaInfoMacro.self,
     ]
 }
@@ -33,41 +33,103 @@ struct JSONCodableMacro: ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-            context.diagnose(
-                note(node, "JSONCodable", "@JSONCodable only supports structs; the type keeps standard Codable"))
-            return []
-        }
-        if declaresCodingKeys(structDecl) {
-            context.diagnose(
-                note(node, "JSONCodable", "@JSONCodable skips types with custom CodingKeys; keeping standard Codable"))
-            return []
-        }
-        guard let props = storedProperties(structDecl) else {
-            context.diagnose(
-                note(node, "JSONCodable", "@JSONCodable needs explicit property types; keeping standard Codable"))
-            return []
-        }
-
-        let decodeBody = makeDecodeBody(props)
-        let encodeBody = makeEncodeBody(props)
-
-        let ext = try ExtensionDeclSyntax(
-            """
-            extension \(raw: type.trimmedDescription): ADJSONFastDecodable, ADJSONFastEncodable {
-                public static func __adjsonDecode(_ c: _FastDecodeCursor) throws -> Self {
-                    \(raw: decodeBody)
+        guard let props = fastCodableProps(of: node, declaration, "JSONCodable", in: context) else { return [] }
+        return [
+            try ExtensionDeclSyntax(
+                """
+                extension \(raw: type.trimmedDescription): ADJSONFastDecodable, ADJSONFastEncodable {
+                    \(raw: decodeMember(props))
+                    \(raw: encodeMember(props))
                 }
-                public func __adjsonEncode(into w: inout _JSONByteWriter) throws {
-                    w.beginObject()
-                    \(raw: encodeBody)
-                    w.endObject()
-                }
-            }
-            """
-        )
-        return [ext]
+                """)
+        ]
     }
+}
+
+/// Decode-only sibling of `@JSONCodable`: adds `ADJSONFastDecodable` (+ `__adjsonDecode`) without the
+/// encode side, so a `Decodable`-only type (e.g. an MCP tool input) gets the monomorphic fast decode
+/// path without being forced to also be `Encodable`.
+struct JSONDecodableMacro: ExtensionMacro {
+    static func expansion(
+        of node: AttributeSyntax,
+        attachedTo declaration: some DeclGroupSyntax,
+        providingExtensionsOf type: some TypeSyntaxProtocol,
+        conformingTo protocols: [TypeSyntax],
+        in context: some MacroExpansionContext
+    ) throws -> [ExtensionDeclSyntax] {
+        guard let props = fastCodableProps(of: node, declaration, "JSONDecodable", in: context) else { return [] }
+        return [
+            try ExtensionDeclSyntax(
+                """
+                extension \(raw: type.trimmedDescription): ADJSONFastDecodable {
+                    \(raw: decodeMember(props))
+                }
+                """)
+        ]
+    }
+}
+
+/// Encode-only sibling of `@JSONCodable`: adds `ADJSONFastEncodable` (+ `__adjsonEncode`) without the
+/// decode side, for an `Encodable`-only type.
+struct JSONEncodableMacro: ExtensionMacro {
+    static func expansion(
+        of node: AttributeSyntax,
+        attachedTo declaration: some DeclGroupSyntax,
+        providingExtensionsOf type: some TypeSyntaxProtocol,
+        conformingTo protocols: [TypeSyntax],
+        in context: some MacroExpansionContext
+    ) throws -> [ExtensionDeclSyntax] {
+        guard let props = fastCodableProps(of: node, declaration, "JSONEncodable", in: context) else { return [] }
+        return [
+            try ExtensionDeclSyntax(
+                """
+                extension \(raw: type.trimmedDescription): ADJSONFastEncodable {
+                    \(raw: encodeMember(props))
+                }
+                """)
+        ]
+    }
+}
+
+// Shared eligibility check for the three `@JSON*` macros: a struct, no custom `CodingKeys`, explicit
+// property types. On any miss it diagnoses (the type keeps standard Codable) and returns nil; on
+// success it returns the stored properties the decode/encode generators consume.
+private func fastCodableProps(
+    of node: AttributeSyntax, _ declaration: some DeclGroupSyntax, _ macroName: String,
+    in context: some MacroExpansionContext
+) -> [Property]? {
+    guard let structDecl = declaration.as(StructDeclSyntax.self) else {
+        context.diagnose(note(node, macroName, "@\(macroName) only supports structs; the type keeps standard Codable"))
+        return nil
+    }
+    if declaresCodingKeys(structDecl) {
+        context.diagnose(
+            note(node, macroName, "@\(macroName) skips types with custom CodingKeys; keeping standard Codable"))
+        return nil
+    }
+    guard let props = storedProperties(structDecl) else {
+        context.diagnose(note(node, macroName, "@\(macroName) needs explicit property types; keeping standard Codable"))
+        return nil
+    }
+    return props
+}
+
+private func decodeMember(_ props: [Property]) -> String {
+    """
+    public static func __adjsonDecode(_ c: _FastDecodeCursor) throws -> Self {
+            \(makeDecodeBody(props))
+        }
+    """
+}
+
+private func encodeMember(_ props: [Property]) -> String {
+    """
+    public func __adjsonEncode(into w: inout _JSONByteWriter) throws {
+            w.beginObject()
+            \(makeEncodeBody(props))
+            w.endObject()
+        }
+    """
 }
 
 // MARK: - Property extraction
