@@ -75,6 +75,52 @@ public struct JSON: Sendable {
         }
     }
 
+    // MARK: Zero-copy / alloc-free string access
+
+    /// Compares this node's string value to `literal` by UTF-8 bytes, allocating **no** `String` on
+    /// the common (unescaped) path — a fast equivalent of `string == literal.description` for the
+    /// frequent "is this field named X?" / "is this value the literal Y?" tests. Returns `false` for
+    /// any non-string node.
+    ///
+    /// Comparison is on the string's *decoded* content, so an escaped string node (rare for
+    /// literal-like values) is unescaped once before comparing — the alloc-free guarantee holds only
+    /// for unescaped nodes. The literal is matched as raw UTF-8, so non-ASCII literals work too.
+    public func utf8Equals(_ literal: StaticString) -> Bool {
+        guard tag == JSONKind.string.rawValue else { return false }
+        let off = Slot.low(slot), len = Slot.length(slot)
+        if Slot.flags(slot) & 1 == 1 {
+            // Escaped: decode once (JSON5-aware, mirroring `string`) to compare semantic content.
+            let decoded = doc.withBytePointer { p in
+                doc.isJSON5 ? JSONString.unescapeJSON5(p, off, len) : JSONString.unescape(p, off, len)
+            }
+            return decoded == literal.description
+        }
+        // Unescaped fast path: raw byte compare against the literal's UTF-8, no allocation.
+        guard len == literal.utf8CodeUnitCount else { return false }
+        return doc.withBytePointer { p in JSONKey.bytesEqual(p + off, literal.utf8Start, len) }
+    }
+
+    /// Borrows the raw UTF-8 bytes of an **unescaped** string node for the duration of `body`,
+    /// without allocating a `String`. Returns `nil` — and does not call `body` — for a non-string
+    /// node *or* an escaped one (whose on-disk bytes still carry escape sequences); callers handle
+    /// that case with ``string``, which decodes. The pointer is valid only within `body`; do not
+    /// escape it.
+    public func withUTF8Bytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R? {
+        guard tag == JSONKind.string.rawValue, Slot.flags(slot) & 1 == 0 else { return nil }
+        let off = Slot.low(slot), len = Slot.length(slot)
+        return try doc.withBytePointer { p in
+            try body(UnsafeRawBufferPointer(start: p + off, count: len))
+        }
+    }
+
+    /// This number node rendered as an ECMAScript number string — the JavaScript `String(n)` /
+    /// `JSON.stringify(n)` shortest-round-trip form (see ``JSONOutput/ecmaNumberToString(_:)``).
+    /// `nil` for any non-number node. JSON5 `Infinity`/`NaN` literals render as `"Infinity"`/`"NaN"`.
+    public var jsNumberString: String? {
+        guard tag == JSONKind.number.rawValue, let d = double else { return nil }
+        return JSONOutput.ecmaNumberToString(d)
+    }
+
     // MARK: Containers
 
     public var array: [JSON]? {
@@ -144,7 +190,7 @@ public struct JSON: Sendable {
     /// the resulting `Dictionary`/`Array` instead.
     public subscript(key: String) -> JSON { member(key) }
     /// Look up an array element by index. O(n) in the element's position (the tape stores no offset
-    /// index); see ``subscript(key:)`` for the materialize-once guidance on repeated access.
+    /// index); see ``JSON/subscript(_:)`` for the materialize-once guidance on repeated access.
     public subscript(index idx: Int) -> JSON { element(idx) }
     public subscript(dynamicMember key: String) -> JSON { member(key) }
 

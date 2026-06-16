@@ -221,6 +221,20 @@ public enum JSONOutput {
         }
     }
 
+    /// The ECMAScript `Number::toString` of `v` as a `String` — the JavaScript `String(n)` /
+    /// `JSON.stringify(n)` shortest-round-trip form (see ``appendECMANumber(_:to:)``). Non-finite
+    /// inputs render as the ECMAScript `ToString` tokens `"NaN"`, `"Infinity"`, and `"-Infinity"`;
+    /// those are language-level coercions, **not** valid JSON, so this is for host string coercion,
+    /// not serialization (serialization routes non-finite values through `JSONEncodingOptions`).
+    public static func ecmaNumberToString(_ v: Double) -> String {
+        if v.isNaN { return "NaN" }
+        if v.isInfinite { return v < 0 ? "-Infinity" : "Infinity" }
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(24)  // ECMA-262 doubles render in ≤ 24 ASCII bytes
+        appendECMANumber(v, to: &bytes)
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
     /// Emits a `Double` per the encoding `options`: `numberFormat` chooses Swift-shortest
     /// (`Double.description`) vs ECMA-262, and `nonFinite` chooses throw / `null` / string-literal.
     /// The single source of truth for the Codable encode paths (matches their current

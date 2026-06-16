@@ -128,6 +128,76 @@ nonisolated(unsafe) let benchmarks = {
         }
     }
 
+    // MARK: compare  (alloc-free byte compare vs String materialization — the content hot path)
+
+    // DocC-shaped nodes matched on a field name, like the content pipeline's `stringEquals` sites.
+    // Short values ("paragraph", 9 B) fit Swift's small-string buffer, so the `==` baseline also
+    // avoids a heap alloc there — the `utf8Equals` win is the skipped String construction + decode.
+    let typedNodesData = Data(
+        ("[" + Array(repeating: #"{"type":"paragraph"}"#, count: 4000).joined(separator: ",") + "]").utf8)
+    let typedNodes = try! ADJSON.parse(typedNodesData)
+    Benchmark("compare/utf8Equals") { bm in
+        for _ in bm.scaledIterations {
+            var hits = 0
+            typedNodes.root.forEachElement { if $0.type.utf8Equals("paragraph") { hits &+= 1 } }
+            blackHole(hits)
+        }
+    }
+    Benchmark("compare/string ==") { bm in
+        for _ in bm.scaledIterations {
+            var hits = 0
+            typedNodes.root.forEachElement { if $0.type.string == "paragraph" { hits &+= 1 } }
+            blackHole(hits)
+        }
+    }
+    // Long values (> 15 B) spill the small-string buffer, so `.string ==` pays a heap alloc per
+    // compare while `utf8Equals` stays at zero — the malloc-count delta the content team is holding.
+    let longLiteral: StaticString = "this-identifier-is-longer-than-the-small-string-buffer"
+    let longNode = #"{"type":"this-identifier-is-longer-than-the-small-string-buffer"}"#
+    let longNodesData = Data(("[" + Array(repeating: longNode, count: 4000).joined(separator: ",") + "]").utf8)
+    let longNodes = try! ADJSON.parse(longNodesData)
+    Benchmark("compare/utf8Equals long") { bm in
+        for _ in bm.scaledIterations {
+            var hits = 0
+            longNodes.root.forEachElement { if $0.type.utf8Equals(longLiteral) { hits &+= 1 } }
+            blackHole(hits)
+        }
+    }
+    Benchmark("compare/string == long") { bm in
+        for _ in bm.scaledIterations {
+            var hits = 0
+            longNodes.root.forEachElement { if $0.type.string == longLiteral.description { hits &+= 1 } }
+            blackHole(hits)
+        }
+    }
+
+    // MARK: ecma-number  (ECMAScript Number::toString — the .javaScript / JS-stringify path)
+
+    Benchmark("encode/ecma-number") { bm in
+        for _ in bm.scaledIterations {
+            var sink = 0
+            for d in doubles { sink &+= JSONOutput.ecmaNumberToString(d).utf8.count }
+            blackHole(sink)
+        }
+    }
+    Benchmark("encode/JSONValue javaScript") { bm in
+        let value = try! JSONValue(parsing: doubleData)
+        for _ in bm.scaledIterations { blackHole(try! value.encoded(options: .javaScript)) }
+    }
+
+    // MARK: borrowed parse  (zero-copy buffer vs the [UInt8] copy it avoids)
+
+    Benchmark("parse/borrowed buffer") { bm in
+        for _ in bm.scaledIterations {
+            userData.withUnsafeBytes { raw in blackHole(try! ADJSON.parse(raw)) }
+        }
+    }
+    Benchmark("parse/copy then parse") { bm in
+        for _ in bm.scaledIterations {
+            userData.withUnsafeBytes { raw in blackHole(try! ADJSON.parse([UInt8](raw))) }
+        }
+    }
+
     // MARK: query  (JSONPath, RFC 9535 — pre-parsed root)
 
     Benchmark("query/filter") { bm in
