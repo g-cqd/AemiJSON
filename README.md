@@ -234,11 +234,12 @@ without a before/after number.
 
 ### Architecture & refactoring
 
-- [ ] **Extract a shared RFC-8259 tokenizer.** The number / string / escape / UTF-8 grammar is
-  copy-pasted across three readers (the tape scanner, the pull-SAX `JSONEventReader`, and the
-  push-SAX `JSONEventStreamReader`), so any grammar fix must be made in three places. Extract
-  resumability-aware tokenization helpers. Biggest maintainability win, but large and carries
-  conformance-suite (JSONTestSuite + JSONPath CTS) regression risk — deserves a focused PR.
+- [x] **Shared RFC-8259 tokenizer (SAX readers).** The number and string (escape / surrogate /
+  RFC 3629 UTF-8) grammar is extracted into `Core/Tokenizer.swift` as resumability-aware
+  `JSONNumber.scanLexeme` / `JSONString.scanLexeme` (`.ok`/`.incomplete`/`.invalid`), and both the
+  pull-SAX `JSONEventReader` and push-SAX `JSONEventStreamReader` now share it — grammar lives in one
+  place. The tape scanner deliberately keeps its SWAR-integrated variant for throughput. Landed
+  behaviour-preserving (JSONTestSuite 318/318, chunk-boundary + fuzz suites, ASan/UBSan green).
 - [x] **Depth caps — audited and documented.** The *Depth Safety* DocC article maps every cap and the
   per-call-site rationale (frame size drives the value), and now records why the remaining recursion
   stays guarded rather than rewritten iteratively. Decision: keep the documented per-site caps;
