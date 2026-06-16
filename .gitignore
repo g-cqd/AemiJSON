@@ -17,6 +17,12 @@ _site/
 *.profraw
 *.profdata
 
+# Benchmark baselines (ordo-one/benchmark) are machine-specific scratch. Only a runner-generated
+# `main` baseline is ever committed — and it is force-added (`git add -f`) from the CI
+# "update_baseline" dispatch artifact — so the directory is ignored wholesale to keep local-machine
+# numbers (which would miscalibrate the CI regression gate) out of the repo.
+/.benchmarkBaselines/
+
 # Editors
 .vscode/
 .idea/

@@ -14,8 +14,14 @@ on:
     paths-ignore: ["README.md", "CONTRIBUTING.md", "LICENSE", ".gitignore", ".githooks/**"]
   pull_request:
     paths-ignore: ["README.md", "CONTRIBUTING.md", "LICENSE", ".gitignore", ".githooks/**"]
-  # On-demand trigger for the slow sanitizer passes (and a full platform/docs run when wanted).
+  # On-demand trigger for the slow sanitizer passes (and a full platform/docs run when wanted), and to
+  # (re)generate the benchmark baseline on this runner class via the `update_baseline` input below.
   workflow_dispatch:
+    inputs:
+      update_baseline:
+        description: "Regenerate the benchmark baseline (.benchmarkBaselines/main) and upload it as an artifact to commit"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -57,23 +63,42 @@ jobs:
         env:
           ADJSON_NIO: "1"
         run: swift test --filter ADJSONNIOTests
-      - name: Coverage summary
+      - name: Coverage summary + floor gate
         if: always()
+        env:
+          # Line-coverage floor for the shipped library sources (Tests/.build/Benchmarks excluded). Set
+          # conservatively below the ~86% currently measured so ordinary toolchain/runner variance can't
+          # flake it; ratchet it upward as coverage climbs. A drop below the floor fails the job — this
+          # is the project's coverage gate.
+          COVERAGE_FLOOR: "80"
         run: |
           set -o pipefail
           BIN=$(swift build --show-bin-path)
           PROF="$BIN/codecov/default.profdata"
           XCTEST=$(find "$BIN" -name '*.xctest' -maxdepth 1 | head -1)
-          if [ -n "$XCTEST" ] && [ -f "$PROF" ]; then
-            TOOL="$XCTEST/Contents/MacOS/$(basename "$XCTEST" .xctest)"
-            {
-              echo "## Code coverage"
-              echo '```text'
-              xcrun llvm-cov report "$TOOL" -instr-profile "$PROF" \
-                -ignore-filename-regex='(Tests|\.build|Benchmarks)/' 2>/dev/null | tail -25
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$XCTEST" ] || [ ! -f "$PROF" ]; then
+            echo "_No coverage profile (tests did not produce one); coverage gate skipped._" \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+          TOOL="$XCTEST/Contents/MacOS/$(basename "$XCTEST" .xctest)"
+          IGNORE='(Tests|\.build|Benchmarks)/'
+          {
+            echo "## Code coverage"
+            echo '```text'
+            xcrun llvm-cov report "$TOOL" -instr-profile "$PROF" \
+              -ignore-filename-regex="$IGNORE" 2>/dev/null | tail -25
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Parse total line-coverage % from the machine-readable export (robust to column drift) and
+          # gate on the floor.
+          PCT=$(xcrun llvm-cov export -summary-only "$TOOL" -instr-profile "$PROF" \
+            -ignore-filename-regex="$IGNORE" 2>/dev/null \
+            | python3 -c 'import json,sys; print("%.2f" % json.load(sys.stdin)["data"][0]["totals"]["lines"]["percent"])')
+          echo "Line coverage: **${PCT}%** (floor ${COVERAGE_FLOOR}%)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Line coverage: ${PCT}% (floor ${COVERAGE_FLOOR}%)"
+          awk -v p="$PCT" -v f="$COVERAGE_FLOOR" \
+            'BEGIN { if (p+0 < f+0) { printf "::error::line coverage %s%% is below the floor %s%%\n", p, f; exit 1 } }'
 
   changes:
     name: Detect unsafe / concurrency changes
@@ -341,20 +366,40 @@ jobs:
         run: |
           set -o pipefail
           swift package --allow-writing-to-package-directory benchmark --format markdown | tee bench-output.md
+      - name: Update & upload benchmark baseline (manual dispatch)
+        # The regression gate needs a baseline captured on THIS runner class — a local dev machine
+        # miscalibrates hosted-runner timings. Trigger this workflow via "Run workflow" with
+        # `update_baseline=true`; download the `benchmark-baseline-main` artifact and commit it under
+        # `.benchmarkBaselines/main`. That activates the advisory regression check below; once the runner
+        # proves stable, drop that step's `continue-on-error` to make it a hard gate.
+        if: github.event_name == 'workflow_dispatch' && inputs.update_baseline
+        env:
+          ADJSON_DEV: "1"
+        run: swift package --allow-writing-to-package-directory benchmark baseline update main
+      - name: Upload benchmark baseline artifact
+        if: github.event_name == 'workflow_dispatch' && inputs.update_baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-baseline-main
+          # ordo-one stores baselines at `.benchmarkBaselines/<target>/<name>/`; upload the whole tree
+          # (a fresh runner holds only the `main` baseline just generated) for the maintainer to commit.
+          path: .benchmarkBaselines/
+          if-no-files-found: error
       - name: Regression check vs committed baseline (advisory)
         # Advisory regression gate. When a baseline has been committed under `.benchmarkBaselines/main`
-        # — generated on this runner class via a manual dispatch:
-        #   ADJSON_DEV=1 swift package --allow-writing-to-package-directory benchmark baseline update main
-        # then committed — this compares the current run against it and reports deltas. It is
-        # `continue-on-error` (and a no-op until a baseline exists), so hosted-runner variance can
-        # never break the build; it only surfaces drift in the job summary. Promote to a hard gate
-        # only if the runner proves stable enough.
+        # — generated on this runner class with one click via the "Update & upload benchmark baseline"
+        # step above (manual dispatch, `update_baseline=true`), then committed — this compares the
+        # current run against it and reports deltas. It is `continue-on-error` (and a no-op until a
+        # baseline exists), so hosted-runner variance can never break the build; it only surfaces drift
+        # in the job summary. Promote to a hard gate only once the runner proves stable enough.
         if: always()
         continue-on-error: true
         env:
           ADJSON_DEV: "1"
         run: |
-          if [ -d .benchmarkBaselines/main ]; then
+          # ordo-one stores baselines at `.benchmarkBaselines/<target>/<name>/`, so probe the glob
+          # rather than a fixed `.benchmarkBaselines/main` path (which never matches).
+          if ls -d .benchmarkBaselines/*/main >/dev/null 2>&1; then
             {
               echo "## Benchmark regression check (advisory) vs baseline \`main\`"
               echo '```text'
@@ -362,7 +407,7 @@ jobs:
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "_No committed baseline (.benchmarkBaselines/main); skipping advisory regression check._" \
+            echo "_No committed \`main\` baseline (.benchmarkBaselines/*/main); skipping advisory regression check._" \
               >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: ADJSON-vs-Foundation comparison table
