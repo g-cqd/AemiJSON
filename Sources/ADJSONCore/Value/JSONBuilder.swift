@@ -11,10 +11,9 @@ import OrderedCollections
 
 // MARK: - Literal conformances
 
-extension JSONValue: ExpressibleByNilLiteral {
-    /// `nil` denotes JSON `null`.
-    public init(nilLiteral: ()) { self = .null }
-}
+// Deliberately NOT `ExpressibleByNilLiteral`: making `nil` mean `.null` changes the inferred type of
+// `nil` in Optional contexts (a `JSONValue?`-returning `cond ? nil : value` ternary would bind `nil`
+// to `.null` instead of `.none`, and `someOptional == nil` could shift meaning). Use `.null` directly.
 
 extension JSONValue: ExpressibleByBooleanLiteral {
     public init(booleanLiteral value: Bool) { self = .bool(value) }

@@ -12,8 +12,6 @@ private func objectKeys(_ value: JSONValue) -> [String]? {
 @Suite("JSONValue builders & literals")
 struct JSONBuilderTests {
     @Test func scalarLiteralsMapToCases() {
-        let null: JSONValue = nil
-        #expect(null == .null)
         #expect((true as JSONValue) == .bool(true))
         #expect((42 as JSONValue) == .int(42))
         #expect((3.5 as JSONValue) == .number(3.5))
@@ -21,7 +19,7 @@ struct JSONBuilderTests {
     }
 
     @Test func arrayAndDictionaryLiterals() throws {
-        let array: JSONValue = [1, "two", true, nil]
+        let array: JSONValue = [1, "two", true, .null]
         #expect(array == .array([.int(1), .string("two"), .bool(true), .null]))
 
         let object: JSONValue = ["b": 1, "a": 2]
