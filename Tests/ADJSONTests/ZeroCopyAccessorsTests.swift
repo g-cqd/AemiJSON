@@ -55,6 +55,59 @@ import Testing
     #expect(!root.e.utf8Equals("x"))
 }
 
+@Test func utf8EqualsEscapedValuesUseAllocFreeCompare() throws {
+    let root = try ADJSON.parse(#"{"x":"aAb","y":"q\"r","z":"tab\there","u":"😀"}"#).root
+    #expect(root.x.utf8Equals("aAb"))  // A -> A
+    #expect(root.y.utf8Equals("q\"r"))
+    #expect(root.z.utf8Equals("tab\there"))
+    #expect(root.u.utf8Equals("😀"))  // surrogate pair -> U+1F600
+    #expect(!root.x.utf8Equals("aBb"))
+    #expect(!root.x.utf8Equals("aA"))  // prefix, shorter
+}
+
+// Escaped object keys must still resolve via member() (which now compares the unescaped key bytes
+// on the fly, without allocating a String per comparison).
+@Test func escapedObjectKeyLookupResolves() throws {
+    let root = try ADJSON.parse(#"{"a\"b":1,"cAd":2,"e\\f":3,"tab\tx":4}"#).root
+    #expect(root["a\"b"].int == 1)
+    #expect(root["cAd"].int == 2)  // A -> A
+    #expect(root["e\\f"].int == 3)
+    #expect(root["tab\tx"].int == 4)
+    #expect(root["missing"].exists == false)
+    #expect(root["a\"x"].exists == false)  // same length, different content
+}
+
+// The comparator must be byte-for-byte equivalent to `unescape(...) == target` for every escape
+// form, including surrogate pairs and unpaired/invalid surrogates (which decode to U+FFFD).
+@Test func unescapedEqualsIsEquivalentToUnescape() {
+    func refDecode(_ body: String) -> String {
+        var b = body
+        return b.withUTF8 { bb in bb.baseAddress.map { JSONString.unescape($0, 0, bb.count) } ?? "" }
+    }
+    func ueq(_ body: String, _ target: String) -> Bool {
+        var b = body
+        var t = target
+        return b.withUTF8 { bb in
+            t.withUTF8 { tb in
+                let bp = bb.baseAddress ?? UnsafePointer(bitPattern: 0x4)!
+                let tp = tb.baseAddress ?? UnsafePointer(bitPattern: 0x4)!
+                return JSONString.unescapedEquals(bp, 0, bb.count, tp, tb.count)
+            }
+        }
+    }
+    let bodies = [
+        "", "hello", #"a\"b"#, #"\\"#, #"\/"#, #"\n\t\r\b\f"#, #"Aé中"#,
+        #"😀"#, #"mixAtext"#, #"\uD800x"#, #"\uDC00"#, #"\uD800\uD800"#, "plain text here",
+    ]
+    for body in bodies {
+        let decoded = refDecode(body)
+        #expect(ueq(body, decoded), "should match decoded: \(body)")
+        #expect(!ueq(body, decoded + "x"), "longer target: \(body)")
+        if !decoded.isEmpty { #expect(!ueq(body, String(decoded.dropLast())), "shorter target: \(body)") }
+        #expect(ueq(body, "zzz") == (decoded == "zzz"))
+    }
+}
+
 // MARK: withUTF8Bytes
 
 @Test func withUTF8BytesBorrowsRawBytesOfUnescapedString() throws {

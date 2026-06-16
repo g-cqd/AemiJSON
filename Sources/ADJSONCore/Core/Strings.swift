@@ -122,6 +122,82 @@ public enum JSONString {
         return String(decoding: out, as: UTF8.self)
     }
 
+    // Compare the strict-unescaped form of `p[offset..<offset+length]` to `target` byte-for-byte,
+    // decoding escapes on the fly so no intermediate `String`/`[UInt8]` is allocated. Behaviour is
+    // identical to `unescape(p, offset, length) == String(decoding: target)`, just allocation-free —
+    // used by the object-key compare path where most keys are unescaped but some are not.
+    public static func unescapedEquals(
+        _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, _ target: UnsafePointer<UInt8>, _ targetLength: Int
+    ) -> Bool {
+        var t = 0
+        // Match one decoded byte against the target; false on overrun or mismatch.
+        func emit(_ b: UInt8) -> Bool {
+            if t >= targetLength || target[t] != b { return false }
+            t += 1
+            return true
+        }
+        var j = offset
+        let end = offset + length
+        while j < end {
+            let c = p[j]
+            if c != 0x5C {
+                if !emit(c) { return false }
+                j += 1
+                continue
+            }
+            j += 1
+            guard j < end else { break }
+            let e = p[j]
+            j += 1
+            switch e {
+            case 0x22: if !emit(0x22) { return false }
+            case 0x5C: if !emit(0x5C) { return false }
+            case 0x2F: if !emit(0x2F) { return false }
+            case 0x6E: if !emit(0x0A) { return false }
+            case 0x74: if !emit(0x09) { return false }
+            case 0x72: if !emit(0x0D) { return false }
+            case 0x62: if !emit(0x08) { return false }
+            case 0x66: if !emit(0x0C) { return false }
+            case 0x75:
+                let hi = readHex4(p, j, end)
+                j += 4
+                var scalar = UInt32(hi)
+                if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
+                    let lo = readHex4(p, j + 2, end)
+                    if lo >= 0xDC00 && lo <= 0xDFFF {
+                        scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
+                        j += 6
+                    }
+                }
+                // Emit the scalar's UTF-8 (computed directly), or U+FFFD for an unpaired surrogate /
+                // out-of-range value — matching `unescape`.
+                if Unicode.Scalar(scalar) != nil {
+                    if scalar < 0x80 {
+                        if !emit(UInt8(scalar)) { return false }
+                    } else if scalar < 0x800 {
+                        if !emit(UInt8(0xC0 | (scalar >> 6))) || !emit(UInt8(0x80 | (scalar & 0x3F))) { return false }
+                    } else if scalar < 0x10000 {
+                        if !emit(UInt8(0xE0 | (scalar >> 12))) || !emit(UInt8(0x80 | ((scalar >> 6) & 0x3F)))
+                            || !emit(UInt8(0x80 | (scalar & 0x3F)))
+                        {
+                            return false
+                        }
+                    } else {
+                        if !emit(UInt8(0xF0 | (scalar >> 18))) || !emit(UInt8(0x80 | ((scalar >> 12) & 0x3F)))
+                            || !emit(UInt8(0x80 | ((scalar >> 6) & 0x3F))) || !emit(UInt8(0x80 | (scalar & 0x3F)))
+                        {
+                            return false
+                        }
+                    }
+                } else {
+                    if !emit(0xEF) || !emit(0xBF) || !emit(0xBD) { return false }
+                }
+            default: if !emit(e) { return false }
+            }
+        }
+        return t == targetLength
+    }
+
     @inline(__always)
     private static func readHex4(_ p: UnsafePointer<UInt8>, _ start: Int, _ end: Int) -> UInt16 {
         var v: UInt16 = 0

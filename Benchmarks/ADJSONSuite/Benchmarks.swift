@@ -171,6 +171,14 @@ nonisolated(unsafe) let benchmarks = {
         }
     }
 
+    // Object with many escaped keys: member() compares the lookup key against each candidate, and the
+    // escaped-key compare is now alloc-free (was a String per comparison). last-wins scans them all.
+    let escapedKeysJSON = "{" + (0..<100).map { #""k\u0041\#($0)":\#($0)"# }.joined(separator: ",") + "}"
+    let escapedKeyDoc = try! ADJSON.parse(escapedKeysJSON)  // keys "kAN" decode to "kAN"
+    Benchmark("compare/escaped-key lookup") { bm in
+        for _ in bm.scaledIterations { blackHole(escapedKeyDoc.root["kA99"].intValue) }
+    }
+
     // MARK: ecma-number  (ECMAScript Number::toString — the .javaScript / JS-stringify path)
 
     Benchmark("encode/ecma-number") { bm in

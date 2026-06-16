@@ -89,11 +89,15 @@ public struct JSON: Sendable {
         guard tag == JSONKind.string.rawValue else { return false }
         let off = Slot.low(slot), len = Slot.length(slot)
         if Slot.flags(slot) & 1 == 1 {
-            // Escaped: decode once (JSON5-aware, mirroring `string`) to compare semantic content.
-            let decoded = doc.withBytePointer { p in
-                doc.isJSON5 ? JSONString.unescapeJSON5(p, off, len) : JSONString.unescape(p, off, len)
+            // JSON5's escape set requires the dedicated decoder, so it materializes once; strict/lenient
+            // compare the decoded bytes on the fly via the alloc-free comparator.
+            if doc.isJSON5 {
+                let decoded = doc.withBytePointer { JSONString.unescapeJSON5($0, off, len) }
+                return decoded == literal.description
             }
-            return decoded == literal.description
+            return doc.withBytePointer {
+                JSONString.unescapedEquals($0, off, len, literal.utf8Start, literal.utf8CodeUnitCount)
+            }
         }
         // Unescaped fast path: raw byte compare against the literal's UTF-8, no allocation.
         guard len == literal.utf8CodeUnitCount else { return false }

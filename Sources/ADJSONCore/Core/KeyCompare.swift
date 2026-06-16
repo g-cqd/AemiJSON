@@ -41,7 +41,13 @@ public enum JSONKey {
     public static func matches(
         _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, _ key: String
     ) -> Bool {
-        if escaped { return JSONString.unescape(p, off, len) == key }
+        if escaped {
+            var k = key
+            return k.withUTF8 { kb in
+                guard let kp = kb.baseAddress else { return len == 0 }
+                return JSONString.unescapedEquals(p, off, len, kp, kb.count)
+            }
+        }
         return bytesEqual(key, p + off, len)
     }
 
@@ -49,7 +55,7 @@ public enum JSONKey {
     public static func matches(
         _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, _ key: StaticString
     ) -> Bool {
-        if escaped { return JSONString.unescape(p, off, len) == key.description }
+        if escaped { return JSONString.unescapedEquals(p, off, len, key.utf8Start, key.utf8CodeUnitCount) }
         return len == key.utf8CodeUnitCount && bytesEqual(p + off, key.utf8Start, len)
     }
 }
