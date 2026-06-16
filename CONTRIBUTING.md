@@ -18,7 +18,10 @@ That's it. The toolchain's bundled `swift format` powers the plugins; no extra t
 ```sh
 swift build                 # build the library
 swift test                  # run the test + conformance suite
+swift test --enable-code-coverage \
+  && swift package coverage-check --floor 80   # the coverage gate CI runs (see Coverage below)
 ADJSON_DEV=1 swift package benchmark   # the ordo-one/benchmark suite (Benchmarks/ADJSONSuite)
+swift package bench-compare            # ADJSON-vs-Foundation table (build the suite first; see Benchmarks)
 
 swift package format        # format in place  (add --allow-writing-to-package-directory if prompted)
 swift package lint          # formatting gate + shipped-library discipline (what CI runs)
@@ -27,9 +30,27 @@ swift package fetch-fixtures \
   # add: --allow-network-connections all --allow-writing-to-package-directory
 ```
 
-`swift package lint` is the single source of truth for the lint rules: `swift format lint
---strict`, plus the shipped-library discipline (no force-unwrap / force-try / force-cast /
-locale-sensitive `strtod` in `Sources/ADJSON`). Fix formatting with `swift package format`.
+`swift package lint` is the single source of truth for the lint rules: a `swift format lint --strict`
+formatting pass over the package, plus shipped-library discipline on `Sources/ADJSON` **and**
+`Sources/ADJSONCore`. The latter forbids **force-unwrap / force-cast / force-try** via swift-format's
+AST rules (`NeverForceUnwrap`, `NeverUseForceTry`, run with the project config plus those two switched
+on — so every `x!` / `as!` / `try!` is caught, not a fixed pattern set) and a locale-sensitive
+`strtod`. Annotate a reviewed force-unwrap with `// swift-format-ignore: NeverForceUnwrap` on the line
+above it. Fix formatting with `swift package format`.
+
+## Coverage
+
+CI gates on line coverage of the shipped library sources (`Tests` / `.build` / `Benchmarks`
+excluded). Reproduce the gate locally:
+
+```sh
+swift test --enable-code-coverage
+swift package coverage-check --floor 80     # per-file report + verdict; non-zero exit below the floor
+```
+
+The `coverage-check` command plugin (macOS) reads the test profile, runs `xcrun llvm-cov`, and fails
+below the floor — the exact gate CI runs. Keep new code covered; the floor is set below the current
+number and ratchets up over time.
 
 ## Sanitizers
 
@@ -86,6 +107,31 @@ The `format`, `lint`, and `fetch-fixtures` command plugins are dependency-free a
 the flag. `ADJSON_DEV` also pulls swift-docc-plugin (docs) and swift-collections (only the benchmark
 target, for the OrderedDictionary-vs-Dictionary comparison) — neither is ever resolved by consumers.
 
+## The `ADJSON_NIO` flag
+
+The swift-nio adapter (`ADJSONNIO`) is gated behind `ADJSON_NIO` so swift-nio stays out of the default
+resolution graph — consumers of `ADJSON` / `ADJSONCore` never fetch it. Build and test it with:
+
+```sh
+ADJSON_NIO=1 swift build
+ADJSON_NIO=1 swift test --filter ADJSONNIOTests
+```
+
+## Benchmarks & the regression baseline
+
+```sh
+ADJSON_DEV=1 swift package benchmark                         # full ordo-one/benchmark suite
+ADJSON_DEV=1 swift build -c release --product ADJSONSuite    # build the suite once, then:
+swift package bench-compare                                  # ADJSON-vs-Foundation speedup table
+```
+
+Regression gating compares each run against a committed baseline under `.benchmarkBaselines/main`.
+Hosted-runner timings differ from a local machine, so generate the baseline **on the CI runner**:
+trigger the workflow (`workflow_dispatch`) with `update_baseline=true`, download the
+`benchmark-baseline-main` artifact, and commit it with `git add -f .benchmarkBaselines/main` (local
+baselines are gitignored). CI then reports drift against it — advisory until the runner proves stable
+enough to promote to a hard gate.
+
 ## Dependencies & `Package.resolved`
 
 The shipped graph is deliberately thin: the library proper depends only on **swift-syntax** (the
@@ -110,7 +156,10 @@ Committed in `.githooks/` and enabled via `core.hooksPath` (above):
 A single workflow — **`.github/workflows/ci.yml`** — chains everything and only fans out after
 the gate passes:
 
-- **`build-test`** (macOS): lint → build → fixtures → test, in one job (one cache, warm build).
+- **`build-test`** (macOS): lint → build → fixtures → test → coverage gate, in one job (one cache,
+  warm build). The coverage step runs `coverage-check` and fails below the floor.
+- **`benchmarks`** (macOS, `main` / dispatch): runs the suite, renders the `bench-compare` table into
+  the job summary, and (advisory) checks against `.benchmarkBaselines/main` when committed.
 - **`platforms`**: a cross-platform compile matrix (iOS / tvOS / watchOS / visionOS), on
   `main` / manual dispatch.
 - **`sanitizers`**: TSan + ASan passes over `swift test`, on `main` / manual dispatch — and,
