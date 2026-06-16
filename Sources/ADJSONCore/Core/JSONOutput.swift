@@ -128,96 +128,115 @@ public enum JSONOutput {
     /// round-trippable digits (from `description`) and only re-renders their placement. The caller
     /// must have already handled non-finite values.
     public static func appendECMANumber(_ v: Double, to bytes: inout [UInt8]) {
-        let d = Array(v.description.utf8)  // shortest round-trippable, ASCII
-        var pos = 0
-        let negative = d.first == 0x2D
-        if negative { pos = 1 }
+        // `description` is the only allocation (Swift's shortest round-trippable digits, ASCII); its
+        // bytes are read in place via `withUTF8`, and the digit gathering uses a stack buffer — a
+        // finite double prints in ≤ 24 ASCII bytes, so its significant digits fit a fixed 24-byte
+        // span with no further heap allocation.
+        var desc = v.description
+        desc.withUTF8 { d in
+            let count = d.count
+            var pos = 0
+            let negative = d.first == 0x2D
+            if negative { pos = 1 }
 
-        // Split off an explicit exponent (`e±NN`), if any.
-        var exp = 0
-        var mantEnd = d.count
-        var j = pos
-        while j < d.count {
-            if d[j] == 0x65 || d[j] == 0x45 {
-                mantEnd = j
-                var ei = j + 1
-                var eNeg = false
-                if ei < d.count, d[ei] == 0x2B || d[ei] == 0x2D {
-                    eNeg = d[ei] == 0x2D
-                    ei += 1
+            // Split off an explicit exponent (`e±NN`), if any.
+            var exp = 0
+            var mantEnd = count
+            var j = pos
+            while j < count {
+                if d[j] == 0x65 || d[j] == 0x45 {
+                    mantEnd = j
+                    var ei = j + 1
+                    var eNeg = false
+                    if ei < count, d[ei] == 0x2B || d[ei] == 0x2D {
+                        eNeg = d[ei] == 0x2D
+                        ei += 1
+                    }
+                    var e = 0
+                    while ei < count {
+                        e = e * 10 + Int(d[ei] - 0x30)
+                        ei += 1
+                    }
+                    exp = eNeg ? -e : e
+                    break
                 }
-                var e = 0
-                while ei < d.count {
-                    e = e * 10 + Int(d[ei] - 0x30)
-                    ei += 1
+                j += 1
+            }
+
+            // Locate the decimal point within the mantissa.
+            var dotAt = -1
+            var t = pos
+            while t < mantEnd {
+                if d[t] == 0x2E {
+                    dotAt = t
+                    break
                 }
-                exp = eNeg ? -e : e
-                break
+                t += 1
             }
-            j += 1
-        }
 
-        // Gather the significant digits and the decimal-point position `pointPos` (digits before it).
-        var dotAt = -1
-        var t = pos
-        while t < mantEnd {
-            if d[t] == 0x2E {
-                dotAt = t
-                break
+            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 24) { digits in
+                // Gather the significant digits and the decimal-point position `pointPos`.
+                var dc = 0
+                var pointPos: Int
+                if dotAt >= 0 {
+                    for x in pos..<dotAt {
+                        digits[dc] = d[x]
+                        dc += 1
+                    }
+                    for x in (dotAt + 1)..<mantEnd {
+                        digits[dc] = d[x]
+                        dc += 1
+                    }
+                    pointPos = dotAt - pos
+                } else {
+                    for x in pos..<mantEnd {
+                        digits[dc] = d[x]
+                        dc += 1
+                    }
+                    pointPos = mantEnd - pos
+                }
+                pointPos += exp
+
+                // Normalize to shortest significant digits `[start, end)`, adjusting `pointPos`.
+                var start = 0
+                while start < dc, digits[start] == 0x30 {
+                    start += 1
+                    pointPos -= 1
+                }
+                var end = dc
+                while end > start, digits[end - 1] == 0x30 { end -= 1 }
+                if start >= end {  // value is zero (including -0)
+                    bytes.append(0x30)
+                    return
+                }
+
+                let k = end - start
+                let n = pointPos
+                if negative { bytes.append(0x2D) }
+                if k <= n, n <= 21 {
+                    for x in start..<end { bytes.append(digits[x]) }
+                    for _ in 0..<(n - k) { bytes.append(0x30) }
+                } else if n > 0, n <= 21 {
+                    for x in start..<(start + n) { bytes.append(digits[x]) }
+                    bytes.append(0x2E)
+                    for x in (start + n)..<end { bytes.append(digits[x]) }
+                } else if n > -6, n <= 0 {
+                    bytes.append(0x30)
+                    bytes.append(0x2E)
+                    for _ in 0..<(-n) { bytes.append(0x30) }
+                    for x in start..<end { bytes.append(digits[x]) }
+                } else {
+                    bytes.append(digits[start])
+                    if k > 1 {
+                        bytes.append(0x2E)
+                        for x in (start + 1)..<end { bytes.append(digits[x]) }
+                    }
+                    bytes.append(0x65)  // 'e'
+                    let e = n - 1
+                    bytes.append(e >= 0 ? 0x2B : 0x2D)
+                    appendInteger(abs(e), to: &bytes)
+                }
             }
-            t += 1
-        }
-        var digits = [UInt8]()
-        digits.reserveCapacity(mantEnd - pos)
-        var pointPos: Int
-        if dotAt >= 0 {
-            for x in pos..<dotAt { digits.append(d[x]) }
-            for x in (dotAt + 1)..<mantEnd { digits.append(d[x]) }
-            pointPos = dotAt - pos
-        } else {
-            for x in pos..<mantEnd { digits.append(d[x]) }
-            pointPos = mantEnd - pos
-        }
-        pointPos += exp
-
-        // Normalize to shortest significant digits `[start, end)`, adjusting `pointPos`.
-        var start = 0
-        while start < digits.count, digits[start] == 0x30 {
-            start += 1
-            pointPos -= 1
-        }
-        var end = digits.count
-        while end > start, digits[end - 1] == 0x30 { end -= 1 }
-        if start >= end {  // value is zero (including -0)
-            bytes.append(0x30)
-            return
-        }
-
-        let k = end - start
-        let n = pointPos
-        if negative { bytes.append(0x2D) }
-        if k <= n, n <= 21 {
-            for x in start..<end { bytes.append(digits[x]) }
-            for _ in 0..<(n - k) { bytes.append(0x30) }
-        } else if n > 0, n <= 21 {
-            for x in start..<(start + n) { bytes.append(digits[x]) }
-            bytes.append(0x2E)
-            for x in (start + n)..<end { bytes.append(digits[x]) }
-        } else if n > -6, n <= 0 {
-            bytes.append(0x30)
-            bytes.append(0x2E)
-            for _ in 0..<(-n) { bytes.append(0x30) }
-            for x in start..<end { bytes.append(digits[x]) }
-        } else {
-            bytes.append(digits[start])
-            if k > 1 {
-                bytes.append(0x2E)
-                for x in (start + 1)..<end { bytes.append(digits[x]) }
-            }
-            bytes.append(0x65)  // 'e'
-            let e = n - 1
-            bytes.append(e >= 0 ? 0x2B : 0x2D)
-            appendInteger(abs(e), to: &bytes)
         }
     }
 
