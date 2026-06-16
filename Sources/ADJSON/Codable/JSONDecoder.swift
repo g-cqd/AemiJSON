@@ -71,5 +71,17 @@ extension ADJSON {
                 return try ctx.decodeValue(T.self, at: 0)
             }
         }
+
+        /// Decode directly from an already-materialized ``JSONValue``, skipping the serialize-and-reparse
+        /// round-trip a caller would otherwise pay to reuse the byte / `JSONDocument` decoders. This is
+        /// the generic container path (the `@JSONCodable` fast path is tape-bound and does not apply), but
+        /// it honors the same Date/Data/key/non-conforming-float strategies and the `maxDecodingDepth`
+        /// guard, so the result matches `decode(_:from:)` on the equivalent bytes.
+        public func decode<T: Decodable>(_ type: T.Type, from value: JSONValue) throws -> T {
+            let decoder = JSONValueDecoderImpl(
+                value: value, codingPath: [], userInfo: userInfo, strategies: strategies, depth: 0,
+                maxDepth: maxDecodingDepth)
+            return try decoder.unbox(value, as: type, [])
+        }
     }
 }
