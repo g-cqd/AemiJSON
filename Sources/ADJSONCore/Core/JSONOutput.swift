@@ -3,6 +3,17 @@
 // `@JSONCodable` fast path), and schema rendering — so string escaping and integer
 // formatting exist in exactly one place rather than drifting across copies. The routines
 // are `@inlinable` so the fast path still inlines them across the module boundary.
+//
+// The platform libc import below is for `vsnprintf` (the SQLite `%!.15g` number format only); it is
+// not Foundation, so the core stays Foundation-free.
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#elseif canImport(Musl)
+    import Musl
+#endif
+
 public enum JSONOutput {
     @inlinable
     public static func appendNull(to bytes: inout [UInt8]) {
@@ -230,6 +241,50 @@ public enum JSONOutput {
         switch options.numberFormat {
         case .ecma262: appendECMANumber(v, to: &bytes)
         case .swiftShortest: bytes.append(contentsOf: v.description.utf8)
+        case .sqlitePrintfG: appendSQLitePrintfG(v, to: &bytes)
         }
+    }
+
+    /// SQLite's `%!.15g` real rendering, byte-for-byte with `sqlite3` `json()`/`json_quote()`. The
+    /// digits, rounding (15 significant figures), `%g` fixed-vs-exponential selection, and `e±NN`
+    /// exponent come straight from C `vsnprintf("%.15g")`; SQLite's two deviations are applied on top —
+    /// keep one fractional digit so a real stays a real (`5.0`, `1.0e+20`), and render `±0.0` as `0.0`.
+    /// Caller guarantees `v` is finite (non-finite is handled before the format switch). Doubles only;
+    /// integer values keep their exact decimal form on the `.int` path. Not `@inlinable`: it calls the
+    /// libc `vsnprintf`, which is module-internal.
+    public static func appendSQLitePrintfG(_ v: Double, to bytes: inout [UInt8]) {
+        if v == 0 {  // normalizes -0.0 → 0.0
+            bytes.append(0x30)
+            bytes.append(0x2E)
+            bytes.append(0x30)
+            return
+        }
+        var buf = [CChar](repeating: 0, count: 32)
+        _ = buf.withUnsafeMutableBufferPointer { p in
+            withVaList([v]) { vsnprintf(p.baseAddress, 32, "%.15g", $0) }
+        }
+        var count = 0
+        var dotIndex = -1
+        var expIndex = -1
+        while buf[count] != 0 {
+            let c = buf[count]
+            if c == 0x2E {
+                dotIndex = count
+            } else if (c == 0x65 || c == 0x45) && expIndex < 0 {  // 'e' / 'E'
+                expIndex = count
+            }
+            count += 1
+        }
+        // Already has a fractional digit: copy verbatim.
+        if dotIndex >= 0 {
+            for i in 0..<count { bytes.append(UInt8(bitPattern: buf[i])) }
+            return
+        }
+        // No '.': insert ".0" — before the exponent if present, else at the end.
+        let cut = expIndex >= 0 ? expIndex : count
+        for i in 0..<cut { bytes.append(UInt8(bitPattern: buf[i])) }
+        bytes.append(0x2E)
+        bytes.append(0x30)
+        for i in cut..<count { bytes.append(UInt8(bitPattern: buf[i])) }
     }
 }

@@ -134,6 +134,7 @@ public struct JSONStreamWriter: ~Copyable {
         switch options.numberFormat {
         case .ecma262: JSONOutput.appendECMANumber(v, to: &bytes)
         case .swiftShortest: bytes.append(contentsOf: v.description.utf8)
+        case .sqlitePrintfG: JSONOutput.appendSQLitePrintfG(v, to: &bytes)
         }
     }
 

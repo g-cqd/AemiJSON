@@ -23,6 +23,12 @@ public struct JSONEncodingOptions: Sendable {
         case swiftShortest
         /// ECMA-262 `Number::toString` (what `JSON.stringify` emits: `5.0`→`5`, `1e-7`, `-0`→`0`).
         case ecma262
+        /// SQLite's `%!.15g` — byte-for-byte with `sqlite3`'s `json()` / `json_quote()`: 15 significant
+        /// figures, `%g` fixed-or-exponential selection, a fractional digit always kept so a real stays
+        /// a real (`5.0`, `1.0e+20`, `123456789012345.0`), and `-0.0` → `0.0`. Only affects `Double`
+        /// (`.number`); integers keep their exact decimal form. Lets a consumer (e.g. ADSQL) make ADJSON
+        /// the single owner of SQLite-dialect JSON serialization.
+        case sqlitePrintfG
     }
 
     /// Object member ordering.
@@ -73,4 +79,8 @@ public struct JSONEncodingOptions: Sendable {
 
     /// Byte-for-byte JavaScript `JSON.stringify`: non-finite → `null`, ECMA-262 number formatting.
     public static let javaScript = JSONEncodingOptions(nonFinite: .null, numberFormat: .ecma262)
+
+    /// SQLite's JSON text: `%!.15g` reals, unescaped slashes, declaration order, minified — matches
+    /// `sqlite3`'s `json()` / `json_quote()` output for the value model.
+    public static let sqlite = JSONEncodingOptions(numberFormat: .sqlitePrintfG)
 }

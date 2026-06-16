@@ -405,6 +405,10 @@ extension JSONValue {
             } else {
                 writer.writeDouble(d)
             }
+        case .sqlitePrintfG:
+            // No integer promotion: SQLite keeps a real a real (`5.0`), and `appendSQLitePrintfG`
+            // already emits the `.0`.
+            JSONOutput.appendSQLitePrintfG(d, to: &writer.bytes)
         }
     }
 }
