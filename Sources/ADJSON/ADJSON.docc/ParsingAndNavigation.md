@@ -81,6 +81,24 @@ let data  = try value.encoded()          // back to compact UTF-8 JSON
 ``/ADJSONCore/JSONValue`` stores numbers as `Double`; integers beyond 2^53 lose precision. See
 <doc:EncodingAndNumbers> for how numbers are rendered on the way out.
 
+### Constructing a value
+
+Build a ``/ADJSONCore/JSONValue`` from literals, or — when construction needs control flow — with the
+``/ADJSONCore/JSONValue/makeObject(_:)`` / ``/ADJSONCore/JSONValue/makeArray(_:)`` result builders:
+
+```swift
+let literal: JSONValue = ["id": 1, "tags": ["swift", "json"], "ok": true]
+
+let built = JSONValue.makeObject {
+    ("id", 1)
+    if includeTags { ("tags", .makeArray { for tag in tags { JSONValue.string(tag) } }) }
+}
+```
+
+Scalars use the literal conformances (`42`, `"x"`, `true`); write `.null` for JSON null — the type
+deliberately does **not** conform to `ExpressibleByNilLiteral`, so `nil` keeps meaning `Optional.none`
+in your own code.
+
 ## Lifetime & safety
 
 A ``/ADJSONCore/JSONDocument`` owns its input bytes and the tape for its whole lifetime, and it is

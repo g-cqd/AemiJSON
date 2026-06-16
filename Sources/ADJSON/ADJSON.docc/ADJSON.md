@@ -56,6 +56,7 @@ passes the full nst/JSONTestSuite (318/318).
 - <doc:SchemaValidation>
 - <doc:EncodingAndNumbers>
 - <doc:ZeroCopyAndJSSemantics>
+- <doc:NIOInterop>
 
 ### Understanding ADJSON
 

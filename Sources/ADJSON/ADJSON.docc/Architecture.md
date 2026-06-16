@@ -105,6 +105,21 @@ inline, in the same pass. Duplicate-key detection (the I-JSON profile) buckets k
 FNV-1a hash to stay O(1) expected rather than O(n²), so a hostile object can't force quadratic
 work.
 
+## Shared tokenizer and the streaming readers
+
+Three parsers need the same RFC 8259 / JSON5 grammar: the tape scanner, the pull SAX reader
+(``/ADJSONCore/JSONEventReader``), and the push streaming reader (``/ADJSONCore/JSONEventStreamReader``).
+To define that grammar once, the number / string / whitespace scanning lives in a single internal
+tokenizer (`Core/Tokenizer.swift`) of resumability-aware functions returning `.ok` / `.incomplete` /
+`.invalid`. The `.incomplete` outcome is what makes streaming first-class: at a chunk boundary the push
+reader holds a partially-seen token until the rest of its bytes arrive, so a string, number, or comment
+split across feeds still parses correctly. The async ``/ADJSONCore/JSONEventAsyncSequence`` layers
+directly on the push reader.
+
+The tape scanner deliberately keeps its **own** SWAR-integrated scan on the hot path for throughput;
+the shared tokenizer is the grammar everything else agrees with. Those tokenizer functions are
+`internal` — an engine implementation detail, not public API.
+
 ## Typed throws
 
 The parse layer and the single-domain query/schema entry points use Swift's typed throws
@@ -151,8 +166,8 @@ storage.
 toolchain's lifetime-dependence support can't yet thread spans through it. The single-pass
 scanner is also blocked: storing a `Span` as a struct stored property currently requires the
 experimental `LifetimeDependence` feature. `Span`/`RawSpan` themselves back-deploy, so they remain
-a candidate for the *borrowed-buffer* entry and cold accessors (see the roadmap); the unsafe
-surface stays small and `assert`-guarded in the meantime.
+a candidate for the *borrowed-buffer* entry and cold accessors; the unsafe surface stays small and
+`assert`-guarded in the meantime.
 
 **`UTF8Span` and `InlineArray` are a deliberate "do not adopt yet" decision, not an oversight.**
 Both ship only in the 2025 SDKs (iOS 26 / macOS 26 …), so adopting either would raise the library's
@@ -161,3 +176,21 @@ deployment floor above the current iOS 18 / macOS 15 minimum — which is pinned
 force a *separate* UTF-8 validation pass over the bytes, defeating the single-pass tape design (the
 scanner validates inline as it tokenizes). The recommendation is revisited only if the floor rises
 for another reason. (`Package.swift` carries the same note next to the `platforms:` declaration.)
+
+## Dependencies evaluated but not adopted
+
+The dependency surface is kept deliberately small — the core ships only `OrderedCollections` (itself
+Foundation-free, no transitive deps). Other Apple / swift-server packages were considered and **not**
+adopted:
+
+- **swift-algorithms** — the hot loops (the SWAR scanner, the explicit-stack walks) are hand-tuned
+  over raw pointers; `chunks` / `windows` / `uniqued` don't fit those paths and would add a dependency
+  for no measurable win.
+- **swift-async-algorithms** — ``/ADJSONCore/JSONEventAsyncSequence`` already batches bytes itself
+  against the resumable reader, so the package's batching primitives don't compose with the byte-fed
+  state machine cleanly enough to earn the dependency.
+- **swift-collections beyond `OrderedCollections`** — the explicit stacks use `Array` as a LIFO, which
+  is already optimal here; `Deque` would help only if iteration direction reversed, which would
+  pessimize tape order.
+
+Each is revisited only if a concrete workload shows a win.

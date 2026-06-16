@@ -25,6 +25,11 @@ let value = JSONValue(doc.root)                // materialize when you need an e
 
 ## Topics
 
+### Guides
+
+- <doc:AsyncStreaming>
+- <doc:JSON5AndLenient>
+
 ### Parsing & navigation
 
 - ``ADJSON``

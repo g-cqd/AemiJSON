@@ -59,6 +59,10 @@ JSONValue.number(5.0).encoded(options: .javaScript)   // "5"
 JSONValue.number(1e-7).encoded(options: .javaScript)  // "1e-7"
 ```
 
+For a single number → `String` without building a document, ``/ADJSONCore/JSONOutput/ecmaNumberToString(_:)``
+returns the ECMA-262 shortest form directly (non-finite → `"NaN"` / `"Infinity"` / `"-Infinity"`), and
+``/ADJSONCore/JSON/jsNumberString`` gives the same for a number node already in a parsed document.
+
 ## Non-finite numbers
 
 JSON cannot represent `NaN` or `±Infinity`. Under `.rfc8259` these throw

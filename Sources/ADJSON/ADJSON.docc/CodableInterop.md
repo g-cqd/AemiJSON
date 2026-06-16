@@ -44,6 +44,24 @@ var encoder = ADJSON.JSONEncoder()
 encoder.options = .javaScript            // JSON.stringify number/non-finite parity
 ```
 
+### Key strategies
+
+Map between Swift property names and JSON keys with `keyEncodingStrategy` / `keyDecodingStrategy`:
+
+```swift
+var encoder = ADJSON.JSONEncoder()
+encoder.keyEncodingStrategy = .convertToSnakeCase            // userID → user_id
+encoder.keyEncodingStrategy = .custom { $0.uppercased() }    // any (String) -> String
+
+var decoder = ADJSON.JSONDecoder()
+decoder.keyDecodingStrategy = .convertFromSnakeCase          // user_id → userID
+```
+
+ADJSON's `.custom` takes a plain `(String) -> String` transform — not Foundation's
+`([CodingKey]) -> CodingKey` form — because the streaming coders track no coding-key path. Setting any
+key strategy also routes ``JSONCodable()`` types through the generic path, so the transform is honored
+for fast types too (the byte-literal fast path can only match unmodified keys).
+
 ## The `@JSONCodable` fast path
 
 Annotate a `Codable` `struct` with ``JSONCodable()`` to generate a monomorphic decode/encode

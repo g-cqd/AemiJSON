@@ -21,6 +21,16 @@ ADJSON_DEV=1 swift package benchmark run --filter "decode/.*"   # a subset
 the time/throughput metrics only. Benchmarks always run in **release**. Without the corpus the
 in-memory benchmarks still run; the `corpus/*` benchmarks are simply not registered.
 
+The headline **ADJSON-vs-Foundation speedup table** is rendered by the `bench-compare` command plugin,
+which reuses the already-built suite binary (no rebuild) and pairs each Foundation baseline with the
+ADJSON variants in its workload:
+
+```sh
+ADJSON_DEV=1 swift build -c release --product ADJSONSuite   # build the suite once
+swift package bench-compare                                  # render the speedup table (Markdown)
+swift package bench-compare --filter "decode/.*"             # restrict the workloads
+```
+
 ## Methodology
 
 The suite is statistically rigorous and honest:
