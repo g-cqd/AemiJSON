@@ -7,12 +7,16 @@
 // Resumability is first-class: a token that reaches the buffer end while more bytes may still arrive
 // returns `.incomplete`, which is exactly what the push reader needs at a chunk boundary. The
 // non-streaming readers pass `complete: true`, so end-of-buffer is final rather than incomplete.
+//
+// These primitives are `internal` to ADJSONCore — a shared implementation detail of the readers, not
+// public API (UnsafePointer-based grammar functions are not something consumers should reach for).
+// Tests exercise them through `@testable import`.
 
 extension JSONNumber {
     /// Outcome of scanning one number lexeme. `.ok(end)` gives the index just past the lexeme;
     /// `.incomplete` means the lexeme reached the buffer end and could continue (streaming only);
     /// `.invalid` means the bytes are not a well-formed number.
-    public enum ScanOutcome: Equatable, Sendable {
+    enum ScanOutcome: Equatable, Sendable {
         case ok(Int)
         case incomplete
         case invalid
@@ -25,8 +29,7 @@ extension JSONNumber {
     ///     before/after `.`); when `false`, the lenient grammar (leading `+`, bare `.5` / `5.`).
     ///   - complete: pass `true` when no more bytes will arrive (the non-streaming readers): a lexeme
     ///     that runs to `count` is then validated rather than reported `.incomplete`.
-    @inlinable
-    public static func scanLexeme(
+    static func scanLexeme(
         _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, strict: Bool, complete: Bool
     ) -> ScanOutcome {
         // Phase 1 — extent: consume every byte that can appear in a number lexeme.
@@ -47,8 +50,7 @@ extension JSONNumber {
 
     /// Validate that `p[start..<end]` is a complete, well-formed number under the `strict` (RFC 8259)
     /// or lenient grammar. The single grammar definition shared by the SAX readers.
-    @inlinable
-    public static func validateLexeme(_ p: UnsafePointer<UInt8>, _ start: Int, _ end: Int, strict: Bool) -> Bool {
+    static func validateLexeme(_ p: UnsafePointer<UInt8>, _ start: Int, _ end: Int, strict: Bool) -> Bool {
         var k = start
         func digit() -> Bool { k < end && p[k] >= 0x30 && p[k] <= 0x39 }
         if k < end, p[k] == 0x2D || (!strict && p[k] == 0x2B) { k += 1 }
@@ -96,7 +98,7 @@ extension JSONNumber {
     /// hex integer (`0x…`), or a decimal allowing a leading/trailing dot (`.5`, `5.`) and exponent.
     /// `complete: true` (the non-streaming readers) turns a lexeme that runs to `count` into a final
     /// result; otherwise such a lexeme is `.incomplete`.
-    public static func scanJSON5Lexeme(
+    static func scanJSON5Lexeme(
         _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, complete: Bool
     ) -> ScanOutcome {
         @inline(__always) func digit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
@@ -161,19 +163,19 @@ extension JSONNumber {
 
 /// Insignificant-input skipping shared by the readers: plain JSON whitespace, plus (in JSON5) the
 /// extra whitespace bytes and `//` line / `/* */` block comments.
-public enum JSONToken {
+enum JSONToken {
     /// Outcome of skipping insignificant input. `end` is the next significant index; `incomplete` is
     /// `true` only in JSON5 when a `//` or `/* */` comment runs to the buffer end and more bytes may
     /// still arrive (the streaming reader must wait before deciding the comment is unterminated).
-    public struct SkipResult: Equatable, Sendable {
-        public var end: Int
-        public var incomplete: Bool
+    struct SkipResult: Equatable, Sendable {
+        var end: Int
+        var incomplete: Bool
     }
 
     /// Advance past whitespace (and, when `json5`, comments) starting at `from`. `complete: true` (the
     /// non-streaming readers) treats an unterminated trailing comment as consumed to the end rather
     /// than `incomplete`.
-    public static func skipInsignificant(
+    static func skipInsignificant(
         _ p: UnsafePointer<UInt8>, _ from: Int, _ count: Int, json5: Bool, complete: Bool
     ) -> SkipResult {
         var i = from
@@ -227,7 +229,7 @@ extension JSONString {
     /// the closing quote and whether the body contained a backslash (so the caller can skip a second
     /// escape scan). `.incomplete` means the buffer ended mid-string / mid-escape / mid-sequence
     /// (streaming only). `.invalid` means malformed (control byte, bad escape, bad UTF-8).
-    public enum ScanOutcome: Equatable, Sendable {
+    enum ScanOutcome: Equatable, Sendable {
         case ok(end: Int, hasEscape: Bool)
         case incomplete
         case invalid
@@ -239,9 +241,7 @@ extension JSONString {
     /// reader waits for more bytes, the whole-buffer readers treat it as truncated input. Does not
     /// decode — the caller materializes via `unescape` when `hasEscape`.
     ///
-    /// Not `@inlinable`: it references the internal UTF-8 validator. It is only called from within the
-    /// engine module, where the optimizer inlines it regardless.
-    public static func scanLexeme(
+    static func scanLexeme(
         _ p: UnsafePointer<UInt8>, _ open: Int, _ count: Int, strict: Bool
     ) -> ScanOutcome {
         var j = open + 1
@@ -292,8 +292,7 @@ extension JSONString {
 
     /// Four hex digits at `at` (caller guarantees `at + 4` in bounds), or `nil` if any byte is not a
     /// hex digit.
-    @inlinable
-    public static func hex4(_ p: UnsafePointer<UInt8>, _ at: Int) -> UInt16? {
+    static func hex4(_ p: UnsafePointer<UInt8>, _ at: Int) -> UInt16? {
         var value: UInt16 = 0
         for k in 0..<4 {
             let b = p[at + k]
@@ -309,7 +308,6 @@ extension JSONString {
         return value
     }
 
-    @usableFromInline
     static func isHexDigit(_ b: UInt8) -> Bool {
         (b >= 0x30 && b <= 0x39) || ((b | 0x20) >= 0x61 && (b | 0x20) <= 0x66)
     }
@@ -317,7 +315,7 @@ extension JSONString {
     /// Scan a JSON5 string starting at the opening quote `open` (a `'` or `"`); the terminator matches
     /// the opening quote. Validates the JSON5 escape set (`\x`, `\v`, `\0`, line continuations, and
     /// identity escapes). Same outcome shape as ``scanLexeme(_:_:_:strict:)``.
-    public static func scanJSON5Lexeme(_ p: UnsafePointer<UInt8>, _ open: Int, _ count: Int) -> ScanOutcome {
+    static func scanJSON5Lexeme(_ p: UnsafePointer<UInt8>, _ open: Int, _ count: Int) -> ScanOutcome {
         let quote = p[open]
         var j = open + 1
         var hasEscape = false
@@ -395,7 +393,7 @@ extension JSONString {
     /// Scan a JSON5 unquoted object key (an ECMAScript IdentifierName) starting at `start`.
     /// `.ok(end, hasEscape: false)` past the identifier; `.incomplete` (streaming only) if it runs to
     /// the buffer end, where more identifier bytes might still arrive.
-    public static func scanIdentifier(
+    static func scanIdentifier(
         _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, complete: Bool
     ) -> ScanOutcome {
         guard start < count, isIdentStart(p[start]) else { return .invalid }
@@ -424,7 +422,6 @@ extension JSONString {
         return complete ? .ok(end: i, hasEscape: false) : .incomplete  // reached the buffer end
     }
 
-    @usableFromInline
     static func isIdentStart(_ b: UInt8) -> Bool {
         ((b | 0x20) >= 0x61 && (b | 0x20) <= 0x7A) || b == 0x5F || b == 0x24 || b >= 0x80
     }
