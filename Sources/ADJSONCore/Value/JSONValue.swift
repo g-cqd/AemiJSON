@@ -166,9 +166,11 @@ extension JSONValue {
 
         /// Fold a finished child container into this frame under the remembered `openKey`.
         mutating func fold(_ value: JSONValue) {
-            if isObject {
-                object[openKey!] = value
-                openKey = nil
+            // `openKey` is non-nil exactly for an object frame (set in `advance` before each descend);
+            // an array frame leaves it nil and folds positionally. Binding it avoids a force unwrap.
+            if let openKey {
+                object[openKey] = value
+                self.openKey = nil
             } else {
                 array.append(value)
             }
@@ -181,8 +183,10 @@ extension JSONValue {
             let key = isObject ? keys[next] : nil
             next += 1
             if let scalar = JSONValue.scalarValue(node) {
-                if isObject {
-                    object[key!] = scalar
+                // `key` is non-nil exactly for an object frame (see its binding above), so this routes
+                // object members by key and array elements positionally without a force unwrap.
+                if let key {
+                    object[key] = scalar
                 } else {
                     array.append(scalar)
                 }
