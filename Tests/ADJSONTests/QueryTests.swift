@@ -38,6 +38,29 @@ private let store = doc(
     #expect(try store.query("$['store']['book'][2]['author']").compactMap(\.string) == ["Z"])
 }
 
+@Test func jsonPathSliceSemantics() throws {
+    let a = doc("[0,1,2,3,4,5,6,7,8,9]")
+    func slice(_ q: String) throws -> [Int] { try a.query(q).compactMap(\.int) }
+    // Positive step.
+    #expect(try slice("$[1:4]") == [1, 2, 3])
+    #expect(try slice("$[:3]") == [0, 1, 2])
+    #expect(try slice("$[7:]") == [7, 8, 9])
+    #expect(try slice("$[::2]") == [0, 2, 4, 6, 8])
+    #expect(try slice("$[1:8:3]") == [1, 4, 7])
+    #expect(try slice("$[-3:]") == [7, 8, 9])
+    #expect(try slice("$[:-7]") == [0, 1, 2])
+    #expect(try slice("$[100:200]") == [])  // out of range
+    #expect(try slice("$[3:1]") == [])  // empty (lower >= upper)
+    // Negative step (the forward-collect-then-reverse path).
+    #expect(try slice("$[::-1]") == [9, 8, 7, 6, 5, 4, 3, 2, 1, 0])  // full reverse
+    #expect(try slice("$[::-2]") == [9, 7, 5, 3, 1])
+    #expect(try slice("$[5:1:-1]") == [5, 4, 3, 2])
+    #expect(try slice("$[-1:-4:-1]") == [9, 8, 7])
+    #expect(try slice("$[2:5:-1]") == [])  // descending range empty when start < end
+    // Step 0 yields nothing (RFC 9535).
+    #expect(try slice("$[1:5:0]") == [])
+}
+
 @Test func jsonPathFilters() throws {
     #expect(try store.query("$.store.book[?(@.price < 10)].title").compactMap(\.string) == ["A", "C"])
     #expect(try store.query("$.store.book[?(@.price >= 8 && @.price <= 15)].title").compactMap(\.string) == ["B", "C"])

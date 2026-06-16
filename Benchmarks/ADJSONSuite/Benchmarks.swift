@@ -211,6 +211,13 @@ nonisolated(unsafe) let benchmarks = {
             blackHole(try! usersDocument.root.query("$[?(@.followers > $[0].followers)]"))
         }
     }
+    Benchmark("query/slice small") { bm in
+        // A tiny slice off a 2000-element array — the win is not materializing all 2000 elements.
+        for _ in bm.scaledIterations { blackHole(try! usersDocument.root.query("$[0:10]")) }
+    }
+    Benchmark("query/slice step") { bm in
+        for _ in bm.scaledIterations { blackHole(try! usersDocument.root.query("$[0:200:5]")) }
+    }
     Benchmark("query/compile 4 paths") { bm in
         let paths = [
             "$.store.book[*].title",

@@ -236,6 +236,49 @@ public struct JSON: Sendable {
         return JSON(doc: doc, index: i)
     }
 
+    /// Append the elements selected by a Python-style slice (`start:end:step`, RFC 9535 semantics) to
+    /// `out`, walking the tape once and stopping at the slice's upper bound — without materializing the
+    /// whole array into a `[JSON]`. Negative `step` collects forward (the tape's only direction) and
+    /// emits the matched range reversed.
+    package func appendSlice(start: Int?, end: Int?, step: Int, into out: inout [JSON]) {
+        guard tag == JSONKind.array.rawValue, step != 0 else { return }
+        let len = Slot.count(slot)
+        if len == 0 { return }
+        func normalize(_ v: Int) -> Int { v >= 0 ? v : len + v }
+
+        if step > 0 {
+            let lower = Swift.min(Swift.max(start.map(normalize) ?? 0, 0), len)
+            let upper = Swift.min(Swift.max(end.map(normalize) ?? len, 0), len)
+            guard lower < upper else { return }
+            var i = index + 1
+            var p = 0
+            while p < upper {
+                if p >= lower && (p - lower) % step == 0 { out.append(JSON(doc: doc, index: i)) }
+                i = nextIndex(after: i)
+                p += 1
+            }
+        } else {
+            let s = Swift.min(Swift.max(start.map(normalize) ?? (len - 1), -1), len - 1)
+            let e = Swift.min(Swift.max(end.map(normalize) ?? (-len - 1), -1), len - 1)
+            guard s > e else { return }
+            // Walk forward to the lowest in-range position, then collect matches ascending and reverse
+            // them into descending slice order.
+            var i = index + 1
+            var p = 0
+            while p < e + 1 {
+                i = nextIndex(after: i)
+                p += 1
+            }
+            let mark = out.count
+            while p <= s {
+                if (s - p) % (-step) == 0 { out.append(JSON(doc: doc, index: i)) }
+                i = nextIndex(after: i)
+                p += 1
+            }
+            out[mark...].reverse()
+        }
+    }
+
     /// Index of the slot immediately after the value's whole subtree.
     @inline(__always)
     private func nextIndex(after node: Int) -> Int { Slot.next(after: node, doc.tape[node]) }

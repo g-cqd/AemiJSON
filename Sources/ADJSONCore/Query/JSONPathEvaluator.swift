@@ -86,32 +86,8 @@ enum JSONPathEvaluator {
     }
 
     static func appendSlice(_ node: JSON, _ start: Int?, _ end: Int?, _ step: Int, _ out: inout [JSON]) {
-        let len = node.count
-        if step == 0 || len == 0 { return }
-        let elems = node.arrayValue
-        func normalize(_ v: Int) -> Int { v >= 0 ? v : len + v }
-
-        if step > 0 {
-            let s = start.map(normalize) ?? 0
-            let e = end.map(normalize) ?? len
-            let lower = Swift.min(Swift.max(s, 0), len)
-            let upper = Swift.min(Swift.max(e, 0), len)
-            var i = lower
-            while i < upper {
-                out.append(elems[i])
-                i += step
-            }
-        } else {
-            let s = start.map(normalize) ?? (len - 1)
-            let e = end.map(normalize) ?? (-len - 1)
-            let upper = Swift.min(Swift.max(s, -1), len - 1)
-            let lower = Swift.min(Swift.max(e, -1), len - 1)
-            var i = upper
-            while i > lower {
-                out.append(elems[i])
-                i += step
-            }
-        }
+        // Single-pass tape walk (stops at the slice bound) instead of materializing `node.arrayValue`.
+        node.appendSlice(start: start, end: end, step: step, into: &out)
     }
 
     // MARK: - Filters
