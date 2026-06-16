@@ -91,6 +91,127 @@ extension JSONNumber {
         }
         return k == end
     }
+
+    /// Scan a JSON5 number lexeme starting at `start`: optional `+`/`-`, then `Infinity` / `NaN`, a
+    /// hex integer (`0x…`), or a decimal allowing a leading/trailing dot (`.5`, `5.`) and exponent.
+    /// `complete: true` (the non-streaming readers) turns a lexeme that runs to `count` into a final
+    /// result; otherwise such a lexeme is `.incomplete`.
+    public static func scanJSON5Lexeme(
+        _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, complete: Bool
+    ) -> ScanOutcome {
+        @inline(__always) func digit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
+        var i = start
+        if i < count, p[i] == 0x2D || p[i] == 0x2B { i += 1 }
+        guard i < count else { return complete ? .invalid : .incomplete }
+        if p[i] == 0x49 { return matchLiteral(p, i, count, "Infinity", complete: complete) }  // 'I'
+        if p[i] == 0x4E { return matchLiteral(p, i, count, "NaN", complete: complete) }  // 'N'
+        if p[i] == 0x30, i + 1 < count, p[i + 1] == 0x78 || p[i + 1] == 0x58 {  // 0x / 0X
+            i += 2
+            let hexStart = i
+            while i < count, JSONString.isHexDigit(p[i]) { i += 1 }
+            if i >= count && !complete { return .incomplete }
+            return i > hexStart ? .ok(i) : .invalid
+        }
+        var sawDigit = false
+        while i < count, digit(p[i]) {
+            i += 1
+            sawDigit = true
+        }
+        if i < count, p[i] == 0x2E {  // '.'
+            i += 1
+            while i < count, digit(p[i]) {
+                i += 1
+                sawDigit = true
+            }
+        }
+        guard sawDigit else {
+            // No digits yet: a trailing sign or lone `.` at the buffer end might still continue.
+            return (i >= count && !complete) ? .incomplete : .invalid
+        }
+        if i < count, p[i] == 0x65 || p[i] == 0x45 {  // e / E
+            i += 1
+            if i < count, p[i] == 0x2B || p[i] == 0x2D { i += 1 }
+            let expStart = i
+            while i < count, digit(p[i]) { i += 1 }
+            if i >= count && !complete { return .incomplete }
+            guard i > expStart else { return .invalid }
+        } else if i >= count && !complete {
+            return .incomplete  // a digit run touching the end could continue
+        }
+        return .ok(i)
+    }
+
+    // Match a fixed ASCII literal (`Infinity` / `NaN`) at `start`. `.incomplete` if only a prefix is
+    // present and more bytes may arrive; `.invalid` on any mismatch.
+    private static func matchLiteral(
+        _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, _ literal: StaticString, complete: Bool
+    ) -> ScanOutcome {
+        let lit = literal.utf8Start
+        let len = literal.utf8CodeUnitCount
+        var k = 0
+        while k < len {
+            let idx = start + k
+            if idx >= count { return complete ? .invalid : .incomplete }
+            if p[idx] != lit[k] { return .invalid }
+            k += 1
+        }
+        return .ok(start + len)
+    }
+}
+
+/// Insignificant-input skipping shared by the readers: plain JSON whitespace, plus (in JSON5) the
+/// extra whitespace bytes and `//` line / `/* */` block comments.
+public enum JSONToken {
+    /// Outcome of skipping insignificant input. `end` is the next significant index; `incomplete` is
+    /// `true` only in JSON5 when a `//` or `/* */` comment runs to the buffer end and more bytes may
+    /// still arrive (the streaming reader must wait before deciding the comment is unterminated).
+    public struct SkipResult: Equatable, Sendable {
+        public var end: Int
+        public var incomplete: Bool
+    }
+
+    /// Advance past whitespace (and, when `json5`, comments) starting at `from`. `complete: true` (the
+    /// non-streaming readers) treats an unterminated trailing comment as consumed to the end rather
+    /// than `incomplete`.
+    public static func skipInsignificant(
+        _ p: UnsafePointer<UInt8>, _ from: Int, _ count: Int, json5: Bool, complete: Bool
+    ) -> SkipResult {
+        var i = from
+        while i < count {
+            let c = p[i]
+            if c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 {
+                i += 1
+                continue
+            }
+            if json5 {
+                if c == 0x0B || c == 0x0C {  // vertical tab / form feed
+                    i += 1
+                    continue
+                }
+                if c == 0x2F, i + 1 < count {  // '/'
+                    if p[i + 1] == 0x2F {  // line comment
+                        i += 2
+                        while i < count, p[i] != 0x0A, p[i] != 0x0D { i += 1 }
+                        if i >= count && !complete { return SkipResult(end: i, incomplete: true) }
+                        continue
+                    }
+                    if p[i + 1] == 0x2A {  // block comment
+                        i += 2
+                        while i + 1 < count, !(p[i] == 0x2A && p[i + 1] == 0x2F) { i += 1 }
+                        if i + 1 < count {  // found closing '*/'
+                            i += 2
+                            continue
+                        }
+                        // Unterminated at the buffer end: consume to EOF when complete, else wait.
+                        if complete { return SkipResult(end: count, incomplete: false) }
+                        return SkipResult(end: i, incomplete: true)
+                    }
+                }
+            }
+            break
+        }
+        return SkipResult(end: i, incomplete: false)
+    }
 }
 
 extension JSONString {
@@ -178,5 +299,122 @@ extension JSONString {
             value = (value << 4) | digit
         }
         return value
+    }
+
+    @usableFromInline
+    static func isHexDigit(_ b: UInt8) -> Bool {
+        (b >= 0x30 && b <= 0x39) || ((b | 0x20) >= 0x61 && (b | 0x20) <= 0x66)
+    }
+
+    /// Scan a JSON5 string starting at the opening quote `open` (a `'` or `"`); the terminator matches
+    /// the opening quote. Validates the JSON5 escape set (`\x`, `\v`, `\0`, line continuations, and
+    /// identity escapes). Same outcome shape as ``scanLexeme(_:_:_:strict:)``.
+    public static func scanJSON5Lexeme(_ p: UnsafePointer<UInt8>, _ open: Int, _ count: Int) -> ScanOutcome {
+        let quote = p[open]
+        var j = open + 1
+        var hasEscape = false
+        while true {
+            guard j < count else { return .incomplete }
+            let c = p[j]
+            if c == quote { return .ok(end: j + 1, hasEscape: hasEscape) }
+            if c == 0x5C {  // escape
+                hasEscape = true
+                guard j + 1 < count else { return .incomplete }
+                switch escapeStepJSON5(p, j, count) {
+                case .step(let next): j = next
+                case .needMore: return .incomplete
+                case .bad: return .invalid
+                }
+                continue
+            }
+            if c < 0x20 { return .invalid }
+            if c >= 0x80 {
+                guard let length = JSONUTF8.leadLength(c) else { return .invalid }
+                guard j + length <= count else { return .incomplete }
+                guard (try? JSONUTF8.sequenceLength(p, j, count)) != nil else { return .invalid }
+                j += length
+                continue
+            }
+            j += 1
+        }
+    }
+
+    private enum EscapeStep { case step(Int), needMore, bad }
+
+    // `p[j]` is a backslash (`j + 1 < count` guaranteed). Validate one JSON5 escape, returning the
+    // index past it. Mirrors the tape scanner's `validateEscapeJSON5`.
+    private static func escapeStepJSON5(_ p: UnsafePointer<UInt8>, _ j: Int, _ count: Int) -> EscapeStep {
+        let e = p[j + 1]
+        switch e {
+        case 0x22, 0x27, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74, 0x76:  // " ' \ / b f n r t v
+            return .step(j + 2)
+        case 0x30:  // \0 — only when not followed by a decimal digit
+            if j + 2 < count, p[j + 2] >= 0x30 && p[j + 2] <= 0x39 { return .bad }
+            return .step(j + 2)
+        case 0x31...0x39:  // \1 … \9 invalid
+            return .bad
+        case 0x78:  // \xHH
+            guard j + 3 < count else { return .needMore }
+            guard isHexDigit(p[j + 2]), isHexDigit(p[j + 3]) else { return .bad }
+            return .step(j + 4)
+        case 0x75:  // \uHHHH (with surrogate pairing)
+            guard j + 6 <= count else { return .needMore }
+            guard let high = hex4(p, j + 2) else { return .bad }
+            if high >= 0xD800 && high <= 0xDBFF {
+                guard j + 12 <= count else { return .needMore }
+                guard p[j + 6] == 0x5C, p[j + 7] == 0x75 else { return .bad }
+                guard let low = hex4(p, j + 8), low >= 0xDC00 && low <= 0xDFFF else { return .bad }
+                return .step(j + 12)
+            } else if high >= 0xDC00 && high <= 0xDFFF {
+                return .bad
+            }
+            return .step(j + 6)
+        case 0x0A:  // line continuation \ + LF
+            return .step(j + 2)
+        case 0x0D:  // line continuation \ + CR (or CRLF)
+            return .step((j + 2 < count && p[j + 2] == 0x0A) ? j + 3 : j + 2)
+        default:
+            if e >= 0x80 {  // identity escape of a multi-byte scalar (incl. U+2028/U+2029)
+                guard let length = JSONUTF8.leadLength(e) else { return .bad }
+                guard j + 1 + length <= count else { return .needMore }
+                guard (try? JSONUTF8.sequenceLength(p, j + 1, count)) != nil else { return .bad }
+                return .step(j + 1 + length)
+            }
+            return .step(j + 2)  // identity escape \X → X
+        }
+    }
+
+    /// Scan a JSON5 unquoted object key (an ECMAScript IdentifierName) starting at `start`.
+    /// `.ok(end, hasEscape: false)` past the identifier; `.incomplete` if it runs to the buffer end.
+    public static func scanIdentifier(_ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int) -> ScanOutcome {
+        guard start < count, isIdentStart(p[start]) else { return .invalid }
+        var i = start
+        if p[i] >= 0x80 {
+            guard let length = JSONUTF8.leadLength(p[i]), i + length <= count,
+                (try? JSONUTF8.sequenceLength(p, i, count)) != nil
+            else { return .invalid }
+            i += length
+        } else {
+            i += 1
+        }
+        while i < count {
+            let c = p[i]
+            if c >= 0x80 {
+                guard let length = JSONUTF8.leadLength(c), i + length <= count,
+                    (try? JSONUTF8.sequenceLength(p, i, count)) != nil
+                else { return .invalid }
+                i += length
+            } else if isIdentStart(c) || (c >= 0x30 && c <= 0x39) {
+                i += 1
+            } else {
+                break
+            }
+        }
+        return .ok(end: i, hasEscape: false)
+    }
+
+    @usableFromInline
+    static func isIdentStart(_ b: UInt8) -> Bool {
+        ((b | 0x20) >= 0x61 && (b | 0x20) <= 0x7A) || b == 0x5F || b == 0x24 || b >= 0x80
     }
 }

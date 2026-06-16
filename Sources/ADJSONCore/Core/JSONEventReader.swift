@@ -29,6 +29,7 @@ public struct JSONEventReader {
     private let bytes: [UInt8]
     private let n: Int
     private let strict: Bool
+    private let isJSON5: Bool
     private let maxDepth: Int
     private var i = 0
 
@@ -46,6 +47,7 @@ public struct JSONEventReader {
         self.bytes = bytes
         self.n = bytes.count
         self.strict = options.isStrict
+        self.isJSON5 = options.isJSON5
         self.maxDepth = options.maxDepth
     }
 
@@ -82,6 +84,13 @@ public struct JSONEventReader {
             }
             guard bytes[i] == 0x2C else { throw JSONError.unexpectedCharacter(bytes[i], at: i) }  // ','
             i += 1
+            if isJSON5 {  // JSON5 trailing comma: `,` directly before `}` closes the object
+                skipWS()
+                if i < n, bytes[i] == 0x7D {
+                    i += 1
+                    return closeContainer()
+                }
+            }
             return try readKeyEvent()
         case .arrayValueOrClose:
             skipWS()
@@ -100,6 +109,13 @@ public struct JSONEventReader {
             }
             guard bytes[i] == 0x2C else { throw JSONError.unexpectedCharacter(bytes[i], at: i) }  // ','
             i += 1
+            if isJSON5 {  // JSON5 trailing comma: `,` directly before `]` closes the array
+                skipWS()
+                if i < n, bytes[i] == 0x5D {
+                    i += 1
+                    return closeContainer()
+                }
+            }
             return try emitValue(afterScalar: .arrayCommaOrClose)
         }
     }
@@ -136,20 +152,55 @@ public struct JSONEventReader {
             expect = afterScalar
             return .number(value)
         default:
+            // JSON5 value starts: single-quoted string, leading `+`/`.`, and `Infinity` / `NaN`.
+            if isJSON5, c == 0x27 {
+                let s = try readString()
+                expect = afterScalar
+                return .string(s)
+            }
+            if isJSON5, c == 0x2B || c == 0x2E || c == 0x49 || c == 0x4E {  // + . I(nfinity) N(aN)
+                let value = try readNumber()
+                expect = afterScalar
+                return .number(value)
+            }
             throw JSONError.unexpectedCharacter(c, at: i)
         }
     }
 
-    // Object member key: a string, then a mandatory `:`. Advances `expect` to read the value next.
+    // Object member key: a string (JSON5: also single-quoted or an unquoted identifier), then a
+    // mandatory `:`. Advances `expect` to read the value next.
     private mutating func readKeyEvent() throws(JSONError) -> JSONEvent {
         skipWS()
-        guard i < n, bytes[i] == 0x22 else { throw JSONError.unexpectedCharacter(i < n ? bytes[i] : 0, at: i) }
-        let key = try readString()
+        let key: String
+        if isJSON5, i < n, bytes[i] != 0x22, bytes[i] != 0x27 {
+            key = try readIdentifierKey()  // unquoted ECMAScript identifier
+        } else {
+            guard i < n, bytes[i] == 0x22 || (isJSON5 && bytes[i] == 0x27) else {
+                throw JSONError.unexpectedCharacter(i < n ? bytes[i] : 0, at: i)
+            }
+            key = try readString()
+        }
         skipWS()
         guard i < n, bytes[i] == 0x3A else { throw JSONError.unexpectedCharacter(i < n ? bytes[i] : 0, at: i) }
         i += 1  // ':'
         expect = .objectValue
         return .key(key)
+    }
+
+    private mutating func readIdentifierKey() throws(JSONError) -> String {
+        let start = i
+        let outcome = bytes.withUnsafeBufferPointer { buf -> JSONString.ScanOutcome in
+            guard let p = buf.baseAddress else { return .invalid }
+            return JSONString.scanIdentifier(p, start, n)
+        }
+        guard case .ok(let end, _) = outcome else {
+            throw JSONError.unexpectedCharacter(i < n ? bytes[i] : 0, at: i)
+        }
+        i = end
+        return bytes.withUnsafeBufferPointer { buf in
+            guard let p = buf.baseAddress else { return "" }
+            return String(decoding: UnsafeBufferPointer(start: p + start, count: end - start), as: UTF8.self)
+        }
     }
 
     // Pop the just-closed container and set `expect` from the new innermost context.
@@ -164,6 +215,13 @@ public struct JSONEventReader {
     }
 
     @inline(__always) private mutating func skipWS() {
+        if isJSON5 {
+            i = bytes.withUnsafeBufferPointer { buf in
+                guard let p = buf.baseAddress else { return i }
+                return JSONToken.skipInsignificant(p, i, n, json5: true, complete: true).end
+            }
+            return
+        }
         while i < n {
             let c = bytes[i]
             if c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 { i += 1 } else { break }
@@ -178,7 +236,7 @@ public struct JSONEventReader {
         // `.incomplete` means truncated. Decode here once the extent + escape flag are known.
         let outcome = bytes.withUnsafeBufferPointer { buf -> JSONString.ScanOutcome in
             guard let p = buf.baseAddress else { return .incomplete }
-            return JSONString.scanLexeme(p, open, n, strict: strict)
+            return isJSON5 ? JSONString.scanJSON5Lexeme(p, open, n) : JSONString.scanLexeme(p, open, n, strict: strict)
         }
         switch outcome {
         case .incomplete:
@@ -191,9 +249,10 @@ public struct JSONEventReader {
             i = end
             return bytes.withUnsafeBufferPointer { buf in
                 guard let p = buf.baseAddress else { return "" }
-                return hasEscape
-                    ? JSONString.unescape(p, start, length)
-                    : String(decoding: UnsafeBufferPointer(start: p + start, count: length), as: UTF8.self)
+                if !hasEscape {
+                    return String(decoding: UnsafeBufferPointer(start: p + start, count: length), as: UTF8.self)
+                }
+                return isJSON5 ? JSONString.unescapeJSON5(p, start, length) : JSONString.unescape(p, start, length)
             }
         }
     }
@@ -204,7 +263,9 @@ public struct JSONEventReader {
         // `complete: true` — the buffer end is final, never `.incomplete`.
         let outcome = bytes.withUnsafeBufferPointer { buf -> JSONNumber.ScanOutcome in
             guard let p = buf.baseAddress else { return .invalid }
-            return JSONNumber.scanLexeme(p, start, n, strict: strict, complete: true)
+            return isJSON5
+                ? JSONNumber.scanJSON5Lexeme(p, start, n, complete: true)
+                : JSONNumber.scanLexeme(p, start, n, strict: strict, complete: true)
         }
         guard case .ok(let end) = outcome else { throw JSONError.invalidNumber(at: start) }
         i = end
