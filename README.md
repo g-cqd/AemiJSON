@@ -248,8 +248,10 @@ without a before/after number.
 
 ### Optional features (to consider)
 
-- [ ] **JSON5 / lenient parity in the event readers** — the tape parser supports JSON5; the SAX
-  readers do not yet.
+- [x] **JSON5 parity in the event readers** — both the pull (`JSONEventReader`) and push
+  (`JSONEventStreamReader`) SAX readers now parse JSON5 (comments, single-quoted / unquoted keys,
+  trailing commas, hex / `Infinity` / `NaN` / extended numbers) via the shared `Core/Tokenizer.swift`
+  grammar, fully resumable across feed boundaries in the streaming reader.
 - [ ] **`KeyEncodingStrategy.custom` / `KeyDecodingStrategy.custom`** — the streaming encoder/decoder
   do not track the full coding path required for a custom key transform.
 - [x] **Optional HTML-safe output escaping** — `JSONEncodingOptions.escapeHTMLUnsafe` escapes `<`,
