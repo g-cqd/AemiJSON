@@ -80,10 +80,10 @@ public enum JSONString {
             case 0x66: out.append(0x0C)  // \f
             case 0x76: out.append(0x0B)  // \v
             case 0x30: out.append(0x00)  // \0 (scanner ensured no trailing digit)
-            case 0x78:  // \xHH → U+00HH
+            case 0x78:  // \xHH → U+00HH (value <= 0xFF: the non-failable UInt8 scalar init, no force-unwrap)
                 let value = UInt32(hexValue(p[j])) << 4 | UInt32(hexValue(p[j + 1]))
                 j += 2
-                Unicode.UTF8.encode(Unicode.Scalar(value)!) { out.append($0) }
+                Unicode.UTF8.encode(Unicode.Scalar(UInt8(truncatingIfNeeded: value))) { out.append($0) }
             case 0x75:  // \uHHHH (+ surrogate pair)
                 let hi = readHex4(p, j, end)
                 j += 4

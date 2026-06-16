@@ -48,7 +48,9 @@ struct SimpleDiagnostic: DiagnosticMessage {
 // MARK: - Schema codegen helpers (shared by SchemableMacro and the decorator macros)
 
 private func hexDigit(_ v: UInt32) -> Character {
-    Character(UnicodeScalar(v < 10 ? 0x30 + v : 0x61 + (v &- 10))!)
+    // `v` is a nibble (0...15), so the code unit is '0'...'9' / 'a'...'f' — always ASCII, fitting the
+    // non-failable `UnicodeScalar(UInt8)` initializer (no force-unwrap).
+    Character(UnicodeScalar(UInt8(v < 10 ? 0x30 + v : 0x61 + (v &- 10))))
 }
 
 // JSON string *content* (no surrounding quotes) with RFC 8259 minimal escaping — mirrors the
