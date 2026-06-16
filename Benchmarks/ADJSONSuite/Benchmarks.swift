@@ -198,6 +198,19 @@ nonisolated(unsafe) let benchmarks = {
         }
     }
 
+    // MARK: stream  (push-SAX event reader — string-heavy, exercises decodeString)
+
+    let userBytes = [UInt8](userData)
+    Benchmark("stream/events") { bm in
+        for _ in bm.scaledIterations {
+            var reader = JSONEventStreamReader()
+            var n = 0
+            n &+= (try! reader.feed(userBytes)).count
+            n &+= (try! reader.finish()).count
+            blackHole(n)
+        }
+    }
+
     // MARK: query  (JSONPath, RFC 9535 — pre-parsed root)
 
     Benchmark("query/filter") { bm in

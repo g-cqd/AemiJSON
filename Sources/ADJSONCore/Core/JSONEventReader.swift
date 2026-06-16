@@ -494,12 +494,12 @@ public struct JSONEventStreamReader {
         switch try scanStringEnd(open) {
         case .incomplete:
             return .needMore
-        case .ok(let end):
+        case .ok(let end, let hasEscape):
             var j = end
             while j < count, isWS(buffer[j]) { j += 1 }
             if j >= count { return .needMore }  // colon not here yet → retry the whole key+colon
             guard buffer[j] == 0x3A else { throw JSONError.unexpectedCharacter(buffer[j], at: j) }
-            let key = decodeString(open, end)
+            let key = decodeString(open, end, hasEscape: hasEscape)
             i = j + 1
             expect = .objectValue
             return .event(.key(key))
@@ -526,8 +526,8 @@ public struct JSONEventStreamReader {
         case 0x22:  // '"'
             switch try scanStringEnd(i) {
             case .incomplete: return .needMore
-            case .ok(let end):
-                let s = decodeString(i, end)
+            case .ok(let end, let hasEscape):
+                let s = decodeString(i, end, hasEscape: hasEscape)
                 i = end
                 expect = afterScalar
                 return .event(.string(s))
@@ -558,15 +558,22 @@ public struct JSONEventStreamReader {
 
     private enum ScanOutcome { case ok(Int), incomplete }
 
-    // Scan a `"…"` string from the opening quote `open`. `.ok(end)` is the index past the close;
+    // `.ok(end, hasEscape)`: `end` is the index past the close quote, `hasEscape` reports whether the
+    // body contains a backslash (so `decodeString` skips a second scan). `.incomplete` if the buffer
+    // ends mid-string.
+    private enum StringScanOutcome { case ok(Int, Bool), incomplete }
+
+    // Scan a `"…"` string from the opening quote `open`. `.ok(end, hasEscape)` past the close;
     // `.incomplete` if the buffer ends mid-string / mid-escape / mid-sequence. Throws on malformed.
-    private func scanStringEnd(_ open: Int) throws(JSONError) -> ScanOutcome {
+    private func scanStringEnd(_ open: Int) throws(JSONError) -> StringScanOutcome {
         var j = open + 1
+        var hasEscape = false
         while true {
             guard j < count else { return .incomplete }
             let c = buffer[j]
-            if c == 0x22 { return .ok(j + 1) }
+            if c == 0x22 { return .ok(j + 1, hasEscape) }
             if c == 0x5C {  // escape
+                hasEscape = true
                 guard j + 1 < count else { return .incomplete }
                 if strict {
                     switch buffer[j + 1] {
@@ -722,14 +729,11 @@ public struct JSONEventStreamReader {
         guard k == end else { throw JSONError.invalidNumber(at: start) }
     }
 
-    private func decodeString(_ open: Int, _ endPastQuote: Int) -> String {
+    // `hasEscape` is threaded from `scanStringEnd` (which already detected it), so the body is decoded
+    // without a second scan for backslashes.
+    private func decodeString(_ open: Int, _ endPastQuote: Int, hasEscape: Bool) -> String {
         let start = open + 1
         let length = endPastQuote - 1 - start
-        var hasEscape = false
-        for k in start..<(start + length) where buffer[k] == 0x5C {
-            hasEscape = true
-            break
-        }
         return buffer.withUnsafeBufferPointer { buf in
             guard let p = buf.baseAddress else { return "" }
             if !hasEscape {
