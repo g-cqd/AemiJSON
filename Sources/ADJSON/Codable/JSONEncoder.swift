@@ -60,13 +60,13 @@ extension ADJSON {
                             + "nils are never observed); use JSONValue.encoded(options:) instead."))
             }
             // Sorted keys / pretty output aren't expressible in the single-pass streaming writer, so
-            // stream compact, then re-serialize through the `JSONValue` model (which sorts + indents).
+            // stream compact, then re-serialize sorted/pretty straight from the parsed tape — no
+            // JSONValue tree is materialized (`JSON.encodedBytes` mirrors `JSONValue`'s output).
             var emitOptions = options
             emitOptions.prettyPrinted = options.prettyPrinted || prettyPrinted
             if emitOptions.keyOrder == .sorted || emitOptions.prettyPrinted {
                 let compact = try encodeCompact(value)
-                let model = try JSONValue(ADJSON.parse(compact).root)
-                return try model.encodedBytes(options: emitOptions)
+                return try ADJSON.parse(compact).root.encodedBytes(options: emitOptions)
             }
             return try encodeCompact(value)
         }

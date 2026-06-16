@@ -260,7 +260,7 @@ extension JSONValue {
         case .int(let i):
             writer.writeInteger(i)
         case .number(let d):
-            try writeNumber(d, into: writer, options: options)
+            try Self.writeNumber(d, into: writer, options: options)
         case .string(let s):
             writer.writeString(s)
         case .array(let elements):
@@ -330,7 +330,7 @@ extension JSONValue {
                 case .int(let i):
                     writer.writeInteger(i)
                 case .number(let d):
-                    try writeNumber(d, into: writer, options: options)
+                    try Self.writeNumber(d, into: writer, options: options)
                 case .string(let s):
                     writer.writeString(s)
                 case .array(let elements):
@@ -385,7 +385,9 @@ extension JSONValue {
     // encode path, where a value typed `Double` is faithfully rendered as `2.0` (see
     // `JSONEncodingOptions.NumberFormat.swiftShortest`). Neither path reproduces Foundation's
     // formatter byte-for-byte; use `.ecma262` for `JSON.stringify` parity.
-    private func writeNumber(_ d: Double, into writer: JSONWriter, options: JSONEncodingOptions) throws {
+    // `static` + `internal` so the tape-cursor serializer (`JSON.encodedBytes`) shares this exact
+    // number formatting — one definition for both representations.
+    static func writeNumber(_ d: Double, into writer: JSONWriter, options: JSONEncodingOptions) throws {
         guard d.isFinite else {
             switch options.nonFinite {
             case .throw:

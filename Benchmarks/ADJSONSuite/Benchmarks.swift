@@ -109,6 +109,16 @@ nonisolated(unsafe) let benchmarks = {
         let value = try! JSONValue(parsing: userData)
         for _ in bm.scaledIterations { blackHole(try! value.encodedBytes()) }
     }
+    Benchmark("encode/ADJSON pretty") { bm in
+        var encoder = ADJSON.JSONEncoder()
+        encoder.prettyPrinted = true
+        for _ in bm.scaledIterations { blackHole(try! encoder.encode(users)) }
+    }
+    Benchmark("encode/ADJSON sorted") { bm in
+        var encoder = ADJSON.JSONEncoder()
+        encoder.options = JSONEncodingOptions(keyOrder: .sorted)
+        for _ in bm.scaledIterations { blackHole(try! encoder.encode(users)) }
+    }
 
     // MARK: numbers  (number-heavy [Double])
 

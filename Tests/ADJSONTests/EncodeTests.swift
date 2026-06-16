@@ -131,6 +131,35 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     #expect(plain.contains(0x3C) && plain.contains(0x26))
 }
 
+// The tape-cursor serializer (JSON.encodedBytes) must be byte-identical to materializing a
+// JSONValue and serializing that, across every option combination — it backs the encoder's
+// pretty/sorted path.
+@Test func cursorEncodedBytesMatchesJSONValueAcrossOptions() throws {
+    let docs = [
+        #"{"b":2,"a":1,"c":[1,2,3],"nested":{"z":true,"y":null,"x":"hi"}}"#,
+        #"[1,2.5,3e2,-0.0,1000000,9223372036854775807,99999999999999999999,"s","a/b","<x>",true,false,null]"#,
+        #"{"deep":{"a":{"b":{"c":[{"d":1}]}}}}"#,
+        "{}", "[]", #"{"only":[]}"#, "3.14", #""x""#,
+        #"{"k":[{"m":1,"a":2},{"z":3}],"a":[]}"#,
+    ]
+    let optionSets: [JSONEncodingOptions] = [
+        .rfc8259,
+        JSONEncodingOptions(prettyPrinted: true),
+        JSONEncodingOptions(keyOrder: .sorted),
+        JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true),
+        JSONEncodingOptions(numberFormat: .ecma262, keyOrder: .sorted, prettyPrinted: true),
+        JSONEncodingOptions(escapeSlashes: true, prettyPrinted: true),
+        JSONEncodingOptions(prettyPrinted: true, escapeHTMLUnsafe: true),
+    ]
+    for doc in docs {
+        let root = try ADJSON.parse(doc).root
+        let value = JSONValue(root)
+        for opts in optionSets {
+            #expect(try root.encodedBytes(options: opts) == value.encodedBytes(options: opts), "mismatch: \(doc)")
+        }
+    }
+}
+
 @Test func htmlSafeEscapingOnCodablePaths() throws {
     struct Doc: Codable { var html: String }
     var encoder = ADJSON.JSONEncoder()
