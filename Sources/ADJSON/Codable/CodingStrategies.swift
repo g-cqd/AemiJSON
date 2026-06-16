@@ -29,13 +29,17 @@ extension ADJSON.JSONEncoder {
         case custom((Data, any Encoder) throws -> Void)
     }
 
-    /// How `CodingKey`s are converted to JSON keys. A subset of
-    /// `Foundation.JSONEncoder.KeyEncodingStrategy` (`.custom` is not yet supported — this encoder
-    /// does not track the full coding path). Setting `.convertToSnakeCase` routes encoding through
-    /// the generic path so the transform applies uniformly (the fast path writes keys verbatim).
+    /// How `CodingKey`s are converted to JSON keys. Mirrors `Foundation.JSONEncoder.KeyEncodingStrategy`
+    /// for `.useDefaultKeys` / `.convertToSnakeCase`; `.custom` here takes a `(String) -> String`
+    /// transform applied to each key's `stringValue` (ADJSON does not expose Foundation's full
+    /// `[CodingKey]` path — the streaming encoder tracks no coding path). Any non-default strategy
+    /// routes encoding through the generic path so the transform applies uniformly (the `@JSONCodable`
+    /// fast path writes keys verbatim).
     public enum KeyEncodingStrategy {
         case useDefaultKeys
         case convertToSnakeCase
+        /// Transform each key's `stringValue` to its JSON form (e.g. uppercase, prefix, lookup).
+        case custom(@Sendable (String) -> String)
     }
 }
 
@@ -64,11 +68,16 @@ extension ADJSON.JSONDecoder {
         case convertFromString(positiveInfinity: String, negativeInfinity: String, nan: String)
     }
 
-    /// How JSON keys are converted before matching `CodingKey`s. A subset of
-    /// `Foundation.JSONDecoder.KeyDecodingStrategy` (`.custom` is not yet supported).
+    /// How JSON keys are converted before matching `CodingKey`s. Mirrors
+    /// `Foundation.JSONDecoder.KeyDecodingStrategy` for `.useDefaultKeys` / `.convertFromSnakeCase`;
+    /// `.custom` here takes a `(String) -> String` transform applied to each JSON key before it is
+    /// matched against the type's `CodingKey`s (ADJSON does not expose Foundation's full `[CodingKey]`
+    /// path). Any non-default strategy routes decoding through the generic container path.
     public enum KeyDecodingStrategy {
         case useDefaultKeys
         case convertFromSnakeCase
+        /// Transform each JSON key before matching it to a `CodingKey` (e.g. lowercase, strip a prefix).
+        case custom(@Sendable (String) -> String)
     }
 }
 
@@ -86,7 +95,7 @@ struct EncodeStrategies {
     var date: ADJSON.JSONDecoder.DateDecodingStrategy = .deferredToDate
     var data: ADJSON.JSONDecoder.DataDecodingStrategy = .base64
     var nonConformingFloat: ADJSON.JSONDecoder.NonConformingFloatDecodingStrategy = .throw
-    var key: ADJSON.JSONDecoder.KeyDecodingStrategy = .useDefaultKeys
+    @usableFromInline var key: ADJSON.JSONDecoder.KeyDecodingStrategy = .useDefaultKeys
 }
 
 // MARK: - snake_case conversion (ported from swift-foundation's JSONEncoder/JSONDecoder)
@@ -204,8 +213,8 @@ extension DecodeContext {
     }
 
     /// True when JSON keys must be converted before matching `CodingKey`s (disables the byte-compare
-    /// fast path in `memberValueIndex`).
-    var keyConversionActive: Bool {
+    /// fast path in `memberValueIndex` and the `@JSONCodable` fast decode).
+    @usableFromInline var keyConversionActive: Bool {
         if case .useDefaultKeys = strategies.key { return false }
         return true
     }
@@ -215,6 +224,7 @@ extension DecodeContext {
         switch strategies.key {
         case .useDefaultKeys: return key
         case .convertFromSnakeCase: return convertFromSnakeCase(key)
+        case .custom(let transform): return transform(key)
         }
     }
 

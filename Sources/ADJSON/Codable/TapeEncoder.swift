@@ -47,6 +47,7 @@ final class EncodeState {
         switch strategies.key {
         case .useDefaultKeys: return key
         case .convertToSnakeCase: return convertToSnakeCase(key)
+        case .custom(let transform): return transform(key)
         }
     }
 

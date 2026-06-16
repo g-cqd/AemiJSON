@@ -25,7 +25,7 @@ final class DecodeContext {
     @usableFromInline let tapeCount: Int
     @usableFromInline let keysAreUnique: Bool
     let userInfo: [CodingUserInfoKey: Any]
-    let strategies: DecodeStrategies
+    @usableFromInline let strategies: DecodeStrategies
     // Native-recursion guard for the (unavoidably recursive) Codable path. `decodeValue` bumps
     // `decodeDepth` on entry and throws past `maxDecodeDepth`, converting a stack overflow on deeply
     // nested input into a catchable error — even when `maxDepth` is raised far past it.

@@ -141,6 +141,7 @@ struct JSONValueDecoderImpl: Decoder {
         switch strategies.key {
         case .useDefaultKeys: return key
         case .convertFromSnakeCase: return convertFromSnakeCase(key)
+        case .custom(let transform): return transform(key)
         }
     }
 

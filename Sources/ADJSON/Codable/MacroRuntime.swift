@@ -64,7 +64,10 @@ extension DecodeContext {
     @inlinable func decodeValue<T: Decodable>(_ type: T.Type, at index: Int) throws -> T {
         try pushDepth()
         defer { popDepth() }
-        if let fast = T.self as? any ADJSONFastDecodable.Type {
+        // The fast path matches object keys by raw bytes against the type's literal CodingKeys, so it
+        // can't apply a key-decoding strategy — route to the generic container path when one is set
+        // (matches the encoder, which skips the fast writer the same way).
+        if !keyConversionActive, let fast = T.self as? any ADJSONFastDecodable.Type {
             if let value = try fast.__adjsonDecode(_FastDecodeCursor(ctx: self, index: index)) as? T {
                 return value
             }
