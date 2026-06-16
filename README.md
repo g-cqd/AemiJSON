@@ -247,8 +247,8 @@ without a before/after number.
   readers do not yet.
 - [ ] **`KeyEncodingStrategy.custom` / `KeyDecodingStrategy.custom`** — the streaming encoder/decoder
   do not track the full coding path required for a custom key transform.
-- [ ] **Optional HTML-safe output escaping** — escape `<`, `>`, `&`, and U+2028 / U+2029 for
-  embedding JSON in HTML/JS contexts.
+- [x] **Optional HTML-safe output escaping** — `JSONEncodingOptions.escapeHTMLUnsafe` escapes `<`,
+  `>`, `&`, and U+2028 / U+2029 for embedding JSON in HTML/JS contexts, honored on every encode path.
 
 ### Tooling / CI (low priority)
 

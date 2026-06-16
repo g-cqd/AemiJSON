@@ -92,6 +92,8 @@ extension ADJSON {
                 return w.bytes
             }
             let writer = JSONWriter(adopting: EncoderBufferPool.take())
+            writer.escapeSlashes = options.escapeSlashes
+            writer.escapeHTMLUnsafe = options.escapeHTMLUnsafe
             let state = EncodeState(writer, options: options, strategies: strategies, maxEncodeDepth: maxEncodingDepth)
             do {
                 try state.encodeValue(value)

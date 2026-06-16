@@ -228,6 +228,8 @@ extension JSONValue {
     }
 
     func write(into writer: JSONWriter, depth: Int, options: JSONEncodingOptions) throws {
+        writer.escapeSlashes = options.escapeSlashes
+        writer.escapeHTMLUnsafe = options.escapeHTMLUnsafe
         // Compact + declaration-order is the overwhelmingly common case; a shallow tree serializes
         // fastest by direct recursion straight into the writer (no `WriteOp` buffering — the same
         // regression the eager-tree parse had). Pretty/sorted output, or any subtree past

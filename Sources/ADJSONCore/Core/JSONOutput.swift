@@ -66,8 +66,15 @@ public enum JSONOutput {
     /// Appends `"…"` with RFC 8259 minimal escaping: `"`, `\`, and the C0 controls
     /// (`\n \r \t \b \f` short forms, everything else `\u00XX`). Bytes ≥ 0x20 other than
     /// `"`/`\` are copied verbatim in runs, so well-formed UTF-8 passes through untouched.
+    ///
+    /// `escapeHTMLUnsafe` additionally escapes the characters unsafe to embed in HTML/`<script>`:
+    /// `<`, `>`, `&` (as `<`/`>`/`&`) and the JS line/paragraph separators U+2028 /
+    /// U+2029 (as ` `/` `). Off by default; the checks short-circuit so the default path is
+    /// unchanged.
     @inlinable
-    public static func appendString(_ s: String, to bytes: inout [UInt8], escapeSlashes: Bool = false) {
+    public static func appendString(
+        _ s: String, to bytes: inout [UInt8], escapeSlashes: Bool = false, escapeHTMLUnsafe: Bool = false
+    ) {
         bytes.append(0x22)
         var str = s
         str.withUTF8 { buf in
@@ -77,7 +84,19 @@ public enum JSONOutput {
             var i = 0
             while i < n {
                 let b = p[i]
-                if b < 0x20 || b == 0x22 || b == 0x5C || (escapeSlashes && b == 0x2F) {
+                // U+2028 / U+2029 are 3-byte sequences (E2 80 A8/A9), so they need a UTF-8-aware branch
+                // rather than a single-byte test — taken only under HTML-safe escaping.
+                if escapeHTMLUnsafe, b == 0xE2, i + 2 < n, p[i + 1] == 0x80, p[i + 2] == 0xA8 || p[i + 2] == 0xA9 {
+                    if i > runStart {
+                        bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
+                    }
+                    bytes.append(contentsOf: [0x5C, 0x75, 0x32, 0x30, 0x32, p[i + 2] == 0xA8 ? 0x38 : 0x39])  //  /9
+                    i += 3
+                    runStart = i
+                    continue
+                }
+                let htmlUnsafe = escapeHTMLUnsafe && (b == 0x3C || b == 0x3E || b == 0x26)  // < > &
+                if b < 0x20 || b == 0x22 || b == 0x5C || (escapeSlashes && b == 0x2F) || htmlUnsafe {
                     if i > runStart {
                         bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
                     }
@@ -267,7 +286,9 @@ public enum JSONOutput {
             case .null:
                 appendNull(to: &bytes)
             case .stringLiterals(let pos, let neg, let nan):
-                appendString(v.isNaN ? nan : (v > 0 ? pos : neg), to: &bytes, escapeSlashes: options.escapeSlashes)
+                appendString(
+                    v.isNaN ? nan : (v > 0 ? pos : neg), to: &bytes,
+                    escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
             }
             return
         }

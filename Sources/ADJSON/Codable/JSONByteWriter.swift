@@ -45,11 +45,15 @@ public struct _JSONByteWriter {
 
     /// A runtime object key (escaped) followed by `:`. Used for `Dictionary` keys.
     @inlinable public mutating func dynamicKey(_ k: String) {
-        JSONOutput.appendString(k, to: &bytes)
+        JSONOutput.appendString(
+            k, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
         bytes.append(0x3A)
     }
 
-    @inlinable public mutating func string(_ v: String) { JSONOutput.appendString(v, to: &bytes) }
+    @inlinable public mutating func string(_ v: String) {
+        JSONOutput.appendString(
+            v, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+    }
 
     @inlinable public mutating func integer<T: FixedWidthInteger>(_ v: T) {
         JSONOutput.appendInteger(v, to: &bytes)
@@ -78,6 +82,8 @@ public struct _JSONByteWriter {
     /// inlinable `encode` so generated code can call it.
     @usableFromInline mutating func encodeGeneric<T: Encodable>(_ v: T) throws {
         let writer = JSONWriter(adopting: bytes)
+        writer.escapeSlashes = options.escapeSlashes
+        writer.escapeHTMLUnsafe = options.escapeHTMLUnsafe
         bytes = []
         let state = EncodeState(writer, options: options, maxEncodeDepth: maxDepth)
         state.encodeDepth = depth  // continue the depth count into the generic encoder (no reset)

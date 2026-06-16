@@ -101,6 +101,48 @@ private let samples: [E] = [
     #expect(throws: EncodingError.self) { try JSONValue.number(.nan).encoded() }
 }
 
+// HTML-safe output must contain no raw `<` `>` `&` or U+2028/U+2029, yet round-trip to the original.
+// (Assertions check bytes/round-trip rather than literal escape spellings, to stay robust.)
+private let lineSep = String(Unicode.Scalar(0x2028)!)
+private let paraSep = String(Unicode.Scalar(0x2029)!)
+
+private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
+    if bytes.contains(0x3C) || bytes.contains(0x3E) || bytes.contains(0x26) { return false }  // < > &
+    var i = 0
+    while i + 2 < bytes.count {
+        if bytes[i] == 0xE2, bytes[i + 1] == 0x80, bytes[i + 2] == 0xA8 || bytes[i + 2] == 0xA9 { return false }
+        i += 1
+    }
+    return true
+}
+
+@Test func htmlSafeEscapingEscapesUnsafeCharacters() throws {
+    let samples: [JSONValue] = [
+        .string("a<b>c&d"), .string("x" + lineSep + "y" + paraSep + "z"),
+        .object(["a&b": .int(1)]), .array([.string("<x>"), .string("café 😀")]),
+    ]
+    for v in samples {
+        let bytes = try v.encodedBytes(options: JSONEncodingOptions(escapeHTMLUnsafe: true))
+        #expect(hasNoHTMLUnsafeBytes(bytes), "raw HTML-unsafe byte left in \(v)")
+        #expect(try JSONValue(ADJSON.parse(bytes).root) == v, "round-trip changed \(v)")
+    }
+    // Off by default: unsafe characters pass through verbatim.
+    let plain = try JSONValue.string("a<b>&").encodedBytes()
+    #expect(plain.contains(0x3C) && plain.contains(0x26))
+}
+
+@Test func htmlSafeEscapingOnCodablePaths() throws {
+    struct Doc: Codable { var html: String }
+    var encoder = ADJSON.JSONEncoder()
+    encoder.options = JSONEncodingOptions(escapeHTMLUnsafe: true)
+    let bytes = [UInt8](try encoder.encode(Doc(html: "<p>&amp;</p>")))
+    #expect(hasNoHTMLUnsafeBytes(bytes))
+    #expect(try JSONValue(ADJSON.parse(bytes).root) == .object(["html": .string("<p>&amp;</p>")]))
+    // Default encoder leaves them verbatim.
+    let plain = [UInt8](try ADJSON.JSONEncoder().encode(Doc(html: "<p>&</p>")))
+    #expect(plain.contains(0x3C) && plain.contains(0x26))
+}
+
 // Pinned to the main actor: `JSONValue.init(_:)` recurses on its fast path up to `maxFastDepth`
 // (128) before switching to the explicit-stack builder, and each level is several stack frames
 // (`materialize` → `forEachMember` → `withBytePointer` → …). ASan inflates those past the

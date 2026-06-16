@@ -19,8 +19,12 @@ let data = try JSONValue(parsing: input).encoded(options: .javaScript)
 ```
 
 Knobs: `nonFinite` (throw / `null` / string literals), `numberFormat` (`.swiftShortest` /
-`.ecma262`), `keyOrder` (`.declaration` / `.sorted`), `escapeSlashes`, and `nilStrategy`
-(`.omit` / `.null`).
+`.ecma262`), `keyOrder` (`.declaration` / `.sorted`), `escapeSlashes`, `escapeHTMLUnsafe`, and
+`nilStrategy` (`.omit` / `.null`).
+
+> Tip: `escapeHTMLUnsafe` escapes `<`, `>`, `&` (as `<` / `>` / `&`) and the JS
+> line/paragraph separators U+2028 / U+2029 — for safely embedding JSON inside HTML or a `<script>`
+> block. It is honored on every encode path (Codable, `@JSONCodable`, `JSONValue`, `JSONStreamWriter`).
 
 > Note: `keyOrder` and `nilStrategy` are honored by ``/ADJSON/ADJSONCore/JSONValue/encoded(options:)`` and
 > ``JSONStreamWriter``, not by the streaming Codable path (which emits in the encoder's call

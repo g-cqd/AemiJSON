@@ -91,7 +91,8 @@ public struct JSONStreamWriter: ~Copyable {
             if stack[last].count > 0 { bytes.append(0x2C) }
             stack[last].count += 1
         }
-        JSONOutput.appendString(k, to: &bytes, escapeSlashes: options.escapeSlashes)
+        JSONOutput.appendString(
+            k, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
         bytes.append(0x3A)
         afterKey = true
     }
@@ -100,13 +101,15 @@ public struct JSONStreamWriter: ~Copyable {
 
     public mutating func string(_ s: String) {
         separateBeforeValue()
-        JSONOutput.appendString(s, to: &bytes, escapeSlashes: options.escapeSlashes)
+        JSONOutput.appendString(
+            s, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
     }
 
     public mutating func stringOrNull(_ s: String?) {
         separateBeforeValue()
         if let s {
-            JSONOutput.appendString(s, to: &bytes, escapeSlashes: options.escapeSlashes)
+            JSONOutput.appendString(
+                s, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
         } else {
             JSONOutput.appendNull(to: &bytes)
         }
@@ -125,7 +128,8 @@ public struct JSONStreamWriter: ~Copyable {
         guard v.isFinite else {
             if case .stringLiterals(let pos, let neg, let nan) = options.nonFinite {
                 let lit = v.isNaN ? nan : (v > 0 ? pos : neg)
-                JSONOutput.appendString(lit, to: &bytes, escapeSlashes: options.escapeSlashes)
+                JSONOutput.appendString(
+                    lit, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
             } else {
                 JSONOutput.appendNull(to: &bytes)
             }

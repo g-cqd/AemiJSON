@@ -4,6 +4,10 @@
 // `package` so the umbrella's Codable encoder (a separate module) can share it.
 package final class JSONWriter {
     package var bytes: [UInt8]
+    /// String-escaping policy applied by ``writeString(_:)`` / ``writeKey(_:)``. Set from the encode
+    /// options before serializing (default: minimal RFC 8259 escaping).
+    package var escapeSlashes = false
+    package var escapeHTMLUnsafe = false
 
     package init(capacity: Int = 0) {
         bytes = []
@@ -42,5 +46,7 @@ package final class JSONWriter {
         bytes.append(0x3A)
     }
 
-    package func writeString(_ s: String) { JSONOutput.appendString(s, to: &bytes) }
+    package func writeString(_ s: String) {
+        JSONOutput.appendString(s, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
+    }
 }

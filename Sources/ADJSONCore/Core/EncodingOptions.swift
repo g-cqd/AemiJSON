@@ -52,6 +52,9 @@ public struct JSONEncodingOptions: Sendable {
     public var keyOrder: KeyOrder
     /// Escape `/` as `\/`. RFC 8259 and `JSON.stringify` both leave it unescaped (default `false`).
     public var escapeSlashes: Bool
+    /// Escape characters unsafe to embed directly in HTML / `<script>`: `<`, `>`, `&`, and the JS
+    /// line/paragraph separators U+2028 / U+2029. Off by default (output stays minimal RFC 8259).
+    public var escapeHTMLUnsafe: Bool
     public var nilStrategy: NilStrategy
     /// Emit human-readable output: a newline after each `{`/`[`/`,`, two-space indentation per
     /// nesting level, and a `" : "` key separator — matching `Foundation`'s `.prettyPrinted`
@@ -64,7 +67,8 @@ public struct JSONEncodingOptions: Sendable {
         keyOrder: KeyOrder = .declaration,
         escapeSlashes: Bool = false,
         nilStrategy: NilStrategy = .omit,
-        prettyPrinted: Bool = false
+        prettyPrinted: Bool = false,
+        escapeHTMLUnsafe: Bool = false
     ) {
         self.nonFinite = nonFinite
         self.numberFormat = numberFormat
@@ -72,6 +76,7 @@ public struct JSONEncodingOptions: Sendable {
         self.escapeSlashes = escapeSlashes
         self.nilStrategy = nilStrategy
         self.prettyPrinted = prettyPrinted
+        self.escapeHTMLUnsafe = escapeHTMLUnsafe
     }
 
     /// Strict RFC 8259 / ECMA-404: reject non-finite numbers, shortest numbers, declaration order.
