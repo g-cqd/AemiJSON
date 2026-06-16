@@ -55,6 +55,18 @@ itself Foundation-free with no transitive deps)? Depend on the `ADJSONCore` prod
 `import ADJSON` re-exports `ADJSONCore`, so the full library is a strict superset: the `Data`
 conveniences, Codable, Schema, and the macros live only in the umbrella module.
 
+### swift-nio interop (`ADJSONNIO`)
+
+Server-side consumers can opt into a swift-nio bridge — zero-copy `ADJSON.parse(ByteBuffer)` and a
+`ByteBuffer.writeJSON(_:options:)` sink — via the `ADJSONNIO` product, a superset that re-exports the
+Foundation-free `ADJSONCore`. It is **gated behind `ADJSON_NIO`** so swift-nio never enters the
+default resolution graph; enable it when resolving/building:
+
+```swift
+// Build/resolve with ADJSON_NIO=1, then:
+.target(name: "MyServer", dependencies: [.product(name: "ADJSONNIO", package: "ADJSON")])
+```
+
 **Requirements:** Swift 6.3+ toolchain (developed and tested on 6.4); macOS 15+ / iOS 18+ /
 tvOS 18+ / watchOS 11+ / visionOS 2+ (the floor is set by `Synchronization.Mutex`).
 
@@ -224,9 +236,10 @@ without a before/after number.
   `AsyncSequence<JSONEvent>` over any async byte stream (`URLSession.AsyncBytes` /
   `FileHandle.AsyncBytes` compose directly — both are `AsyncSequence<UInt8>`). Dependency-free in
   `ADJSONCore`.
-- [ ] **swift-nio `ByteBuffer` adapter.** `ByteBuffer` → `ByteSource` (zero-copy parse) and a
-  writer → `ByteBuffer` sink. Server-focused; ship as a dev-gated target / small `ADJSONNIO` product
-  so the core stays dependency-free.
+- [x] **swift-nio `ByteBuffer` adapter.** `ADJSONNIO` adds zero-copy `ADJSON.parse(ByteBuffer)` and a
+  `ByteBuffer.writeJSON(_:options:)` sink. Shipped as an **`ADJSON_NIO`-gated** product that re-exports
+  `ADJSONCore`, so swift-nio enters the graph only for consumers that opt in — the base `ADJSON` /
+  `ADJSONCore` products stay dependency-clean.
 - [x] **Decide on `UTF8Span` / `InlineArray`** — decision recorded: **do not adopt yet** (both ship
   only in the 2025 SDKs, raising the deployment floor above the iOS 18 floor pinned by
   `Synchronization.Mutex`; `UTF8Span` also forces a second validation pass over the single-pass

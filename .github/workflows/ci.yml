@@ -53,6 +53,10 @@ jobs:
         run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
       - name: Test (full conformance suite, with coverage)
         run: swift test --enable-code-coverage
+      - name: Build & test ADJSONNIO (swift-nio adapter, opt-in)
+        env:
+          ADJSON_NIO: "1"
+        run: swift test --filter ADJSONNIOTests
       - name: Coverage summary
         if: always()
         run: |

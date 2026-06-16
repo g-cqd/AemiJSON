@@ -54,6 +54,12 @@ let isDev = Context.environment["ADJSON_DEV"] != nil
 // Contributors / CI set `ADJSON_FUZZ=1` and build it with the fuzzer sanitizer; see `Sources/ADJSONFuzz`.
 let isFuzz = Context.environment["ADJSON_FUZZ"] != nil
 
+// The `ADJSONNIO` adapter (swift-nio `ByteBuffer` interop) is gated behind `ADJSON_NIO` so swift-nio
+// stays out of the default resolution graph — `ADJSON` / `ADJSONCore` consumers never fetch it. A
+// server that wants the integration builds/resolves with `ADJSON_NIO=1` and depends on the
+// `ADJSONNIO` product, which re-exports `ADJSONCore`. Same opt-in model as `ADJSON_DEV` / `ADJSON_FUZZ`.
+let isNIO = Context.environment["ADJSON_NIO"] != nil
+
 var packageDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0"),
     // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
@@ -70,6 +76,12 @@ if isDev {
     // added only under `ADJSON_DEV`, so consumers never resolve it.
     packageDependencies.append(
         .package(url: "https://github.com/ordo-one/benchmark", from: "1.4.0"))
+}
+if isNIO {
+    // swift-nio (NIOCore) supplies `ByteBuffer`. Resolved only under `ADJSON_NIO`, so default
+    // consumers of `ADJSON` / `ADJSONCore` never pull it into their dependency graph.
+    packageDependencies.append(
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.50.0"))
 }
 
 let orderedCollections: Target.Dependency = .product(name: "OrderedCollections", package: "swift-collections")
@@ -190,4 +202,18 @@ if isDev {
             swiftSettings: strictSettings,
             plugins: [.plugin(name: "BenchmarkPlugin", package: "benchmark")]
         ))
+}
+
+if isNIO {
+    // The swift-nio interop product (ADJSON_NIO-gated): `ByteBuffer` ⇄ ADJSON. A superset of the
+    // engine — it depends on and re-exports `ADJSONCore` (Foundation-free), and adds NIOCore only
+    // here, so the base products stay dependency-clean.
+    let nioCore: Target.Dependency = .product(name: "NIOCore", package: "swift-nio")
+    package.products.append(.library(name: "ADJSONNIO", targets: ["ADJSONNIO"]))
+    package.targets.append(
+        .target(
+            name: "ADJSONNIO", dependencies: ["ADJSONCore", orderedCollections, nioCore],
+            swiftSettings: strictSettings))
+    package.targets.append(
+        .testTarget(name: "ADJSONNIOTests", dependencies: ["ADJSONNIO", nioCore], swiftSettings: testSettings))
 }
