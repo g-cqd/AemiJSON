@@ -252,8 +252,10 @@ without a before/after number.
   (`JSONEventStreamReader`) SAX readers now parse JSON5 (comments, single-quoted / unquoted keys,
   trailing commas, hex / `Infinity` / `NaN` / extended numbers) via the shared `Core/Tokenizer.swift`
   grammar, fully resumable across feed boundaries in the streaming reader.
-- [ ] **`KeyEncodingStrategy.custom` / `KeyDecodingStrategy.custom`** — the streaming encoder/decoder
-  do not track the full coding path required for a custom key transform.
+- [x] **`KeyEncodingStrategy.custom` / `KeyDecodingStrategy.custom`** — an ADJSON `(String) -> String`
+  transform (not Foundation's full `[CodingKey]`-path form; the streaming coders track no coding path).
+  Any key strategy now also routes `@JSONCodable` types through the generic path, so
+  `.convertSnakeCase` is honored for fast types too (previously the fast path ignored it).
 - [x] **Optional HTML-safe output escaping** — `JSONEncodingOptions.escapeHTMLUnsafe` escapes `<`,
   `>`, `&`, and U+2028 / U+2029 for embedding JSON in HTML/JS contexts, honored on every encode path.
 
