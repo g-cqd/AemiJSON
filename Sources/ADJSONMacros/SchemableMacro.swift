@@ -120,7 +120,7 @@ private func schemaProperties(_ decl: StructDeclSyntax) -> [SchemaProperty]? {
 // call composing a nested type / `String` enum (with an optional `description` spliced in).
 private enum Seg {
     case lit(String)
-    case refCall(type: String, desc: String?)
+    case refCall(type: String, desc: String?, title: String?)
 }
 
 private func schemaTextBody(
@@ -146,107 +146,123 @@ private func schemaTextBody(
 private func propertyFragment(
     _ p: SchemaProperty, enclosing: String, selfRefs: inout [String], unresolved: inout [String]
 ) -> [Seg] {
-    // `@SchemaInfo(description:)` wins over the `///` doc comment.
+    // `@SchemaInfo(description:)` wins over the `///` doc comment; `@SchemaInfo(title:)` adds a title.
     let desc = p.decorators.description ?? p.doc
     return fragment(
-        for: p.type, desc: desc, dec: p.decorators, enclosing: enclosing, selfRefs: &selfRefs,
-        unresolved: &unresolved)
+        for: p.type, desc: desc, title: p.decorators.title, dec: p.decorators, enclosing: enclosing,
+        selfRefs: &selfRefs, unresolved: &unresolved)
 }
 
 private func fragment(
-    for type: TypeSyntax, desc: String?, dec: SchemaDecorators,
+    for type: TypeSyntax, desc: String?, title: String?, dec: SchemaDecorators,
     enclosing: String, selfRefs: inout [String], unresolved: inout [String]
 ) -> [Seg] {
     // `@SchemaEnum` forces a closed `String` set regardless of the declared type (covers bare `String`).
     if let values = dec.enumValues {
         let body =
-            "{" + descPrefix(desc) + "\"type\":\"string\",\"enum\":["
+            "{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"string\",\"enum\":["
             + values.map(jsonString).joined(separator: ",") + "]" + stringConstraints(dec) + "}"
         return [.lit(body)]
     }
 
     if let wrapped = optionalWrapped(type) {
         return fragment(
-            for: wrapped, desc: desc, dec: dec, enclosing: enclosing, selfRefs: &selfRefs, unresolved: &unresolved)
+            for: wrapped, desc: desc, title: title, dec: dec, enclosing: enclosing, selfRefs: &selfRefs,
+            unresolved: &unresolved)
     }
     if let array = type.as(ArrayTypeSyntax.self) {
         return arrayFragment(
-            element: array.element, desc: desc, enclosing: enclosing, selfRefs: &selfRefs, unresolved: &unresolved)
+            element: array.element, desc: desc, title: title, enclosing: enclosing, selfRefs: &selfRefs,
+            unresolved: &unresolved)
     }
     if let dict = type.as(DictionaryTypeSyntax.self) {
         return dictFragment(
-            value: dict.value, desc: desc, enclosing: enclosing, selfRefs: &selfRefs, unresolved: &unresolved)
+            value: dict.value, desc: desc, title: title, enclosing: enclosing, selfRefs: &selfRefs,
+            unresolved: &unresolved)
     }
     if let id = type.as(IdentifierTypeSyntax.self) {
         let base = id.name.text
         if let generics = id.genericArgumentClause?.arguments.compactMap({ $0.argument.as(TypeSyntax.self) }) {
             if base == "Array", let inner = generics.first {
                 return arrayFragment(
-                    element: inner, desc: desc, enclosing: enclosing, selfRefs: &selfRefs, unresolved: &unresolved)
+                    element: inner, desc: desc, title: title, enclosing: enclosing, selfRefs: &selfRefs,
+                    unresolved: &unresolved)
             }
             if base == "Dictionary", generics.count >= 2 {
                 return dictFragment(
-                    value: generics[1], desc: desc, enclosing: enclosing, selfRefs: &selfRefs,
+                    value: generics[1], desc: desc, title: title, enclosing: enclosing, selfRefs: &selfRefs,
                     unresolved: &unresolved)
             }
         }
-        if base == "Bool" { return [.lit("{" + descPrefix(desc) + "\"type\":\"boolean\"}")] }
+        if base == "Bool" {
+            return [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"boolean\"}")]
+        }
         if integerTypes.contains(base) {
             return [
-                .lit(scalarObject(forcedNumberType(dec) ?? "integer", desc: desc, constraints: numberConstraints(dec)))
+                .lit(
+                    scalarObject(
+                        forcedNumberType(dec) ?? "integer", desc: desc, title: title,
+                        constraints: numberConstraints(dec)))
             ]
         }
         if base == "Double" || base == "Float" {
             return [
-                .lit(scalarObject(forcedNumberType(dec) ?? "number", desc: desc, constraints: numberConstraints(dec)))
+                .lit(
+                    scalarObject(
+                        forcedNumberType(dec) ?? "number", desc: desc, title: title,
+                        constraints: numberConstraints(dec)))
             ]
         }
         if base == "String" {
-            return [.lit(scalarObject("string", desc: desc, constraints: stringConstraints(dec)))]
+            return [.lit(scalarObject("string", desc: desc, title: title, constraints: stringConstraints(dec)))]
         }
         if base == enclosing {
             selfRefs.append(base)
-            return [.lit("{" + descPrefix(desc) + "\"type\":\"object\"}")]
+            return [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"object\"}")]
         }
         // Nested `@Schemable` object or a `String`-`CaseIterable` enum: resolved at runtime by the
         // overloaded `__adjsonSchemaFragment`.
-        return [.refCall(type: type.trimmedDescription, desc: desc)]
+        return [.refCall(type: type.trimmedDescription, desc: desc, title: title)]
     }
     // A type the syntactic matcher can't map to a JSON kind (a qualified name like `Swift.Int`, a
     // tuple, a closure, …): described as an open object, and flagged so the author can fix it.
     unresolved.append(type.trimmedDescription)
-    return [.lit("{" + descPrefix(desc) + "\"type\":\"object\"}")]
+    return [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"object\"}")]
 }
 
 private func arrayFragment(
-    element: TypeSyntax, desc: String?, enclosing: String, selfRefs: inout [String], unresolved: inout [String]
+    element: TypeSyntax, desc: String?, title: String?, enclosing: String, selfRefs: inout [String],
+    unresolved: inout [String]
 ) -> [Seg] {
-    [.lit("{" + descPrefix(desc) + "\"type\":\"array\",\"items\":")]
+    [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"array\",\"items\":")]
         + fragment(
-            for: element, desc: nil, dec: SchemaDecorators(), enclosing: enclosing, selfRefs: &selfRefs,
-            unresolved: &unresolved)
+            for: element, desc: nil, title: nil, dec: SchemaDecorators(), enclosing: enclosing,
+            selfRefs: &selfRefs, unresolved: &unresolved)
         + [.lit("}")]
 }
 
 private func dictFragment(
-    value: TypeSyntax, desc: String?, enclosing: String, selfRefs: inout [String], unresolved: inout [String]
+    value: TypeSyntax, desc: String?, title: String?, enclosing: String, selfRefs: inout [String],
+    unresolved: inout [String]
 ) -> [Seg] {
-    [.lit("{" + descPrefix(desc) + "\"type\":\"object\",\"additionalProperties\":")]
+    [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"object\",\"additionalProperties\":")]
         + fragment(
-            for: value, desc: nil, dec: SchemaDecorators(), enclosing: enclosing, selfRefs: &selfRefs,
-            unresolved: &unresolved)
+            for: value, desc: nil, title: nil, dec: SchemaDecorators(), enclosing: enclosing,
+            selfRefs: &selfRefs, unresolved: &unresolved)
         + [.lit("}")]
 }
 
 // MARK: - Fragment building blocks
 
-private func scalarObject(_ type: String, desc: String?, constraints: String) -> String {
-    "{" + descPrefix(desc) + "\"type\":\"" + type + "\"" + constraints + "}"
+private func scalarObject(_ type: String, desc: String?, title: String?, constraints: String) -> String {
+    "{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"" + type + "\"" + constraints + "}"
 }
 
-private func descPrefix(_ desc: String?) -> String {
-    guard let desc else { return "" }
-    return "\"description\":" + jsonString(desc) + ","
+private func annotationPrefix(desc: String?, title: String?) -> String {
+    var s = ""
+    if let title { s += "\"title\":" + jsonString(title) + "," }
+    if let desc { s += "\"description\":" + jsonString(desc) + "," }
+    return s
 }
 
 private func forcedNumberType(_ d: SchemaDecorators) -> String? {
@@ -323,9 +339,10 @@ private func emit(_ segs: [Seg]) -> String {
         switch seg {
         case .lit(let s):
             return rawJSONLiteral(s)
-        case .refCall(let type, let desc):
+        case .refCall(let type, let desc, let title):
             let d = desc.map(swiftStringLiteral) ?? "nil"
-            return "__adjsonSchemaFragment(for: \(type).self, description: \(d))"
+            let t = title.map(swiftStringLiteral) ?? "nil"
+            return "__adjsonSchemaFragment(for: \(type).self, description: \(d), title: \(t))"
         }
     }
     return pieces.isEmpty ? "#\"\"#" : pieces.joined(separator: " + ")

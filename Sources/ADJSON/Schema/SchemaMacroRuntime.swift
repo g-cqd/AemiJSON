@@ -15,11 +15,11 @@ import ADJSONCore
 // ============================================================================
 
 // Fragment for a property whose declared type is a nested `@Schemable` object.
-// `description` (plain, unescaped text) is spliced in as the object's first member.
+// `title` / `description` (plain, unescaped text) are spliced in as the object's first members.
 public func __adjsonSchemaFragment<T: ADJSONSchemaProviding>(
-    for _: T.Type, description: String? = nil
+    for _: T.Type, description: String? = nil, title: String? = nil
 ) -> String {
-    __adjsonApplyingDescription(T.__adjsonSchemaText, description)
+    __adjsonApplyingAnnotations(T.__adjsonSchemaText, title: title, description: description)
 }
 
 // Fragment for a `String`-`RawRepresentable`, `CaseIterable` enum property:
@@ -29,9 +29,10 @@ public func __adjsonSchemaFragment<T: ADJSONSchemaProviding>(
 // protocols, so the two overloads stay unambiguous. (A type *manually* conforming to both would
 // make the generated call ambiguous — a loud compile error rather than wrong output.)
 public func __adjsonSchemaFragment<T: CaseIterable & RawRepresentable>(
-    for _: T.Type, description: String? = nil
+    for _: T.Type, description: String? = nil, title: String? = nil
 ) -> String where T.RawValue == String {
     var s = "{"
+    if let title { s += "\"title\":" + __adjsonJSONString(title) + "," }
     if let description { s += "\"description\":" + __adjsonJSONString(description) + "," }
     s += "\"type\":\"string\",\"enum\":["
     var first = true
@@ -61,7 +62,12 @@ public func __adjsonJSONString(_ s: String) -> String {
     return String(decoding: bytes, as: UTF8.self)
 }
 
-private func __adjsonApplyingDescription(_ object: String, _ description: String?) -> String {
-    guard let description else { return object }
-    return __adjsonInsertingFirstMember(object, "\"description\":" + __adjsonJSONString(description))
+private func __adjsonApplyingAnnotations(_ object: String, title: String?, description: String?) -> String {
+    var member = ""
+    if let title { member += "\"title\":" + __adjsonJSONString(title) }
+    if let description {
+        if !member.isEmpty { member += "," }
+        member += "\"description\":" + __adjsonJSONString(description)
+    }
+    return member.isEmpty ? object : __adjsonInsertingFirstMember(object, member)
 }

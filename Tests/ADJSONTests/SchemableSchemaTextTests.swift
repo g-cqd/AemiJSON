@@ -88,6 +88,12 @@ private struct MultiLineDoc: Decodable {
     var nested: MinVersion?
 }
 
+@Schemable
+private struct TitledInput: Decodable {
+    @SchemaInfo(description: "Search terms.", title: "Search Query") var q: String
+    @SchemaInfo(title: "Version Map") var minVersion: MinVersion?
+}
+
 // MARK: - Helpers
 
 private func deepEqual(_ a: String, _ b: String) -> Bool {
@@ -119,6 +125,18 @@ private func occurrences(of needle: String, in s: String) -> Int {
         "year":{"type":"number","description":"Publication year."}},"required":["query"]}
         """
     #expect(deepEqual(SearchDocsInput.jsonSchemaText, target))
+}
+
+@Test func schemaInfoTitleIsEmittedOnScalarAndNestedObject() {
+    // `@SchemaInfo(title:)` emits a JSON Schema "title" on a scalar, and on a nested @Schemable
+    // property (the runtime refCall path) for parity with `description`.
+    let target = """
+        {"type":"object","properties":{\
+        "q":{"title":"Search Query","description":"Search terms.","type":"string"},\
+        "minVersion":{"title":"Version Map","type":"object",\
+        "properties":{"ios":{"type":"string"},"macos":{"type":"string"}}}},"required":["q"]}
+        """
+    #expect(deepEqual(TitledInput.jsonSchemaText, target))
 }
 
 // MARK: - Dialect / $schema
