@@ -1,3 +1,5 @@
+import ADFCore
+
 // Number materialization over a byte range.
 public enum JSONNumber {
     // Exactly-representable powers of ten (10^0 … 10^22). 10^22 = 5^22 · 2^22 and 5^22 < 2^53, so
@@ -48,21 +50,11 @@ public enum JSONNumber {
         case 0x30 where idx + 1 < end && (p[idx + 1] == 0x78 || p[idx + 1] == 0x58):  // 0x / 0X
             var value = 0.0
             var k = idx + 2
-            while k < end, let d = hexDigitValue(p[k]) {
+            while k < end, let d = Hex.value(p[k]) {
                 value = value * 16 + Double(d)
                 k += 1
             }
             return k > idx + 2 ? sign * value : nil
-        default: return nil
-        }
-    }
-
-    @inline(__always)
-    static func hexDigitValue(_ b: UInt8) -> Int? {
-        switch b {
-        case 0x30...0x39: return Int(b - 0x30)
-        case 0x61...0x66: return Int(b - 0x61 + 10)
-        case 0x41...0x46: return Int(b - 0x41 + 10)
         default: return nil
         }
     }
@@ -194,7 +186,7 @@ public enum JSONNumber {
         let sixteen = T(16)
         var idx = start
         while idx < end {
-            guard let digit = hexDigitValue(p[idx]) else { return nil }
+            guard let digit = Hex.value(p[idx]) else { return nil }
             let d = T(truncatingIfNeeded: digit)
             let (m, o1) = v.multipliedReportingOverflow(by: sixteen)
             guard !o1 else { return nil }

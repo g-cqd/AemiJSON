@@ -1,25 +1,16 @@
-// Word-at-a-time byte equality for JSON object-key matching — the single source of truth for the
-// three key-compare sites (lazy navigation, generic decode, and the `@JSONCodable` fast path).
-// Namespaced under `JSONKey` to match the other byte helpers (`JSONString`/`JSONNumber`/`JSONUTF8`/
-// `JSONOutput`). Pure stdlib (no C `memcmp`), so it stays `@inlinable` under
-// `InternalImportsByDefault` while the optimizer lowers it to a bulk compare.
+// `public import`: the `@inlinable` members below reference `ADFCore.ByteCompare`, so ADFCore must
+// be part of this module's public/inlinable surface (an internal import would make the referenced
+// symbol invisible to inlinable bodies).
+public import ADFCore
+
+// Byte equality + escape-aware key matching for JSON object keys — the single source of truth for
+// the three key-compare sites (lazy navigation, generic decode, and the `@JSONCodable` fast path).
+// The word-at-a-time byte compare lives in ``ADFCore/ByteCompare``; this layer adds the JSON
+// escape-aware variants. Pure stdlib, so it stays `@inlinable` under `InternalImportsByDefault`.
 public enum JSONKey {
-    // Compares 8 bytes per step and then the `< 8`-byte remainder, so it never reads past `count`;
-    // equality is endianness-agnostic (both sides load identically), so no byte-swapping is needed.
     @inlinable
     public static func bytesEqual(_ a: UnsafePointer<UInt8>, _ b: UnsafePointer<UInt8>, _ count: Int) -> Bool {
-        var i = 0
-        while i &+ 8 <= count {
-            let wa = UnsafeRawPointer(a + i).loadUnaligned(as: UInt64.self)
-            let wb = UnsafeRawPointer(b + i).loadUnaligned(as: UInt64.self)
-            if wa != wb { return false }
-            i &+= 8
-        }
-        while i < count {
-            if a[i] != b[i] { return false }
-            i &+= 1
-        }
-        return true
+        ByteCompare.equal(a, b, count)
     }
 
     // Compares a Swift `String` key's UTF-8 against a raw key buffer (the sites where one side is a

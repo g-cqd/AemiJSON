@@ -1,4 +1,6 @@
 /// An error from parsing an RFC 9535 JSONPath expression, located by UTF-8 byte `position`.
+import ADFCore
+
 public struct JSONPathError: Error, Sendable, Equatable {
     public let message: String
     public let position: Int
@@ -290,20 +292,11 @@ struct JSONPathParser {
     mutating func hex4() throws(JSONPathError) -> UInt32 {
         var v: UInt32 = 0
         for _ in 0..<4 {
-            guard let c = peek(), let d = hexValue(c) else { throw err("invalid \\u escape") }
-            v = (v << 4) | d
+            guard let c = peek(), let d = Hex.value(c) else { throw err("invalid \\u escape") }
+            v = (v << 4) | UInt32(d)
             i += 1
         }
         return v
-    }
-
-    @inline(__always) func hexValue(_ b: UInt8) -> UInt32? {
-        switch b {
-        case 0x30...0x39: return UInt32(b - 0x30)
-        case 0x41...0x46: return UInt32(b - 0x41 + 10)
-        case 0x61...0x66: return UInt32(b - 0x61 + 10)
-        default: return nil
-        }
     }
 
     // MARK: - Filter expressions

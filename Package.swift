@@ -60,7 +60,19 @@ let isFuzz = Context.environment["ADJSON_FUZZ"] != nil
 // `ADJSONNIO` product, which re-exports `ADJSONCore`. Same opt-in model as `ADJSON_DEV` / `ADJSON_FUZZ`.
 let isNIO = Context.environment["ADJSON_NIO"] != nil
 
+// ADFoundation supplies the shared low-level primitives (the `ADFCore` byte/number kernel). Resolve
+// it from a local checkout when `ADFOUNDATION_PATH` is set — an absolute or relative path of the
+// caller's choice, so the repos need not be siblings — otherwise from the published package. There
+// is no hardcoded relative default; in-development builds set `ADFOUNDATION_PATH`.
+let adfoundationDependency: Package.Dependency = {
+    if let path = Context.environment["ADFOUNDATION_PATH"], !path.isEmpty {
+        return .package(path: path)
+    }
+    return .package(url: "https://github.com/g-cqd/ADFoundation.git", branch: "main")
+}()
+
 var packageDependencies: [Package.Dependency] = [
+    adfoundationDependency,
     .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0"),
     // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
     // with zero transitive package dependencies (measured), so the core stays portable; it is the
@@ -85,6 +97,8 @@ if isNIO {
 }
 
 let orderedCollections: Target.Dependency = .product(name: "OrderedCollections", package: "swift-collections")
+// Shared low-level byte/number primitives. Only the engine (`ADJSONCore`) links it.
+let adfCore: Target.Dependency = .product(name: "ADFCore", package: "ADFoundation")
 
 // Build-time formatting enforcement attaches to the library only in dev/CI. A build-tool plugin on
 // a library target would otherwise run for everyone who depends on ADJSON, so it stays gated.
@@ -109,9 +123,9 @@ let package = Package(
     products: [
         // The full library: the engine plus Foundation interop, Codable, Schema, and the macros.
         .library(name: "ADJSON", targets: ["ADJSON"]),
-        // The engine on its own — Foundation-free and swift-syntax-free (its one dependency,
-        // OrderedCollections, is itself Foundation-free with no transitive deps): tape parsing, lazy
-        // navigation, JSONValue, and JSONPath/Pointer/Patch. For consumers that want a lean core.
+        // The engine on its own — Foundation-free and swift-syntax-free (its dependencies,
+        // OrderedCollections and ADFCore, are themselves Foundation-free with no transitive deps):
+        // tape parsing, lazy navigation, JSONValue, and JSONPath/Pointer/Patch. For a lean core.
         .library(name: "ADJSONCore", targets: ["ADJSONCore"]),
     ],
     dependencies: packageDependencies,
@@ -126,10 +140,11 @@ let package = Package(
             swiftSettings: strictSettings
         ),
         // The Foundation-free, swift-syntax-free engine: tape parse, lazy navigation
-        // (JSONDocument/JSON/JSONValue), and query (JSONPath/Pointer/Patch). Depends only on
-        // OrderedCollections (Foundation-free, no transitive deps) for order-preserving eager objects.
+        // (JSONDocument/JSON/JSONValue), and query (JSONPath/Pointer/Patch). Depends on
+        // OrderedCollections (order-preserving eager objects) and ADFCore (shared byte/number
+        // primitives) — both Foundation-free with no transitive package deps, so the core stays portable.
         .target(
-            name: "ADJSONCore", dependencies: [orderedCollections], swiftSettings: strictSettings),
+            name: "ADJSONCore", dependencies: [orderedCollections, adfCore], swiftSettings: strictSettings),
         .target(
             name: "ADJSON", dependencies: ["ADJSONCore", "ADJSONMacros", orderedCollections],
             swiftSettings: strictSettings, plugins: adjsonBuildPlugins),

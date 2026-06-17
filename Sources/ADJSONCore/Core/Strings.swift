@@ -1,3 +1,5 @@
+import ADFCore
+
 public enum JSONString {
     // Decode a JSON string body (between quotes) that contains escape sequences.
     // The no-escape fast path is handled by the caller via `String(decoding:)`.
@@ -84,7 +86,7 @@ public enum JSONString {
                 // The scanner guarantees two hex digits follow, but don't make the in-bounds read
                 // depend on that invariant alone: bail if the buffer is somehow short.
                 guard j + 1 < end else { break unescape }
-                let value = UInt32(hexValue(p[j])) << 4 | UInt32(hexValue(p[j + 1]))
+                let value = UInt32(Hex.value(p[j]) ?? 0) << 4 | UInt32(Hex.value(p[j + 1]) ?? 0)
                 j += 2
                 Unicode.UTF8.encode(Unicode.Scalar(UInt8(truncatingIfNeeded: value))) { out.append($0) }
             case 0x75:  // \uHHHH (+ surrogate pair)
@@ -207,17 +209,9 @@ public enum JSONString {
         var k = start
         let stop = min(start + 4, end)
         while k < stop {
-            v = (v << 4) | UInt16(hexValue(p[k]))
+            v = (v << 4) | UInt16(Hex.value(p[k]) ?? 0)
             k += 1
         }
         return v
-    }
-
-    @inline(__always)
-    private static func hexValue(_ b: UInt8) -> UInt8 {
-        if b >= 0x30 && b <= 0x39 { return b - 0x30 }
-        if b >= 0x61 && b <= 0x66 { return b - 0x61 + 10 }
-        if b >= 0x41 && b <= 0x46 { return b - 0x41 + 10 }
-        return 0
     }
 }

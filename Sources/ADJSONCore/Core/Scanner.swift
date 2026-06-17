@@ -1,3 +1,5 @@
+import ADFCore
+
 // Single-pass, iterative (explicit-stack, non-recursive) scanner that builds the tape
 // WITHOUT materializing any value. In strict mode it enforces the RFC 8259 grammar (number
 // shape, escape validity, UTF-8 well-formedness); in lenient mode it scans permissively.
@@ -370,19 +372,10 @@ struct TapeBuilder {
         guard at + 4 <= n else { throw JSONError.invalidString(at: at) }
         var value: UInt16 = 0
         for k in 0..<4 {
-            guard let digit = hexValue(p[at + k]) else { throw JSONError.invalidString(at: at) }
+            guard let digit = Hex.value(p[at + k]) else { throw JSONError.invalidString(at: at) }
             value = (value << 4) | UInt16(digit)
         }
         return value
-    }
-
-    @inline(__always) func hexValue(_ b: UInt8) -> UInt8? {
-        switch b {
-        case 0x30...0x39: return b - 0x30
-        case 0x61...0x66: return b - 0x61 + 10
-        case 0x41...0x46: return b - 0x41 + 10
-        default: return nil
-        }
     }
 
     mutating func scanNumber() throws(JSONError) {
@@ -535,7 +528,7 @@ struct TapeBuilder {
         case 0x31...0x39:  // \1 … \9 are not valid JSON5 escapes
             throw JSONError.invalidString(at: j)
         case 0x78:  // \xHH
-            guard j + 3 < n, hexValue(p[j + 2]) != nil, hexValue(p[j + 3]) != nil else {
+            guard j + 3 < n, Hex.value(p[j + 2]) != nil, Hex.value(p[j + 3]) != nil else {
                 throw JSONError.invalidString(at: j)
             }
             j += 4
@@ -611,7 +604,7 @@ struct TapeBuilder {
         if p[i] == 0x30, i + 1 < n, p[i + 1] == 0x78 || p[i + 1] == 0x58 {  // 0x / 0X
             i += 2
             let hexStart = i
-            while i < n, hexValue(p[i]) != nil { i += 1 }
+            while i < n, Hex.value(p[i]) != nil { i += 1 }
             guard i > hexStart else { throw JSONError.invalidNumber(at: start) }
             return  // integer
         }
