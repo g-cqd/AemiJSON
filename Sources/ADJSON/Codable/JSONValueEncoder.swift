@@ -75,15 +75,6 @@ private func jsonNumber<T: BinaryInteger>(_ v: T) -> JSONValue {
     return .number(Double(v))
 }
 
-/// `CodingKey` for array positions, used only to build `codingPath` in error contexts.
-private struct IndexKey: CodingKey {
-    let intValue: Int?
-    var stringValue: String { "Index \(intValue ?? 0)" }
-    init(_ i: Int) { intValue = i }
-    init?(intValue: Int) { self.intValue = intValue }
-    init?(stringValue: String) { nil }
-}
-
 // MARK: - Encoder
 
 // Recursion-depth budget for `JSONValue(encoding:)`. The encode is unavoidably recursive

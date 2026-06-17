@@ -118,14 +118,14 @@ struct JSONValueDecoderImpl: Decoder {
         case .millisecondsSince1970: return Date(timeIntervalSince1970: try unboxDouble(value, codingPath) / 1000)
         case .iso8601:
             let s = try unboxString(value, codingPath)
-            guard let date = try? Date(s, strategy: .iso8601) else {
-                throw dataCorrupted("Expected an ISO8601 date string", codingPath)
+            guard let date = DateDataDecoding.iso8601(s) else {
+                throw dataCorrupted(DateDataDecoding.iso8601Mismatch, codingPath)
             }
             return date
         case .formatted(let formatter):
             let s = try unboxString(value, codingPath)
             guard let date = formatter.date(from: s) else {
-                throw dataCorrupted("Date string does not match the expected format", codingPath)
+                throw dataCorrupted(DateDataDecoding.formattedMismatch, codingPath)
             }
             return date
         case .custom(let body): return try body(child(value, codingPath))
@@ -137,7 +137,9 @@ struct JSONValueDecoderImpl: Decoder {
         case .deferredToData: return try Data(from: child(value, codingPath))
         case .base64:
             let s = try unboxString(value, codingPath)
-            guard let data = Data(base64Encoded: s) else { throw dataCorrupted("Invalid Base64 string", codingPath) }
+            guard let data = DateDataDecoding.base64(s) else {
+                throw dataCorrupted(DateDataDecoding.invalidBase64, codingPath)
+            }
             return data
         case .custom(let body): return try body(child(value, codingPath))
         }
@@ -413,12 +415,4 @@ private struct SingleValueValueContainer: SingleValueDecodingContainer {
     func decode(_ type: UInt32.Type) throws -> UInt32 { try decoder.unboxInteger(value, type, codingPath) }
     func decode(_ type: UInt64.Type) throws -> UInt64 { try decoder.unboxInteger(value, type, codingPath) }
     func decode<T: Decodable>(_ type: T.Type) throws -> T { try decoder.unbox(value, as: type, codingPath) }
-}
-
-private struct IndexKey: CodingKey {
-    let intValue: Int?
-    var stringValue: String { "Index \(intValue ?? 0)" }
-    init(_ index: Int) { intValue = index }
-    init?(intValue: Int) { self.intValue = intValue }
-    init?(stringValue: String) { return nil }
 }

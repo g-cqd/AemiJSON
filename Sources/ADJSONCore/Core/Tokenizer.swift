@@ -1,3 +1,5 @@
+import ADFCore
+
 // Shared, resumability-aware RFC 8259 / lenient token grammar — the single source of truth for the
 // SAX readers (pull `JSONEventReader` and push `JSONEventStreamReader`), so a grammar fix lands in
 // one place instead of three. The tape `Scanner` keeps its own SWAR-integrated scan for throughput
@@ -291,19 +293,12 @@ extension JSONString {
     }
 
     /// Four hex digits at `at` (caller guarantees `at + 4` in bounds), or `nil` if any byte is not a
-    /// hex digit.
+    /// hex digit. Uses the shared `Hex.value` table, like the tape scanner's `hex4`.
     static func hex4(_ p: UnsafePointer<UInt8>, _ at: Int) -> UInt16? {
         var value: UInt16 = 0
         for k in 0..<4 {
-            let b = p[at + k]
-            let digit: UInt16
-            switch b {
-            case 0x30...0x39: digit = UInt16(b - 0x30)
-            case 0x61...0x66: digit = UInt16(b - 0x61 + 10)
-            case 0x41...0x46: digit = UInt16(b - 0x41 + 10)
-            default: return nil
-            }
-            value = (value << 4) | digit
+            guard let digit = Hex.value(p[at + k]) else { return nil }
+            value = (value << 4) | UInt16(digit)
         }
         return value
     }

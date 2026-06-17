@@ -215,16 +215,12 @@ public struct JSONEventReader {
     }
 
     @inline(__always) private mutating func skipWS() {
-        if isJSON5 {
-            i = bytes.withUnsafeBufferPointer { buf in
-                guard let p = buf.baseAddress else { return i }
-                return JSONToken.skipInsignificant(p, i, n, json5: true, complete: true).end
-            }
-            return
-        }
-        while i < n {
-            let c = bytes[i]
-            if c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 { i += 1 } else { break }
+        // The pull reader holds the whole input, so `complete: true`: a trailing JSON5 comment is
+        // consumed rather than reported incomplete. Both plain and JSON5 skipping route through the
+        // one shared `JSONToken.skipInsignificant` policy (the push reader uses it too).
+        i = bytes.withUnsafeBufferPointer { buf in
+            guard let p = buf.baseAddress else { return i }
+            return JSONToken.skipInsignificant(p, i, n, json5: isJSON5, complete: true).end
         }
     }
 

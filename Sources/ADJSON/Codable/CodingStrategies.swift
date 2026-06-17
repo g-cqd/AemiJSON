@@ -7,6 +7,16 @@ public import Foundation
 // `Date`/`Data` by type at the central encode/decode dispatch. They mirror `Foundation.JSONEncoder`
 // / `JSONDecoder`, including the defaults (`.deferredToDate`, `.base64`).
 
+/// `CodingKey` for an array position — used only to build a `codingPath` for error contexts. Shared
+/// by the `JSONValue` decoder and encoder, which previously defined it identically in each.
+struct IndexKey: CodingKey {
+    let intValue: Int?
+    var stringValue: String { "Index \(intValue ?? 0)" }
+    init(_ index: Int) { intValue = index }
+    init?(intValue: Int) { self.intValue = intValue }
+    init?(stringValue: String) { return nil }
+}
+
 extension ADJSON.JSONEncoder {
     /// How `Date` is encoded. Matches `Foundation.JSONEncoder.DateEncodingStrategy`.
     public enum DateEncodingStrategy {
@@ -150,6 +160,23 @@ func convertFromSnakeCase(_ key: String) -> String {
 
 // MARK: - Decode-side strategy application (intercepted by type in `decodeValue`)
 
+/// Shared `Date`/`Data` decoding semantics, so the tape decoder (`DecodeContext`) and the
+/// already-materialized tree decoder (`JSONValueDecoderImpl`) parse identically and report the same
+/// messages. Each path keeps its own primitive extraction and error `codingPath`; this pins the one
+/// thing they must agree on — the parse choice and the canonical failure text — in a single place.
+enum DateDataDecoding {
+    static let iso8601Mismatch = "Expected an ISO8601 date string"
+    static let formattedMismatch = "Date string does not match the expected format"
+    static let invalidBase64 = "Invalid Base64 string"
+
+    /// ISO 8601 internet date-time in UTC via the Sendable, value-type `Date.ISO8601FormatStyle`
+    /// (byte-identical to Foundation's `.iso8601` strategy), or nil if `s` isn't valid ISO 8601.
+    static func iso8601(_ s: String) -> Date? { try? Date(s, strategy: .iso8601) }
+
+    /// Base64 → `Data`, or nil if `s` isn't valid Base64.
+    static func base64(_ s: String) -> Data? { Data(base64Encoded: s) }
+}
+
 extension DecodeContext {
     /// `double`, plus the nonConformingFloat fallback: a configured string literal (`"Infinity"`,
     /// etc.) decodes to ±Infinity / NaN. The choke point for every generic `Double`/`Float` decode.
@@ -176,17 +203,14 @@ extension DecodeContext {
             return Date(timeIntervalSince1970: d / 1000)
         case .iso8601:
             guard let s = string(index) else { throw dateMismatch() }
-            // `Date.ISO8601FormatStyle` (Sendable, value-type, allocation-free) replaces the
-            // non-Sendable `ISO8601DateFormatter` cache; its default is internet date-time in UTC,
-            // byte-identical to Foundation's `.iso8601` strategy.
-            guard let date = try? Date(s, strategy: .iso8601) else {
-                throw dateCorrupted("Expected an ISO8601 date string")
+            guard let date = DateDataDecoding.iso8601(s) else {
+                throw dateCorrupted(DateDataDecoding.iso8601Mismatch)
             }
             return date
         case .formatted(let formatter):
             guard let s = string(index) else { throw dateMismatch() }
             guard let date = formatter.date(from: s) else {
-                throw dateCorrupted("Date string does not match the expected format")
+                throw dateCorrupted(DateDataDecoding.formattedMismatch)
             }
             return date
         case .custom(let body):
@@ -203,8 +227,9 @@ extension DecodeContext {
                 throw DecodingError.typeMismatch(
                     Data.self, .init(codingPath: [], debugDescription: "Expected a Base64 string"))
             }
-            guard let data = Data(base64Encoded: s) else {
-                throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Invalid Base64 string"))
+            guard let data = DateDataDecoding.base64(s) else {
+                throw DecodingError.dataCorrupted(
+                    .init(codingPath: [], debugDescription: DateDataDecoding.invalidBase64))
             }
             return data
         case .custom(let body):
