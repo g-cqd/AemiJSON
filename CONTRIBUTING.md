@@ -166,6 +166,11 @@ the gate passes:
   additionally, on any PR that touches the unsafe scanner (`Sources/ADJSONCore/Core/**`, gated by a
   `dorny/paths-filter` `changes` job). Each pass rebuilds the graph under instrumentation, so other
   PRs stay off the path.
+- **`api-stability`** (PRs): `diagnose-api-breaking-changes` against the base ref — a hard gate that
+  flags unintended public-API changes.
+- **`release-test`** (`main`): the test suite built in release, to catch debug-only assumptions.
+- **`linux`** (nightly container) and **`fuzz`** (libFuzzer over `Sources/ADJSONFuzz`, Linux): run as
+  advisory (non-gating) jobs.
 - **`docs`**: builds the DocC site and deploys it to GitHub Pages on `main` —
   <https://g-cqd.github.io/ADJSON/>. Requires Pages source = "GitHub Actions" in the repo
   settings (a one-time manual step).

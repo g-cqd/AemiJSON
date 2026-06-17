@@ -55,8 +55,11 @@ The suite is statistically rigorous and honest:
   materialization (an editable tree, the closest analogue to `JSONSerialization`).
 - **Typed decode** `Data → [User]`: Foundation `JSONDecoder` vs ADJSON `JSONDecoder` on the
   generic `Codable` path vs the `@JSONCodable` fast path.
-- **Typed encode** `[User] → Data` across the same three contenders.
+- **Typed encode** `[User] → Data`: Foundation `JSONEncoder` vs ADJSON generic vs `@JSONCodable`,
+  plus **compact / pretty / sorted** modes, and untyped `JSONValue → bytes` vs `JSONSerialization`.
 - **Number-heavy** `[Double]` decode — the hard case for any parser.
+- **Exact `Decimal`** and **ISO-8601 `Date`** decode — ADJSON vs Foundation on the strategy paths,
+  included so the comparison isn't cherry-picked to wins.
 - **Query** — JSONPath (RFC 9535) filter and wildcard over a pre-parsed document.
 - **Validate** — JSON Schema (Draft 2020-12 subset) compiled once (here from `@Schemable`), run
   over a pre-parsed document, plus parse + validate end to end.
@@ -64,46 +67,60 @@ The suite is statistically rigorous and honest:
 - **Concurrent decode** — serial vs `ADJSON.decodeArrayConcurrently` on a pre-parsed document.
 - **Standard corpus** — `twitter.json`, `citm_catalog.json`, `canada.json`.
 
-Every comparison pits the real public API against Foundation; where Foundation has no equivalent
-(query, schema, patch) the row reports ADJSON's standalone throughput.
+Every comparison pits the real public API against Foundation; where Foundation has no equivalent —
+JSONPath, JSON Schema, JSON Patch/Merge Patch, SAX streaming, and `decodeArrayConcurrently` — the
+row reports ADJSON's standalone throughput, not a ratio.
 
 ## Reference results
 
-Apple M2 Pro (macOS 27), release build, strict mode. Each cell is the **median across 15 full
-runs** (each run is itself the median of 60 iterations); run-to-run spread was within **±8%** for
-every row except concurrent decode (±12%), with thermal throttling under sustained load the main
-source. Your numbers will vary with hardware, OS, and payload; treat these as ratios, not absolutes.
+Apple M3 (macOS 26.5), Swift 6.3.2, release build, strict mode. Each cell is the **p50** of an
+auto-tuned run; run-to-run spread was within ~±8% except concurrent decode (~±12%, thermal). Your
+numbers will vary with hardware, OS, and payload; treat these as ratios, not absolutes.
 
-**Against Foundation** (synthetic 2000-user payload ≈ 500 KB; corpus files as noted):
+**Untyped parse — standard corpus** (throughput = file bytes ÷ wall clock; both columns measured
+the same way):
 
-| Workload | ADJSON | Foundation | Ratio |
+| File | ADJSON tape | Foundation `JSONSerialization` | Ratio |
 |---|---|---|---|
-| Tape parse — `twitter.json` | 818 MB/s | 168 MB/s | **4.9×** |
-| Tape parse — `citm_catalog.json` | 1146 MB/s | 302 MB/s | **3.8×** |
-| Tape parse — `canada.json` | 743 MB/s | 114 MB/s | **6.5×** |
-| Codable decode — generic | 66 MB/s | 40 MB/s | **1.6×** |
-| Codable decode — `@JSONCodable` | 182 MB/s | 40 MB/s | **4.5×** |
-| Codable encode — generic | 60 MB/s | 45 MB/s | **1.3×** |
-| Codable encode — `@JSONCodable` | 358 MB/s | 45 MB/s | **8.0×** |
-| `[Double]` decode | 161 MB/s | 72 MB/s | **2.2×** |
-| `JSONValue` materialize — `twitter.json` | 199 MB/s | 168 MB/s | **1.2×** |
-| `JSONValue` materialize — `citm_catalog.json` | 324 MB/s | 302 MB/s | **1.07×** |
-| `JSONValue` materialize — `canada.json` | 131 MB/s | 114 MB/s | **1.1×** |
+| `twitter.json` (0.6 MB) | ≈1.5 GB/s | ≈250 MB/s | **6.1×** |
+| `citm_catalog.json` (1.6 MB) | ≈1.6 GB/s | ≈400 MB/s | **4.1×** |
+| `canada.json` (2.1 MB, number-heavy) | ≈0.95 GB/s | ≈145 MB/s | **6.6×** |
 
-**ADJSON-only** (features Foundation has no equivalent for):
+**Typed Codable + numbers** (synthetic 2 000-user payload; ratio of throughput):
 
-| Feature | Throughput |
+| Workload | vs Foundation |
 |---|---|
-| JSONPath wildcard — `$[*].profile.bio` | 2608 MB/s |
-| JSONPath filter — `$[?(@.followers > N)]` | 917 MB/s |
-| JSON Schema validate (pre-parsed, full structural) | 123 MB/s |
-| JSON Patch apply (3 ops over a 2000-element tree) | 48 µs |
-| Concurrent decode | 165 MB/s (**2.2×** serial) |
+| Codable decode — generic (`Data` → struct) | **1.8×** `JSONDecoder` |
+| Codable decode — `@JSONCodable` fast path | **5.2×** `JSONDecoder` |
+| Codable encode — `@JSONCodable` fast path | **7.6×** `JSONEncoder` |
+| `[Double]` decode — number-heavy | **2.7×** `JSONDecoder` |
+| `JSONValue` materialize (corpus) | **1.1–1.3×** `JSONSerialization` |
 
-Tape parsing runs at roughly **1 GB/s**; partial/lazy access is faster still, since it skips
-subtrees it never reads. Full `JSONValue` materialization now edges past `JSONSerialization`
-across the corpus — it builds a comparable Swift tree in a single pass — though ADJSON's real
-leverage remains the lazy tape and typed decode.
+**Where ADJSON matches rather than beats Foundation** — included so the picture isn't cherry-picked:
+
+| Workload | vs Foundation |
+|---|---|
+| Untyped re-serialize — `JSONValue → bytes` | ≈0.85× `JSONSerialization` |
+| Pretty / sorted Codable encode | ≈0.85–0.95× (ADJSON re-serializes through the tape) |
+| Exact `Decimal` decode | ≈0.75× `JSONDecoder` |
+| ISO-8601 `Date` decode | ≈0.9× `JSONDecoder` |
+
+These paths are correct and Foundation-faithful; they are simply not where the tape model pays off.
+
+**Capabilities with no Foundation equivalent** (absolute, not a ratio):
+
+| Feature | Measured |
+|---|---|
+| JSONPath wildcard — `$[*].profile.bio` | ≈4 300 queries/s |
+| JSONPath filter — `$[?(@.followers > N)]` | ≈2 300 queries/s |
+| JSON Schema validate (full structural, pre-parsed) | ≈144 validations/s |
+| JSON Patch apply (3 ops, 2 000-element tree) | ≈53 µs |
+| Concurrent array decode | ≈2.9× a serial decode (8-core M3) |
+
+Tape parsing runs at roughly **1–1.5 GB/s** across the corpus; partial/lazy access is faster still,
+since it skips subtrees it never reads. Full `JSONValue` materialization edges just past
+`JSONSerialization` — a comparable Swift tree in a single pass — but ADJSON's real leverage is the
+lazy tape and the typed/macro decode paths.
 
 ## Interpreting the numbers
 

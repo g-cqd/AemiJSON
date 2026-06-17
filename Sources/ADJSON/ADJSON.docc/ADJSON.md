@@ -62,13 +62,16 @@ passes the full nst/JSONTestSuite (318/318).
 
 - <doc:Architecture>
 - <doc:Benchmarking>
+- <doc:DepthSafety>
 
 ### The engine (ADJSONCore)
 
 The parsing, value, and query types — ``/ADJSONCore/JSON``, ``/ADJSONCore/JSONDocument``,
 ``/ADJSONCore/JSONValue``, ``/ADJSONCore/JSONParseOptions``, ``/ADJSONCore/JSONPath``,
-``/ADJSONCore/JSONPointer``, ``/ADJSONCore/JSONPatch``, and the rest — live in the Foundation-free
-engine and are re-exported here. Browse them in the ``ADJSONCore`` module reference.
+``/ADJSONCore/JSONPointer``, ``/ADJSONCore/RelativeJSONPointer``, ``/ADJSONCore/JSONPatch``, the
+SQLite-dialect helpers (``/ADJSONCore/SQLiteJSON``, ``/ADJSONCore/SQLiteJSONPath``), and the rest —
+live in the Foundation-free engine and are re-exported here. Browse them in the ``ADJSONCore``
+module reference.
 
 ### Codable
 

@@ -78,7 +78,7 @@ func echo(_ buffer: ByteBuffer) throws -> ByteBuffer {
 }
 ```
 
-**Requirements:** Swift 6.3+ toolchain (developed and tested on 6.4); macOS 15+ / iOS 18+ /
+**Requirements:** Swift 6.3+ toolchain (built and tested on 6.3); macOS 15+ / iOS 18+ /
 tvOS 18+ / watchOS 11+ / visionOS 2+ (the floor is set by `Synchronization.Mutex`).
 
 ## A quick tour
@@ -144,25 +144,26 @@ See the [documentation](#documentation) for the full guides.
 
 ## Performance
 
-Apple M2 Pro (macOS 27), release build, strict mode; treat these as ratios, not absolutes.
+Apple M3 (macOS 26.5), release build, strict mode; treat these as ratios, not absolutes.
 Reproduce with `ADJSON_DEV=1 swift package benchmark` (the [ordo-one/benchmark](https://github.com/ordo-one/benchmark)
 suite under `Benchmarks/ADJSONSuite`).
 
 | Workload | ADJSON vs Foundation |
 |---|---|
-| Untyped tape parse — `twitter.json` | **4.9×** `JSONSerialization` |
-| Untyped tape parse — `citm_catalog.json` | **3.8×** |
-| Untyped tape parse — `canada.json` (number-heavy) | **6.5×** |
-| Codable decode — generic (`Data` → struct) | **1.6×** `JSONDecoder` |
-| Codable decode — `@JSONCodable` fast path | **4.5×** `JSONDecoder` |
-| Codable encode — `@JSONCodable` fast path | **8.0×** `JSONEncoder` |
-| `[Double]` decode — number-heavy | **2.2×** `JSONDecoder` |
+| Untyped tape parse — `twitter.json` | **6.1×** `JSONSerialization` |
+| Untyped tape parse — `citm_catalog.json` | **4.1×** |
+| Untyped tape parse — `canada.json` (number-heavy) | **6.6×** |
+| Codable decode — generic (`Data` → struct) | **1.8×** `JSONDecoder` |
+| Codable decode — `@JSONCodable` fast path | **5.2×** `JSONDecoder` |
+| Codable encode — `@JSONCodable` fast path | **7.6×** `JSONEncoder` |
+| `[Double]` decode — number-heavy | **2.7×** `JSONDecoder` |
 
-Tape parsing runs at roughly **1 GB/s** (0.7–1.1 GB/s across the corpus); lazy access is faster
-still since it skips subtrees it never reads. Full untyped materialization into `JSONValue` now
-edges past `JSONSerialization` on the corpus, and compiled JSON Schema validation runs at roughly
-**123 MB/s**. Query and patch throughput, methodology, and the full table: see the **Benchmarking**
-guide in the documentation.
+Tape parsing runs at roughly **1–1.5 GB/s** across the corpus (≈0.95 GB/s on number-heavy
+`canada.json`); lazy access is faster still, since it skips subtrees it never reads. Full untyped
+materialization into `JSONValue` edges just past `JSONSerialization`. The wins concentrate in lazy
+parsing and the typed/macro fast paths — untyped re-serialization, pretty/sorted encoding, and
+`Decimal` / ISO-8601 `Date` decoding sit at parity, not ahead. Methodology, the parity cases, and
+per-feature throughput: see the **Benchmarking** guide.
 
 ## Standards
 

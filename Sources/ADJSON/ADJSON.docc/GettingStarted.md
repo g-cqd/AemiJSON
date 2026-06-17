@@ -76,8 +76,8 @@ decoder.options = .iJSON                                    // RFC 7493: reject 
 
 ## Requirements
 
-- Swift 6.3+ toolchain (language mode v6; developed and tested on 6.4).
-- macOS 15+ / iOS 26 / tvOS 26 / watchOS 26 / visionOS 26 or later.
+- Swift 6.3+ toolchain (language mode v6; built and tested on 6.3).
+- macOS 15+ / iOS 18+ / tvOS 18+ / watchOS 11+ / visionOS 2+ (the floor is set by `Synchronization.Mutex`).
 
 ## Next steps
 
