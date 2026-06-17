@@ -93,6 +93,16 @@ final class DecodeContext {
         return JSONNumber.parseInteger(bytes, Slot.low(s), Slot.length(s), type)
     }
 
+    /// The raw number lexeme at `i` (the exact source digits), or nil for a non-number node. Lets the
+    /// decoder build a `Decimal` at full precision instead of routing through `Double`.
+    @inline(__always) @inlinable func numberLexeme(_ i: Int) -> String? {
+        let s = slot(i)
+        guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
+        let off = Slot.low(s), len = Slot.length(s)
+        assertBytes(off, len)
+        return String(decoding: UnsafeBufferPointer(start: bytes + off, count: len), as: UTF8.self)
+    }
+
     @inlinable func string(_ i: Int) -> String? {
         let s = slot(i)
         guard Slot.tag(s) == JSONKind.string.rawValue else { return nil }

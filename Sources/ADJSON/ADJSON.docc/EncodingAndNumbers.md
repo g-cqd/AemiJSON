@@ -63,6 +63,28 @@ For a single number → `String` without building a document, ``/ADJSONCore/JSON
 returns the ECMA-262 shortest form directly (non-finite → `"NaN"` / `"Infinity"` / `"-Infinity"`), and
 ``/ADJSONCore/JSON/jsNumberString`` gives the same for a number node already in a parsed document.
 
+## Exact decimals (`Decimal`)
+
+The lazy `JSON` view and `JSONValue` model numbers as `Int64` or `Double`, so a value beyond `Double`'s
+~15–17 significant digits — a 64-bit-plus integer ID, a high-precision or monetary fraction — is
+rounded. When you need the exact base-10 value, read it as a Foundation `Decimal` (~38 significant
+digits):
+
+```swift
+let doc = try ADJSON.parse(#"{"id":123456789012345678901234567890,"price":0.1}"#)
+doc.root.id.decimal     // exact 30-digit integer (Decimal?) — where `.double` would round
+doc.root.price.decimal  // exactly 0.1, not the binary-float approximation
+```
+
+`JSON.decimal` reads the original number **lexeme** straight from the tape, so it preserves the source
+digits. `JSONValue.decimal` works on a materialized tree too, but carries only the precision the
+`Int64` / `Double` already kept — read `JSON.decimal` *before* materializing for full precision. A
+non-number node, or a value outside `Decimal`'s range, returns `nil`.
+
+Codable mirrors Foundation here: a `Decimal` property decodes from the raw number lexeme
+(precision-preserving) and encodes back as a JSON number — `decode(Decimal.self, …)` and a `Decimal`
+field both round-trip exactly, instead of routing through `Double` or `Decimal`'s keyed `Codable` form.
+
 ## Non-finite numbers
 
 JSON cannot represent `NaN` or `±Infinity`. Under `.rfc8259` these throw

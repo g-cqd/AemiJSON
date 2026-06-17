@@ -44,6 +44,11 @@ var encoder = ADJSON.JSONEncoder()
 encoder.options = .javaScript            // JSON.stringify number/non-finite parity
 ```
 
+`Date`, `Data`, and `Decimal` are intercepted by type at the central encode/decode dispatch, matching
+Foundation: `Date`/`Data` follow their configured strategies, and a `Decimal` decodes from the raw
+number lexeme (exact, ~38 digits — not via `Double`) and encodes back as a JSON number. See
+*Exact decimals* in <doc:EncodingAndNumbers>.
+
 ### Key strategies
 
 Map between Swift property names and JSON keys with `keyEncodingStrategy` / `keyDecodingStrategy`:

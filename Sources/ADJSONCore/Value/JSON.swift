@@ -65,6 +65,18 @@ public struct JSON: Sendable {
         return Float(d)
     }
 
+    /// The number node's raw source text — the exact lexeme as it appeared in the input — or nil for a
+    /// non-number node. Unlike ``double`` / ``int`` it preserves the original digits, so a consumer can
+    /// re-parse at higher precision (e.g. `Decimal`) without `Double`'s rounding. The bytes are ASCII
+    /// (RFC 8259 numbers), so the decode never fails.
+    public var numberLexeme: String? {
+        guard tag == JSONKind.number.rawValue else { return nil }
+        let off = Slot.low(slot), len = Slot.length(slot)
+        return doc.withBytePointer {
+            String(decoding: UnsafeBufferPointer(start: $0 + off, count: len), as: UTF8.self)
+        }
+    }
+
     public var string: String? {
         guard tag == JSONKind.string.rawValue else { return nil }
         let off = Slot.low(slot), len = Slot.length(slot)

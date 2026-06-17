@@ -51,6 +51,12 @@ struct JSONValueDecoderImpl: Decoder {
             guard let data = try unboxData(value, codingPath) as? T else { throw typeMismatch(type, value, codingPath) }
             return data
         }
+        if type == Decimal.self {
+            guard let decimal = try unboxDecimal(value, codingPath) as? T else {
+                throw typeMismatch(type, value, codingPath)
+            }
+            return decimal
+        }
         guard depth < maxDepth else {
             throw DecodingError.dataCorrupted(
                 .init(
@@ -134,6 +140,23 @@ struct JSONValueDecoderImpl: Decoder {
             guard let data = Data(base64Encoded: s) else { throw dataCorrupted("Invalid Base64 string", codingPath) }
             return data
         case .custom(let body): return try body(child(value, codingPath))
+        }
+    }
+
+    // A materialized `JSONValue` stores numbers as `Int64` / `Double`, so this carries only the
+    // precision kept at materialization: `.int` is exact; `.number` is read via its `Double`'s shortest
+    // decimal text. For full source precision decode straight from bytes (the tape decoder reads the raw
+    // lexeme via `decodeDecimal`).
+    private func unboxDecimal(_ value: JSONValue, _ codingPath: [any CodingKey]) throws -> Decimal {
+        switch value {
+        case .int(let i): return Decimal(i)
+        case .number(let d):
+            guard d.isFinite, let decimal = Decimal(string: d.description, locale: ADJSONDecimal.posixLocale) else {
+                throw typeMismatch(Decimal.self, value, codingPath)
+            }
+            return decimal
+        default:
+            throw typeMismatch(Decimal.self, value, codingPath)
         }
     }
 

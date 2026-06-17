@@ -84,6 +84,7 @@ extension DecodeContext {
         // always succeed (the metatype is checked first); the fall-through is unreachable.
         if T.self == Date.self, let date = try decodeDate(at: index) as? T { return date }
         if T.self == Data.self, let data = try decodeData(at: index) as? T { return data }
+        if T.self == Decimal.self, let value = try decodeDecimal(at: index) as? T { return value }
         return try T(from: TapeDecoder(ctx: self, index: index, codingPath: []))
     }
 }

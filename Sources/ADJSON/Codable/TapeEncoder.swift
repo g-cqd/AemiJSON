@@ -68,6 +68,8 @@ final class EncodeState {
             try encodeDate(date)
         } else if let data = value as? Data {
             try encodeData(data)
+        } else if let decimal = value as? Decimal {
+            try encodeDecimal(decimal)
         } else if !keyStrategyActive, let fast = value as? any ADJSONFastEncodable {
             try encodeFast(fast)
         } else {
@@ -103,6 +105,17 @@ final class EncodeState {
         case .custom(let body):
             try body(data, TapeEncoder(state: self))
         }
+    }
+
+    /// Emit a `Decimal` as a JSON number, exactly (`Decimal.description` is always a valid,
+    /// locale-independent JSON number literal). Matches Foundation, which special-cases `Decimal`
+    /// rather than serializing its keyed `Codable` form. `NaN` has no JSON representation.
+    func encodeDecimal(_ decimal: Decimal) throws {
+        guard !decimal.isNaN else {
+            throw EncodingError.invalidValue(
+                decimal, .init(codingPath: [], debugDescription: "Decimal.nan cannot be represented in JSON"))
+        }
+        w.bytes.append(contentsOf: decimal.description.utf8)
     }
 
     @inline(__always) func open(object: Bool) -> Int {

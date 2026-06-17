@@ -212,6 +212,22 @@ extension DecodeContext {
         }
     }
 
+    /// Decode a `Decimal` from the number's raw source lexeme, so a value with more precision than
+    /// `Double` (large integers, exact decimal fractions) is preserved — matching `Foundation`'s
+    /// `JSONDecoder`, which special-cases `Decimal` rather than routing it through its (keyed) `Codable`
+    /// conformance. A non-number node is a type mismatch; a number outside `Decimal`'s range is corrupt.
+    func decodeDecimal(at index: Int) throws -> Decimal {
+        guard let lexeme = numberLexeme(index) else {
+            throw DecodingError.typeMismatch(
+                Decimal.self, .init(codingPath: [], debugDescription: "Expected a number for Decimal"))
+        }
+        guard let value = Decimal(string: lexeme, locale: ADJSONDecimal.posixLocale) else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: [], debugDescription: "Number is out of Decimal's representable range"))
+        }
+        return value
+    }
+
     /// True when JSON keys must be converted before matching `CodingKey`s (disables the byte-compare
     /// fast path in `memberValueIndex` and the `@JSONCodable` fast decode).
     @usableFromInline var keyConversionActive: Bool {
