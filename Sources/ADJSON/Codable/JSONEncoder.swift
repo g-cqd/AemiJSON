@@ -7,14 +7,16 @@ extension ADJSON {
     public struct JSONEncoder {
         public var userInfo: [CodingUserInfoKey: Any] = [:]
         /// Serialization profile. Default `.rfc8259` (strict); `.javaScript` for `JSON.stringify`
-        /// number/non-finite parity. `keyOrder: .sorted` and `prettyPrinted` are honored on the
-        /// Codable path by re-serializing through `JSONValue`. `nilStrategy: .null` cannot be (the
-        /// streaming encoder never sees `encodeIfPresent`-omitted nils) and makes `encode` throw.
+        /// number/non-finite parity. `prettyPrinted` streams in a single pass; `keyOrder: .sorted` is
+        /// honored on the Codable path by re-serializing through the parsed tape (the streaming writer
+        /// can't reorder members). `nilStrategy: .null` cannot be (the streaming encoder never sees
+        /// `encodeIfPresent`-omitted nils) and makes `encode` throw.
         public var options: JSONEncodingOptions = .rfc8259
         /// Foundation `.prettyPrinted` parity: when set (or via `options.prettyPrinted`), output is
-        /// indented. Sorted keys (`options.keyOrder == .sorted`) and pretty output are produced by
-        /// re-serializing through the `JSONValue` model (which canonicalizes integral doubles to
-        /// Foundation's `2`, vs the compact path's `2.0`).
+        /// indented. Pretty output in declaration order streams in a single pass, so it shares the
+        /// streaming number format (an integral `Double` stays `2.0`, like the compact path). Sorted
+        /// keys (`options.keyOrder == .sorted`) are still produced by re-serializing through the parsed
+        /// tape, which canonicalizes integral doubles to Foundation's `2`.
         public var prettyPrinted: Bool = false
         /// How `Date` values are encoded (default `.deferredToDate`, matching Foundation).
         public var dateEncodingStrategy: DateEncodingStrategy = .deferredToDate
@@ -59,28 +61,32 @@ extension ADJSON {
                             "ADJSON.JSONEncoder can't honor nilStrategy: .null on the Codable path (omitted "
                             + "nils are never observed); use JSONValue.encoded(options:) instead."))
             }
-            // Sorted keys / pretty output aren't expressible in the single-pass streaming writer, so
-            // stream compact, then re-serialize sorted/pretty straight from the parsed tape — no
-            // JSONValue tree is materialized (`JSON.encodedBytes` mirrors `JSONValue`'s output).
-            var emitOptions = options
-            emitOptions.prettyPrinted = options.prettyPrinted || prettyPrinted
-            if emitOptions.keyOrder == .sorted || emitOptions.prettyPrinted {
-                let compact = try encodeCompact(value)
+            let pretty = options.prettyPrinted || prettyPrinted
+            // Sorted keys can't be produced in a single streaming pass (the writer can't reorder an
+            // object's members), so they stream compact, then re-emit sorted straight from the parsed
+            // tape — `emitOptions` carries pretty into that re-emit. Pretty output in declaration order,
+            // by contrast, streams in one pass (no parse, no re-emit).
+            if options.keyOrder == .sorted {
+                var emitOptions = options
+                emitOptions.prettyPrinted = pretty
+                let compact = try encodeStreaming(value, pretty: false)
                 return try ADJSON.parse(compact).root.encodedBytes(options: emitOptions)
             }
-            return try encodeCompact(value)
+            return try encodeStreaming(value, pretty: pretty)
         }
 
-        // Takes the monomorphic fast path when the value opts in (incl. arrays, optionals, and
-        // string-keyed dictionaries of fast elements) — writing into a value-type buffer with no
-        // class indirection; otherwise the generic streaming encoder over the class-backed writer.
-        // `encodeValue` intercepts a top-level `Date`/`Data` by type and applies its strategy.
-        private func encodeCompact<T: Encodable>(_ value: T) throws -> [UInt8] {
+        // Streams one pass straight into the buffer (compact, or pretty when `pretty`). Takes the
+        // monomorphic fast path when the value opts in (incl. arrays, optionals, and string-keyed
+        // dictionaries of fast elements) — a value-type buffer with no class indirection — otherwise
+        // the generic streaming encoder over the class-backed writer. `encodeValue` intercepts a
+        // top-level `Date`/`Data` by type and applies its strategy.
+        private func encodeStreaming<T: Encodable>(_ value: T, pretty: Bool) throws -> [UInt8] {
             // A key strategy must transform every object key, which only the generic `member` path
-            // does — so skip the fast writer entirely when one is set.
+            // does — so skip the fast writer when one is set. The fast writer is also compact-only, so
+            // pretty output skips it the same way and streams through `EncodeState`.
             var keyStrategyActive = true
             if case .useDefaultKeys = keyEncodingStrategy { keyStrategyActive = false }
-            if !keyStrategyActive, let fast = value as? any ADJSONFastEncodable {
+            if !pretty, !keyStrategyActive, let fast = value as? any ADJSONFastEncodable {
                 var w = _JSONByteWriter(
                     adopting: EncoderBufferPool.take(), options: options, maxDepth: maxEncodingDepth)
                 do {
@@ -94,7 +100,8 @@ extension ADJSON {
             let writer = JSONWriter(adopting: EncoderBufferPool.take())
             writer.escapeSlashes = options.escapeSlashes
             writer.escapeHTMLUnsafe = options.escapeHTMLUnsafe
-            let state = EncodeState(writer, options: options, strategies: strategies, maxEncodeDepth: maxEncodingDepth)
+            let state = EncodeState(
+                writer, options: options, strategies: strategies, maxEncodeDepth: maxEncodingDepth, pretty: pretty)
             do {
                 try state.encodeValue(value)
             } catch {

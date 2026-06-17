@@ -244,6 +244,38 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     #expect(String(decoding: mine, as: UTF8.self) == String(decoding: theirs, as: UTF8.self))
 }
 
+// Pretty output in declaration order now streams in a single pass (no parse/re-emit). For values
+// without integral Doubles it must be byte-identical to the former parse-then-re-emit path.
+@Test func codableEncoderSinglePassPrettyMatchesReEmit() throws {
+    var adj = ADJSON.JSONEncoder()
+    adj.prettyPrinted = true
+    for v in samples {  // `ratio` is 3.5 / -0.25 (non-integral), so no integer canonicalization gap
+        let single = try adj.encode(v)
+        let compact = try ADJSON.JSONEncoder().encode(v)
+        let reEmit = try ADJSON.parse(compact).root.encodedBytes(options: JSONEncodingOptions(prettyPrinted: true))
+        #expect(String(decoding: single, as: UTF8.self) == String(decoding: reEmit, as: UTF8.self))
+    }
+}
+
+// The single-pass pretty path shares the streaming number format, so an integral `Double` stays
+// `2.0` (consistent with compact). Sorted+pretty still routes through the re-emit, which
+// canonicalizes it to `2` — this pins both routes so the divergence is intentional and visible.
+@Test func singlePassPrettyKeepsIntegralDoubleVsSortedReEmit() throws {
+    struct F: Encodable {
+        var a: Double = 2.0
+        var b: Double = 3.5
+    }
+    var declaration = ADJSON.JSONEncoder()
+    declaration.prettyPrinted = true
+    #expect(
+        String(decoding: try declaration.encode(F()), as: UTF8.self) == "{\n  \"a\" : 2.0,\n  \"b\" : 3.5\n}")
+
+    var sorted = ADJSON.JSONEncoder()
+    sorted.prettyPrinted = true
+    sorted.options = JSONEncodingOptions(keyOrder: .sorted)
+    #expect(String(decoding: try sorted.encode(F()), as: UTF8.self) == "{\n  \"a\" : 2,\n  \"b\" : 3.5\n}")
+}
+
 @Test func jsonValuePrettyPrintsNestedStructure() throws {
     let v = JSONValue.object(["a": .number(1), "b": .array([.number(2), .string("x")]), "e": .object([:])])
     let out = String(

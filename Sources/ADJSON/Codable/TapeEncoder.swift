@@ -11,6 +11,11 @@ final class EncodeState {
     let w: JSONWriter
     let options: JSONEncodingOptions
     let strategies: EncodeStrategies
+    /// Single-pass pretty printing. When set, `beginMember`/`closeDownTo` interleave newline +
+    /// `depth * 2` spaces and keys are written `"k" : v`, byte-identical to `JSON.encodedBytes`'
+    /// pretty style — so the encoder never re-parses to indent (sorted output still does, since the
+    /// streaming writer can't reorder members).
+    let pretty: Bool
     var kinds: [Bool] = []  // true = object, false = array
     var counts: [Int] = []
     // Symmetric with the decoder's `maxDecodeDepth`: the Codable encode path is unavoidably
@@ -23,12 +28,13 @@ final class EncodeState {
 
     init(
         _ w: JSONWriter, options: JSONEncodingOptions = .rfc8259,
-        strategies: EncodeStrategies = EncodeStrategies(), maxEncodeDepth: Int = 2048
+        strategies: EncodeStrategies = EncodeStrategies(), maxEncodeDepth: Int = 2048, pretty: Bool = false
     ) {
         self.w = w
         self.options = options
         self.strategies = strategies
         self.maxEncodeDepth = maxEncodeDepth
+        self.pretty = pretty
     }
 
     @inline(__always) func appendDouble(_ v: Double) throws {
@@ -70,7 +76,10 @@ final class EncodeState {
             try encodeData(data)
         } else if let decimal = value as? Decimal {
             try encodeDecimal(decimal)
-        } else if !keyStrategyActive, let fast = value as? any ADJSONFastEncodable {
+        } else if !pretty, !keyStrategyActive, let fast = value as? any ADJSONFastEncodable {
+            // The fast writer (`_JSONByteWriter`) is compact-only, so pretty output takes the generic
+            // container path (which threads the indent through `beginMember`/`closeDownTo`); a
+            // `@JSONCodable` type keeps its standard `Encodable` conformance for exactly this fallback.
             try encodeFast(fast)
         } else {
             try value.encode(to: TapeEncoder(state: self))
@@ -127,8 +136,11 @@ final class EncodeState {
 
     @inline(__always) func closeDownTo(_ target: Int) {
         while kinds.count > target {
+            let frame = kinds.count - 1
             let isObject = kinds.removeLast()
-            counts.removeLast()
+            let count = counts.removeLast()
+            // A non-empty container breaks before its closing brace (`[]`/`{}` stay on one line).
+            if pretty, count > 0 { newlineIndent(frame) }
             w.byte(isObject ? 0x7D : 0x5D)
         }
     }
@@ -136,7 +148,24 @@ final class EncodeState {
     @inline(__always) func beginMember(_ frame: Int) {
         closeDownTo(frame + 1)
         if counts[frame] > 0 { w.byte(0x2C) }
+        if pretty { newlineIndent(frame + 1) }
         counts[frame] += 1
+    }
+
+    /// Pretty-print break: newline then `level * 2` spaces (only called when `pretty`).
+    @inline(__always) func newlineIndent(_ level: Int) {
+        w.byte(0x0A)
+        for _ in 0..<(level * 2) { w.byte(0x20) }
+    }
+
+    /// Write an object key — `"k":` compact, `"k" : ` pretty — matching `JSON.encodedBytes`.
+    @inline(__always) func writeMemberKey(_ key: String) {
+        if pretty {
+            w.writeString(key)
+            w.raw(" : ")
+        } else {
+            w.writeKey(key)
+        }
     }
 
     /// Bridge a fast-path value nested inside a generic encode: move the shared buffer
@@ -179,7 +208,7 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
 
     @inline(__always) func member(_ key: Key) {
         state.beginMember(frame)
-        state.w.writeKey(state.transformedKey(key.stringValue))
+        state.writeMemberKey(state.transformedKey(key.stringValue))
     }
 
     mutating func encodeNil(forKey key: Key) {
@@ -266,7 +295,7 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
         // Foundation encodes the superclass under a literal "super" key. Without one, the returned
         // encoder would write a value into the open object with no preceding key — malformed JSON.
         state.beginMember(frame)
-        state.w.writeKey(state.transformedKey("super"))
+        state.writeMemberKey(state.transformedKey("super"))
         return TapeEncoder(state: state)
     }
     mutating func superEncoder(forKey key: Key) -> any Encoder {

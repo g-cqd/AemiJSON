@@ -162,7 +162,7 @@ Tape parsing runs at roughly **1–1.5 GB/s** across the corpus (≈0.95 GB/s on
 `canada.json`); lazy access is faster still, since it skips subtrees it never reads. Full untyped
 materialization into `JSONValue` edges just past `JSONSerialization`. The wins concentrate in lazy
 parsing and the typed/macro fast paths — untyped re-serialization, pretty/sorted encoding, and
-`Decimal` / ISO-8601 `Date` decoding sit at parity, not ahead. Methodology, the parity cases, and
+ISO-8601 `Date` decoding sit at parity, not ahead. Methodology, the parity cases, and
 per-feature throughput: see the **Benchmarking** guide.
 
 ## Standards

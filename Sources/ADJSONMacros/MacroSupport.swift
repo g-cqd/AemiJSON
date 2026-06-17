@@ -1,3 +1,4 @@
+import ADFMacroSupport
 import SwiftDiagnostics
 import SwiftParser
 import SwiftSyntax
@@ -31,18 +32,9 @@ func isComputed(_ accessor: AccessorBlockSyntax?) -> Bool {
 
 // A `.warning` anchored on the macro attribute, in the shared "ADJSON" diagnostic domain. Both
 // macros degrade gracefully (return no extension) rather than erroring, so warnings — not errors —
-// are emitted.
+// are emitted. (Backed by ADFMacroSupport's shared `SimpleDiagnostic` + builder.)
 func note(_ node: AttributeSyntax, _ id: String, _ message: String) -> Diagnostic {
-    Diagnostic(
-        node: node,
-        message: SimpleDiagnostic(
-            message: message, diagnosticID: MessageID(domain: "ADJSON", id: id), severity: .warning))
-}
-
-struct SimpleDiagnostic: DiagnosticMessage {
-    let message: String
-    let diagnosticID: MessageID
-    let severity: DiagnosticSeverity
+    macroDiagnostic(node, domain: "ADJSON", id: id, message)
 }
 
 // MARK: - Schema codegen helpers (shared by SchemableMacro and the decorator macros)
@@ -83,33 +75,6 @@ func jsonEscaped(_ s: String) -> String {
 
 // A complete JSON string literal (quoted + escaped) ready to splice into emitted JSON text.
 func jsonString(_ s: String) -> String { "\"" + jsonEscaped(s) + "\"" }
-
-// A Swift `String` literal that evaluates to `s` — used to pass plain (unescaped) text as a
-// runtime argument (e.g. `description:`), where the runtime then JSON-escapes it. Handles
-// newlines and control characters, which a single-line raw literal cannot.
-func swiftStringLiteral(_ s: String) -> String {
-    var out = "\""
-    for scalar in s.unicodeScalars {
-        switch scalar {
-        case "\\": out += #"\\"#
-        case "\"": out += #"\""#
-        case "\n": out += #"\n"#
-        case "\r": out += #"\r"#
-        case "\t": out += #"\t"#
-        case "\u{0}": out += #"\0"#
-        default:
-            if scalar.value < 0x20 {
-                out += "\\u{"
-                out.append(hexDigit(scalar.value >> 4))
-                out.append(hexDigit(scalar.value & 0xF))
-                out += "}"
-            } else {
-                out.unicodeScalars.append(scalar)
-            }
-        }
-    }
-    return out + "\""
-}
 
 // Wraps raw JSON text in a Swift raw-string literal, choosing enough `#` delimiters that the
 // content (which may contain `"#`) cannot terminate the literal early. The JSON text never holds a

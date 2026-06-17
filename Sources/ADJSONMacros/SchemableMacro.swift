@@ -1,3 +1,4 @@
+import ADFMacroSupport
 import SwiftDiagnostics
 import SwiftSyntax
 import SwiftSyntaxBuilder
