@@ -113,7 +113,8 @@ struct SQLiteJSONFunctionTests {
     @Test func jsonSet() {
         #expect(spath("$.a").set(.number(2), in: base) == jvalue(#"{"a":2,"b":[10,20]}"#))  // overwrite
         #expect(spath("$.c").set(.bool(true), in: base) == jvalue(#"{"a":1,"b":[10,20],"c":true}"#))  // create
-        #expect(spath("$.x.y").set(.number(1), in: base) == base)  // missing parent → no-op
+        // SQLite's json_set creates missing intermediate parents (verified against sqlite3 3.x).
+        #expect(spath("$.x.y").set(.number(1), in: base) == jvalue(#"{"a":1,"b":[10,20],"x":{"y":1}}"#))
         #expect(spath("$.b[0]").set(.number(99), in: base) == jvalue(#"{"a":1,"b":[99,20]}"#))  // index
         #expect(spath("$.b[#-1]").set(.number(21), in: base) == jvalue(#"{"a":1,"b":[10,21]}"#))  // from end
         #expect(spath("$.b[#]").set(.number(30), in: base) == jvalue(#"{"a":1,"b":[10,20,30]}"#))  // append

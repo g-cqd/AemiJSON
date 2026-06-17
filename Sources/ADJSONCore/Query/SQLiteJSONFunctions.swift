@@ -24,101 +24,27 @@ extension SQLiteJSONPath {
         return (try? JSONValue(node).encodedBytes()).map { String(decoding: $0, as: UTF8.self) }
     }
 
-    /// `json_set`: set the value at the path, overwriting an existing element or creating a new
-    /// object key / appended array element (`[#]`). Returns the original tree unchanged when an
-    /// intermediate parent is missing or has the wrong kind.
+    /// `json_set`: set the value at the path — overwriting an existing element, appending (`[#]`), or
+    /// creating missing object keys and intermediate parents, exactly as SQLite's `json_set`. Delegates
+    /// to the single value-mutation engine (``JSONValue/setting(_:to:mode:)``).
     public func set(_ value: JSONValue, in root: JSONValue) -> JSONValue {
-        mutate(root, segments[...], value, .set)
+        root.setting(self, to: value, mode: .set)
     }
 
-    /// `json_insert`: like `set`, but only *creates* — an element that already exists is left
-    /// untouched.
+    /// `json_insert`: like `set`, but only *creates* — an element that already exists is left untouched.
     public func insert(_ value: JSONValue, in root: JSONValue) -> JSONValue {
-        mutate(root, segments[...], value, .insert)
+        root.setting(self, to: value, mode: .insert)
     }
 
-    /// `json_replace`: like `set`, but only *overwrites* — a path that doesn't already exist is a
-    /// no-op.
+    /// `json_replace`: like `set`, but only *overwrites* — a path that doesn't already exist is a no-op.
     public func replace(_ value: JSONValue, in root: JSONValue) -> JSONValue {
-        mutate(root, segments[...], value, .replace)
+        root.setting(self, to: value, mode: .replace)
     }
 
-    /// `json_remove`: remove the addressed element. A path that doesn't resolve is a no-op.
+    /// `json_remove`: remove the addressed element. A path that doesn't resolve is a no-op; removing the
+    /// whole value (the `$` path) yields JSON `null`.
     public func remove(in root: JSONValue) -> JSONValue {
-        mutate(root, segments[...], nil, .remove)
-    }
-
-    private enum Mode { case set, insert, replace, remove }
-
-    // Native-recursion cap. `mutate` recurses once per compiled path segment; a path parsed from a
-    // string is short, but the public API also accepts a programmatically-built path, so past this
-    // depth the mutation is a no-op (returns the node unchanged) — matching SQLite's lenient
-    // "bad input → no-op" behaviour — rather than overflowing the stack. Matches the other
-    // value-mutation caps (light frames).
-    private static let maxMutateDepth = 256
-
-    // Recurses over the compiled path's segments (bounded by the path length — a handful — not the
-    // document depth), folding the mutation into a fresh copy. Out-of-range indices, missing
-    // parents, and kind mismatches are no-ops, matching SQLite's lenient behaviour.
-    private func mutate(
-        _ node: JSONValue, _ segs: ArraySlice<Segment>, _ value: JSONValue?, _ mode: Mode, _ depth: Int = 0
-    )
-        -> JSONValue
-    {
-        guard depth < Self.maxMutateDepth else { return node }
-        guard let segment = segs.first else {
-            switch mode {
-            case .set, .replace: return value ?? node
-            case .insert: return node  // the root already exists
-            case .remove: return .null  // removing the whole document
-            }
-        }
-        let rest = segs.dropFirst()
-        switch segment {
-        case .key(let key):
-            guard case .object(var members) = node else { return node }
-            if rest.isEmpty {
-                let exists = members[key] != nil
-                switch mode {
-                case .set: members[key] = value
-                case .insert: if !exists { members[key] = value }
-                case .replace: if exists { members[key] = value }
-                case .remove: members[key] = nil
-                }
-            } else {
-                guard let child = members[key] else { return node }
-                members[key] = mutate(child, rest, value, mode, depth + 1)
-            }
-            return .object(members)
-
-        case .index(let index):
-            return mutateArrayElement(node, at: index, rest, value, mode, depth)
-
-        case .fromEnd(let n):
-            guard case .array(let elements) = node else { return node }
-            return mutateArrayElement(node, at: elements.count - n, rest, value, mode, depth)
-
-        case .append:
-            guard case .array(var elements) = node, rest.isEmpty else { return node }
-            if mode == .set || mode == .insert, let value { elements.append(value) }
-            return .array(elements)
-        }
-    }
-
-    private func mutateArrayElement(
-        _ node: JSONValue, at index: Int, _ rest: ArraySlice<Segment>, _ value: JSONValue?, _ mode: Mode, _ depth: Int
-    ) -> JSONValue {
-        guard case .array(var elements) = node, index >= 0, index < elements.count else { return node }
-        if rest.isEmpty {
-            switch mode {
-            case .set, .replace: if let value { elements[index] = value }
-            case .insert: break  // the element already exists
-            case .remove: elements.remove(at: index)
-            }
-        } else {
-            elements[index] = mutate(elements[index], rest, value, mode, depth + 1)
-        }
-        return .array(elements)
+        root.removing(self) ?? .null
     }
 }
 
