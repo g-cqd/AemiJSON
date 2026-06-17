@@ -300,8 +300,6 @@ public struct JSONEventReader {
         guard matched else { throw JSONError.unexpectedCharacter(bytes[i], at: i) }
         i += length
     }
-
-    @inline(__always) private func isDigit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
 }
 
 /// A push-based (incremental / chunked) JSON event reader. Feed UTF-8 bytes as they arrive with
@@ -660,7 +658,4 @@ public struct JSONEventStreamReader {
         }
         return false
     }
-
-    @inline(__always) private func isWS(_ b: UInt8) -> Bool { b == 0x20 || b == 0x0A || b == 0x0D || b == 0x09 }
-    @inline(__always) private func isDigit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
 }
