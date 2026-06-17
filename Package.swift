@@ -146,7 +146,9 @@ let package = Package(
         .target(
             name: "ADJSONCore", dependencies: [orderedCollections, adfCore], swiftSettings: strictSettings),
         .target(
-            name: "ADJSON", dependencies: ["ADJSONCore", "ADJSONMacros", orderedCollections],
+            // `adfCore` is declared directly (not only transitively via `ADJSONCore`) because the
+            // umbrella links it itself — `EncoderBufferPool` uses `ADFCore.ByteBufferPool`.
+            name: "ADJSON", dependencies: ["ADJSONCore", "ADJSONMacros", orderedCollections, adfCore],
             swiftSettings: strictSettings, plugins: adjsonBuildPlugins),
         .testTarget(
             name: "ADJSONTests",
