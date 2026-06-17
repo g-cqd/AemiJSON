@@ -59,6 +59,26 @@ struct DecimalTests {
         #expect(try Foundation.JSONDecoder().decode(Money.self, from: data) == value)
     }
 
+    @Test func fastDecimalParityWithFoundationAcrossCases() throws {
+        let posix = Locale(identifier: "en_US_POSIX")
+        // Exercises the UInt128 fast path (short, long up to 38 digits, fractions, signs, exponents)
+        // and the >38-digit / out-of-range-exponent fallback — every case must equal Decimal(string:).
+        let cases = [
+            "0", "-0", "7", "-7", "0.1", "19.99", "-1234.5678",
+            "12345678901234567890",  // 20 digits (past UInt64)
+            "1234567890123456789012345678.1234",  // 32 significant digits
+            "99999999999999999999999999999999999999",  // 38 nines — Decimal's capacity
+            "123456789012345678901234567890123456789",  // 39 digits → fallback
+            "1e5", "1.5e10", "-2.5e-7", "3.14159E2", "1E-30", "0.000000000000000000001",
+            "100000000000000000000",
+        ]
+        let decoded = try ADJSON.JSONDecoder().decode(
+            [Decimal].self, from: Data(("[" + cases.joined(separator: ",") + "]").utf8))
+        for (i, c) in cases.enumerated() {
+            #expect(decoded[i] == Decimal(string: c, locale: posix), "mismatch for \(c)")
+        }
+    }
+
     @Test func decimalRoundTripsExactly() throws {
         let original = Money(
             price: try #require(Decimal(string: "0.1")),

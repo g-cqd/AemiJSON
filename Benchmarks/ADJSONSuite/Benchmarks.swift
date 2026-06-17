@@ -57,11 +57,16 @@ nonisolated(unsafe) let benchmarks = {
     let foundationEncoder = JSONEncoder()
     // Foundation object graph (NSArray/NSDictionary tree) for the untyped-encode baseline.
     let userFoundationObject = try! JSONSerialization.jsonObject(with: userData)
-    // Exact-decimal payload: 20k decimals whose fractional digits don't round-trip through `Double`.
-    // ADJSON reads `Decimal` from the raw number lexeme; Foundation special-cases `Decimal` too — so
-    // this compares the two exact-decimal paths, not Decimal-vs-Double.
-    let decimalData = Data(
+    // Exact-decimal payloads. `Decimal` exists for values `Double` can't hold, so both regimes are
+    // measured: currency-scale "short" (≤9 significant digits), and high-precision "long" (31 digits —
+    // beyond UInt64/Double, the case `Decimal` is really for). Foundation special-cases `Decimal` too,
+    // so each compares the two exact-decimal paths, not Decimal-vs-Double.
+    let decimalShortData = Data(
         ("[" + (0..<20_000).map { "\($0).\(1000 + ($0 &* 7) % 9000)" }.joined(separator: ",") + "]").utf8)
+    let decimalLongData = Data(
+        ("["
+            + (0..<20_000).map { "123456789012345678901234567.\(1000 + ($0 &* 7) % 9000)" }
+            .joined(separator: ",") + "]").utf8)
     // ISO-8601 date payload (20k timestamps), serialized once via the `.iso8601` strategy so both
     // decoders parse identical bytes.
     let isoDates = (0..<20_000).map { Date(timeIntervalSince1970: Double(1_600_000_000 + $0)) }
@@ -171,14 +176,23 @@ nonisolated(unsafe) let benchmarks = {
         }
     }
 
-    // MARK: decimal  (exact Decimal — read from the raw lexeme, Foundation parity with no Double round-trip)
+    // MARK: decimal  (exact Decimal from the raw lexeme — short currency-scale and long high-precision)
 
-    Benchmark("decimal/Foundation decode") { bm in
-        for _ in bm.scaledIterations { blackHole(try! foundationDecoder.decode([Decimal].self, from: decimalData)) }
+    Benchmark("decimal/Foundation short") { bm in
+        for _ in bm.scaledIterations {
+            blackHole(try! foundationDecoder.decode([Decimal].self, from: decimalShortData))
+        }
     }
-    Benchmark("decimal/ADJSON decode") { bm in
+    Benchmark("decimal/ADJSON short") { bm in
         let decoder = ADJSON.JSONDecoder()
-        for _ in bm.scaledIterations { blackHole(try! decoder.decode([Decimal].self, from: decimalData)) }
+        for _ in bm.scaledIterations { blackHole(try! decoder.decode([Decimal].self, from: decimalShortData)) }
+    }
+    Benchmark("decimal/Foundation long") { bm in
+        for _ in bm.scaledIterations { blackHole(try! foundationDecoder.decode([Decimal].self, from: decimalLongData)) }
+    }
+    Benchmark("decimal/ADJSON long") { bm in
+        let decoder = ADJSON.JSONDecoder()
+        for _ in bm.scaledIterations { blackHole(try! decoder.decode([Decimal].self, from: decimalLongData)) }
     }
 
     // MARK: date  (.iso8601 strategy — value-type ISO8601FormatStyle vs Foundation's)

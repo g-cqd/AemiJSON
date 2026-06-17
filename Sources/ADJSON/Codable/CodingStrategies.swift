@@ -217,11 +217,19 @@ extension DecodeContext {
     /// `JSONDecoder`, which special-cases `Decimal` rather than routing it through its (keyed) `Codable`
     /// conformance. A non-number node is a type mismatch; a number outside `Decimal`'s range is corrupt.
     func decodeDecimal(at index: Int) throws -> Decimal {
-        guard let lexeme = numberLexeme(index) else {
+        let raw = slot(index)
+        guard Slot.tag(raw) == JSONKind.number.rawValue else {
             throw DecodingError.typeMismatch(
                 Decimal.self, .init(codingPath: [], debugDescription: "Expected a number for Decimal"))
         }
-        guard let value = Decimal(string: lexeme, locale: ADJSONDecimal.posixLocale) else {
+        let off = Slot.low(raw), len = Slot.length(raw)
+        assertBytes(off, len)
+        let buffer = UnsafeBufferPointer(start: bytes + off, count: len)
+        // Fast byte path — no `String`, no Foundation locale scanner. Falls back to `Decimal(string:)`
+        // (identical result) only for >38 significant digits or an out-of-range exponent.
+        if let value = fastDecimal(buffer) { return value }
+        guard let value = Decimal(string: String(decoding: buffer, as: UTF8.self), locale: ADJSONDecimal.posixLocale)
+        else {
             throw DecodingError.dataCorrupted(
                 .init(codingPath: [], debugDescription: "Number is out of Decimal's representable range"))
         }
