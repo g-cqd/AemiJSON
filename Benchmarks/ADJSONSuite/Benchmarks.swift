@@ -40,7 +40,11 @@ private func corpusURL(_ name: String) -> URL {
 }
 
 nonisolated(unsafe) let benchmarks = {
-    Benchmark.defaultConfiguration = .init(metrics: [.wallClock, .throughput, .mallocCountTotal])
+    // Time + throughput, CPU time, allocation count, and peak resident memory — so a regression in
+    // either CPU or memory (not just wall-clock) shows up. `peakMemoryResident` captures the per-
+    // workload RSS high-water (e.g. an untyped `JSONValue`/tape parse vs a Foundation object tree).
+    Benchmark.defaultConfiguration = .init(
+        metrics: [.wallClock, .throughput, .cpuTotal, .mallocCountTotal, .peakMemoryResident])
 
     // Shared, deterministic payloads (keyed-object-heavy + number-heavy), reused coders.
     let users = makeUsers(2000)

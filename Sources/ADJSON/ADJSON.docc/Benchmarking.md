@@ -38,8 +38,10 @@ The suite is statistically rigorous and honest:
 - **Percentiles, not an average.** `Benchmark` auto-tunes the iteration count and reports the full
   wall-clock distribution (p50 / p90 / p99 / p100), so tail latency and jitter are visible — not
   hidden behind a single mean.
-- **Metrics.** Wall-clock time, throughput (operations/second), and total `malloc` count per
-  iteration (allocations are often the real cost in a JSON pipeline).
+- **Metrics.** Wall-clock time, throughput (operations/second), total CPU time, total `malloc`
+  count, and **peak resident memory** per iteration — so a CPU or memory regression (e.g. an untyped
+  object-tree balloon) surfaces, not just wall-clock. Allocations are often the real cost in a JSON
+  pipeline.
 - **No dead-code elimination.** Every result is passed through the framework's `blackHole(_:)` so
   the optimizer can't delete the work being measured.
 - **Side-by-side baselines.** Foundation's `JSONDecoder` / `JSONEncoder` / `JSONSerialization`
