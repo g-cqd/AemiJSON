@@ -192,5 +192,15 @@ adopted:
 - **swift-collections beyond `OrderedCollections`** — the explicit stacks use `Array` as a LIFO, which
   is already optimal here; `Deque` would help only if iteration direction reversed, which would
   pessimize tape order.
+- **`FoundationEssentials`** — attractive in theory (a lighter, ICU-free Foundation core), but it is
+  **not directly importable on Apple platforms**: the Darwin SDK ships it as an internal submodule of
+  `Foundation`, not a standalone module (`import FoundationEssentials` fails to resolve), and only
+  Linux's swift-foundation exposes it. Adopting it would therefore mean adding the swift-foundation
+  *package* as a dependency — heavier, not lighter, and prone to conflicting with the system Foundation
+  on Darwin. The umbrella keeps `import Foundation` (which already resolves to swift-foundation on
+  Linux, so it is cross-platform today) and **`ADJSONCore` stays Foundation-free** — its custom
+  scanner / number / UTF-8 code is a measured performance and locale-safety win, not incidental
+  duplication of Foundation, so there is nothing there worth replacing even if the module were
+  importable.
 
 Each is revisited only if a concrete workload shows a win.
