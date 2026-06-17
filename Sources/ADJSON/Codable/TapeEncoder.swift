@@ -140,7 +140,7 @@ final class EncodeState {
             let isObject = kinds.removeLast()
             let count = counts.removeLast()
             // A non-empty container breaks before its closing brace (`[]`/`{}` stay on one line).
-            if pretty, count > 0 { newlineIndent(frame) }
+            if pretty, count > 0 { w.newlineIndent(frame) }
             w.byte(isObject ? 0x7D : 0x5D)
         }
     }
@@ -148,24 +148,14 @@ final class EncodeState {
     @inline(__always) func beginMember(_ frame: Int) {
         closeDownTo(frame + 1)
         if counts[frame] > 0 { w.byte(0x2C) }
-        if pretty { newlineIndent(frame + 1) }
+        if pretty { w.newlineIndent(frame + 1) }
         counts[frame] += 1
     }
 
-    /// Pretty-print break: newline then `level * 2` spaces (only called when `pretty`).
-    @inline(__always) func newlineIndent(_ level: Int) {
-        w.byte(0x0A)
-        for _ in 0..<(level * 2) { w.byte(0x20) }
-    }
-
-    /// Write an object key — `"k":` compact, `"k" : ` pretty — matching `JSON.encodedBytes`.
+    /// Write an object key — `"k":` compact, `"k" : ` pretty — sharing `JSONWriter`'s indent policy
+    /// so the streaming encoder, the `JSONValue` walk, and the `JSON` cursor all agree byte-for-byte.
     @inline(__always) func writeMemberKey(_ key: String) {
-        if pretty {
-            w.writeString(key)
-            w.raw(" : ")
-        } else {
-            w.writeKey(key)
-        }
+        if pretty { w.writeKeyPretty(key) } else { w.writeKey(key) }
     }
 
     /// Bridge a fast-path value nested inside a generic encode: move the shared buffer

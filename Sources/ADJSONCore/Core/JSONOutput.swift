@@ -273,11 +273,36 @@ public enum JSONOutput {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    /// Emits a `Double` per the encoding `options`: `numberFormat` chooses Swift-shortest
-    /// (`Double.description`) vs ECMA-262, and `nonFinite` chooses throw / `null` / string-literal.
-    /// The single source of truth for the Codable encode paths (matches their current
-    /// `Double.description` output under the `.rfc8259` default).
-    public static func appendDouble(_ v: Double, options: JSONEncodingOptions, to bytes: inout [UInt8]) throws {
+    /// Emits a **finite** `Double` per `numberFormat` — the single place the three number formats are
+    /// rendered, so the streaming encoder, the `JSONValue` tree walk, the lazy `JSON` cursor, and the
+    /// JS stream writer all agree byte-for-byte. `integerPromotion` (the `JSONValue`/tree convention)
+    /// renders an integral magnitude below 2^53 without a fractional part (`2`, not `2.0`) under
+    /// `.swiftShortest`; the Codable value paths leave it `false` so a `Double` stays `2.0`. The caller
+    /// must have already handled non-finite values. The shortest (`.swiftShortest`) form is
+    /// `Double.description` — the one spot a future direct byte formatter would replace.
+    @inlinable
+    public static func appendFiniteDouble(
+        _ v: Double, numberFormat: JSONEncodingOptions.NumberFormat, integerPromotion: Bool, to bytes: inout [UInt8]
+    ) {
+        if integerPromotion, case .swiftShortest = numberFormat, v == v.rounded(), abs(v) < 9.007_199_254_740_992e15 {
+            appendInteger(Int64(v), to: &bytes)
+            return
+        }
+        switch numberFormat {
+        case .ecma262: appendECMANumber(v, to: &bytes)
+        case .swiftShortest: bytes.append(contentsOf: v.description.utf8)
+        case .sqlitePrintfG: appendSQLitePrintfG(v, to: &bytes)
+        }
+    }
+
+    /// Emits a `Double` per the encoding `options`: `nonFinite` chooses throw / `null` / string-literal,
+    /// and a finite value goes through ``appendFiniteDouble(_:numberFormat:integerPromotion:to:)``.
+    /// `integerPromotion` is the `JSONValue`/tree convention (integral `Double` → `2`); the streaming
+    /// Codable paths pass `false` so a `Double` stays `2.0`. The single source of truth for every
+    /// double the encoders emit.
+    public static func appendDouble(
+        _ v: Double, options: JSONEncodingOptions, integerPromotion: Bool = false, to bytes: inout [UInt8]
+    ) throws {
         guard v.isFinite else {
             switch options.nonFinite {
             case .throw:
@@ -292,11 +317,7 @@ public enum JSONOutput {
             }
             return
         }
-        switch options.numberFormat {
-        case .ecma262: appendECMANumber(v, to: &bytes)
-        case .swiftShortest: bytes.append(contentsOf: v.description.utf8)
-        case .sqlitePrintfG: appendSQLitePrintfG(v, to: &bytes)
-        }
+        appendFiniteDouble(v, numberFormat: options.numberFormat, integerPromotion: integerPromotion, to: &bytes)
     }
 
     /// SQLite's `%!.15g` real rendering, byte-for-byte with `sqlite3` `json()`/`json_quote()`. The

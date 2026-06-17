@@ -33,17 +33,24 @@ package final class JSONWriter {
         JSONOutput.appendInteger(v, to: &bytes)
     }
 
-    // Callers guarantee `v` is finite — the value paths pre-check and apply the non-finite policy
-    // before reaching here, so this just writes the shortest `Double.description`.
-    package func writeDouble(_ v: Double) {
-        assert(v.isFinite, "JSONWriter.writeDouble requires a finite value")
-        bytes.append(contentsOf: v.description.utf8)
-    }
-
     // "key":
     package func writeKey(_ s: String) {
         writeString(s)
         bytes.append(0x3A)
+    }
+
+    // Pretty-print indent: newline + `level * 2` spaces. One definition shared by every serializer —
+    // the eager `JSONValue` walk, the lazy `JSON` cursor, and the streaming Codable encoder — so the
+    // indent width can't drift between them.
+    @inline(__always) package func newlineIndent(_ level: Int) {
+        bytes.append(0x0A)
+        for _ in 0..<(level * 2) { bytes.append(0x20) }
+    }
+
+    // A pretty object key: `"key" : ` (the space-colon-space form used in indented output).
+    @inline(__always) package func writeKeyPretty(_ s: String) {
+        writeString(s)
+        raw(" : ")
     }
 
     package func writeString(_ s: String) {

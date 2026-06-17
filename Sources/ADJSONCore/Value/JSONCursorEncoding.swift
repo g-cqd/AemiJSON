@@ -26,16 +26,10 @@ extension JSON {
             case .byte(let b):
                 writer.byte(b)
             case .key(let k, let pretty):
-                if pretty {
-                    writer.writeString(k)
-                    writer.raw(" : ")
-                } else {
-                    writer.writeKey(k)
-                }
+                if pretty { writer.writeKeyPretty(k) } else { writer.writeKey(k) }
             case .indent(let level, let comma):
                 if comma { writer.byte(0x2C) }
-                writer.byte(0x0A)
-                for _ in 0..<(level * 2) { writer.byte(0x20) }
+                writer.newlineIndent(level)
             case .value(let node, let depth):
                 guard depth <= JSONValue.maxEncodingDepth else {
                     throw EncodingError.invalidValue(

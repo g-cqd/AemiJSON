@@ -311,16 +311,10 @@ extension JSONValue {
             case .byte(let b):
                 writer.byte(b)
             case .key(let k, let pretty):
-                if pretty {
-                    writer.writeString(k)
-                    writer.raw(" : ")
-                } else {
-                    writer.writeKey(k)
-                }
+                if pretty { writer.writeKeyPretty(k) } else { writer.writeKey(k) }
             case .indent(let level, let comma):
                 if comma { writer.byte(0x2C) }
-                writer.byte(0x0A)
-                for _ in 0..<(level * 2) { writer.byte(0x20) }
+                writer.newlineIndent(level)
             case .value(let value, let depth):
                 guard depth <= Self.maxEncodingDepth else {
                     throw EncodingError.invalidValue(
@@ -382,41 +376,15 @@ extension JSONValue {
 
     // `Double`-case number emission. A parsed JSON integer within Int64 is held as `.int` and
     // emitted exactly via `writeInteger`, so this path only sees `.number(Double)` — a fraction, an
-    // exponent, an out-of-Int64 integer, or a hand-built `.number(...)`. Under `.swiftShortest` an
-    // integral `Double` magnitude below 2^53 is still rendered without a fractional part (`2`, not
-    // `2.0`), so a hand-built `.number(2)` and an out-of-Int64 integer both round-trip as integers;
-    // `.number` can't otherwise tell `2` from `2.0`. This intentionally differs from the Codable
-    // encode path, where a value typed `Double` is faithfully rendered as `2.0` (see
-    // `JSONEncodingOptions.NumberFormat.swiftShortest`). Neither path reproduces Foundation's
-    // formatter byte-for-byte; use `.ecma262` for `JSON.stringify` parity.
-    // `static` + `internal` so the tape-cursor serializer (`JSON.encodedBytes`) shares this exact
-    // number formatting — one definition for both representations.
+    // exponent, an out-of-Int64 integer, or a hand-built `.number(...)`. It delegates to the shared
+    // `JSONOutput.appendDouble` with `integerPromotion: true`: under `.swiftShortest` an integral
+    // `Double` magnitude below 2^53 is rendered without a fractional part (`2`, not `2.0`), so a
+    // hand-built `.number(2)` and an out-of-Int64 integer round-trip as integers (`.number` can't
+    // otherwise tell `2` from `2.0`). This intentionally differs from the Codable encode path, which
+    // passes `integerPromotion: false` so a value typed `Double` stays `2.0`. Neither reproduces
+    // Foundation's formatter byte-for-byte; use `.ecma262` for `JSON.stringify` parity. `static` +
+    // `internal` so the tape-cursor serializer (`JSON.encodedBytes`) shares this exact formatting.
     static func writeNumber(_ d: Double, into writer: JSONWriter, options: JSONEncodingOptions) throws {
-        guard d.isFinite else {
-            switch options.nonFinite {
-            case .throw:
-                throw EncodingError.invalidValue(
-                    d, .init(codingPath: [], debugDescription: "Non-finite \(d) cannot be encoded as JSON"))
-            case .null:
-                writer.writeNull()
-            case .stringLiterals(let pos, let neg, let nan):
-                writer.writeString(d.isNaN ? nan : (d > 0 ? pos : neg))
-            }
-            return
-        }
-        switch options.numberFormat {
-        case .ecma262:
-            JSONOutput.appendECMANumber(d, to: &writer.bytes)
-        case .swiftShortest:
-            if d == d.rounded(), abs(d) < 9.007_199_254_740_992e15 {
-                writer.writeInteger(Int64(d))
-            } else {
-                writer.writeDouble(d)
-            }
-        case .sqlitePrintfG:
-            // No integer promotion: SQLite keeps a real a real (`5.0`), and `appendSQLitePrintfG`
-            // already emits the `.0`.
-            JSONOutput.appendSQLitePrintfG(d, to: &writer.bytes)
-        }
+        try JSONOutput.appendDouble(d, options: options, integerPromotion: true, to: &writer.bytes)
     }
 }

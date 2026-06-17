@@ -135,11 +135,8 @@ public struct JSONStreamWriter: ~Copyable {
             }
             return
         }
-        switch options.numberFormat {
-        case .ecma262: JSONOutput.appendECMANumber(v, to: &bytes)
-        case .swiftShortest: bytes.append(contentsOf: v.description.utf8)
-        case .sqlitePrintfG: JSONOutput.appendSQLitePrintfG(v, to: &bytes)
-        }
+        // Shared finite-double emission (no integer promotion — JS keeps a real a real).
+        JSONOutput.appendFiniteDouble(v, numberFormat: options.numberFormat, integerPromotion: false, to: &bytes)
     }
 
     public mutating func bool(_ v: Bool) {
