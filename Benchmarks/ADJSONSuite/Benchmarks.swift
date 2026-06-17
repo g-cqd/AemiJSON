@@ -51,6 +51,21 @@ nonisolated(unsafe) let benchmarks = {
     let doubleData = try! ADJSON.JSONEncoder().encode(doubles)
     let foundationDecoder = JSONDecoder()
     let foundationEncoder = JSONEncoder()
+    // Foundation object graph (NSArray/NSDictionary tree) for the untyped-encode baseline.
+    let userFoundationObject = try! JSONSerialization.jsonObject(with: userData)
+    // Exact-decimal payload: 20k decimals whose fractional digits don't round-trip through `Double`.
+    // ADJSON reads `Decimal` from the raw number lexeme; Foundation special-cases `Decimal` too — so
+    // this compares the two exact-decimal paths, not Decimal-vs-Double.
+    let decimalData = Data(
+        ("[" + (0..<20_000).map { "\($0).\(1000 + ($0 &* 7) % 9000)" }.joined(separator: ",") + "]").utf8)
+    // ISO-8601 date payload (20k timestamps), serialized once via the `.iso8601` strategy so both
+    // decoders parse identical bytes.
+    let isoDates = (0..<20_000).map { Date(timeIntervalSince1970: Double(1_600_000_000 + $0)) }
+    let isoDateData: Data = {
+        var encoder = ADJSON.JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return try! encoder.encode(isoDates)
+    }()
 
     // MARK: parse  (untyped: Data -> structure)
 
@@ -119,6 +134,20 @@ nonisolated(unsafe) let benchmarks = {
         encoder.options = JSONEncodingOptions(keyOrder: .sorted)
         for _ in bm.scaledIterations { blackHole(try! encoder.encode(users)) }
     }
+    // Foundation counterparts so each ADJSON encode mode has a like-for-like baseline.
+    Benchmark("encode/Foundation JSONSerialization") { bm in
+        for _ in bm.scaledIterations { blackHole(try! JSONSerialization.data(withJSONObject: userFoundationObject)) }
+    }
+    Benchmark("encode/Foundation pretty") { bm in
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted]
+        for _ in bm.scaledIterations { blackHole(try! encoder.encode(users)) }
+    }
+    Benchmark("encode/Foundation sorted") { bm in
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        for _ in bm.scaledIterations { blackHole(try! encoder.encode(users)) }
+    }
 
     // MARK: numbers  (number-heavy [Double])
 
@@ -136,6 +165,29 @@ nonisolated(unsafe) let benchmarks = {
             root.forEachElement { sum += $0.doubleValue }
             blackHole(sum)
         }
+    }
+
+    // MARK: decimal  (exact Decimal — read from the raw lexeme, Foundation parity with no Double round-trip)
+
+    Benchmark("decimal/Foundation decode") { bm in
+        for _ in bm.scaledIterations { blackHole(try! foundationDecoder.decode([Decimal].self, from: decimalData)) }
+    }
+    Benchmark("decimal/ADJSON decode") { bm in
+        let decoder = ADJSON.JSONDecoder()
+        for _ in bm.scaledIterations { blackHole(try! decoder.decode([Decimal].self, from: decimalData)) }
+    }
+
+    // MARK: date  (.iso8601 strategy — value-type ISO8601FormatStyle vs Foundation's)
+
+    Benchmark("date/Foundation iso8601 decode") { bm in
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        for _ in bm.scaledIterations { blackHole(try! decoder.decode([Date].self, from: isoDateData)) }
+    }
+    Benchmark("date/ADJSON iso8601 decode") { bm in
+        var decoder = ADJSON.JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        for _ in bm.scaledIterations { blackHole(try! decoder.decode([Date].self, from: isoDateData)) }
     }
 
     // MARK: compare  (alloc-free byte compare vs String materialization — the content hot path)
@@ -215,6 +267,11 @@ nonisolated(unsafe) let benchmarks = {
             userData.withUnsafeBytes { raw in blackHole(try! ADJSON.parse([UInt8](raw))) }
         }
     }
+
+    // MARK: - Capabilities with no Foundation equivalent
+    // SAX streaming, JSONPath (RFC 9535), JSON Schema, JSON Patch, and off-actor parallel decode have
+    // no Foundation counterpart. These measure ADJSON's absolute throughput — the feature edge, not a
+    // head-to-head ratio.
 
     // MARK: stream  (push-SAX event reader — string-heavy, exercises decodeString)
 
