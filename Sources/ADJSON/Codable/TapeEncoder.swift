@@ -262,7 +262,13 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
         return UnkeyedTapeEncodingContainer(state: state, frame: f)
     }
 
-    mutating func superEncoder() -> any Encoder { TapeEncoder(state: state) }
+    mutating func superEncoder() -> any Encoder {
+        // Foundation encodes the superclass under a literal "super" key. Without one, the returned
+        // encoder would write a value into the open object with no preceding key — malformed JSON.
+        state.beginMember(frame)
+        state.w.writeKey(state.transformedKey("super"))
+        return TapeEncoder(state: state)
+    }
     mutating func superEncoder(forKey key: Key) -> any Encoder {
         member(key)
         return TapeEncoder(state: state)

@@ -9,8 +9,13 @@ extension JSONValue {
     /// ``ADJSON/JSONEncoder/encode(_:)`` when those matter. Integers within `Int64` are held as
     /// ``int(_:)``; a `UInt64` above `Int64.max` becomes ``number(_:)`` (lossy above 2^53), matching
     /// the value model.
-    public init<Value: Encodable>(encoding value: Value) throws {
-        let encoder = JSONValueEncoderImpl(codingPath: [])
+    ///
+    /// `maxDepth` bounds the (unavoidably recursive) encode so a self-referential or pathologically
+    /// deep `Encodable` throws `EncodingError` rather than overflowing the native stack. The default
+    /// (2048) is sized for the ~8 MB main thread; lower it when encoding untrusted graphs on a
+    /// small-stack worker thread.
+    public init<Value: Encodable>(encoding value: Value, maxDepth: Int = 2048) throws {
+        let encoder = JSONValueEncoderImpl(codingPath: [], maxDepth: maxDepth)
         try value.encode(to: encoder)
         self = encoder.finalValue
     }
@@ -81,14 +86,39 @@ private struct IndexKey: CodingKey {
 
 // MARK: - Encoder
 
+// Recursion-depth budget for `JSONValue(encoding:)`. The encode is unavoidably recursive
+// (`encode<T>` → `value.encode(to: child)`), so a self-referential or pathologically deep
+// `Encodable` would overflow the native stack; past this it throws `EncodingError` and fails closed.
+// Symmetric with ``ADJSON/JSONEncoder/maxEncodingDepth`` (default 2048, sized for the ~8 MB main thread).
+private let jsonValueEncodeMaxDepth = 2048
+
+// Throwing guard for the recursive `encode<T>` sites. The non-throwing container requirements
+// (`nestedContainer`, `superEncoder`) can't throw, so they instead hand the child a `depth + 1`
+// encoder — any nested `encode<T>` reached through them still trips this guard. Mirrors the tape
+// encoder's `EncodeState.encodeValue` guard.
+@inline(__always)
+private func guardEncodeDepth(_ depth: Int, _ maxDepth: Int, _ value: Any, _ codingPath: [CodingKey]) throws {
+    guard depth < maxDepth else {
+        throw EncodingError.invalidValue(
+            value,
+            .init(
+                codingPath: codingPath,
+                debugDescription: "Encoding exceeded the maximum nesting depth (\(maxDepth))"))
+    }
+}
+
 private final class JSONValueEncoderImpl: Encoder {
     var codingPath: [CodingKey]
     let userInfo: [CodingUserInfoKey: Any] = [:]
     let slot: Slot
+    let depth: Int
+    let maxDepth: Int
 
-    init(codingPath: [CodingKey], slot: Slot = Slot()) {
+    init(codingPath: [CodingKey], slot: Slot = Slot(), depth: Int = 0, maxDepth: Int = jsonValueEncodeMaxDepth) {
         self.codingPath = codingPath
         self.slot = slot
+        self.depth = depth
+        self.maxDepth = maxDepth
     }
 
     var finalValue: JSONValue { slot.resolve() }
@@ -101,7 +131,8 @@ private final class JSONValueEncoderImpl: Encoder {
             object = RefObject()
             slot.kind = .object(object)
         }
-        return KeyedEncodingContainer(KeyedContainer<Key>(object: object, codingPath: codingPath))
+        return KeyedEncodingContainer(
+            KeyedContainer<Key>(object: object, codingPath: codingPath, depth: depth, maxDepth: maxDepth))
     }
 
     func unkeyedContainer() -> UnkeyedEncodingContainer {
@@ -112,11 +143,11 @@ private final class JSONValueEncoderImpl: Encoder {
             array = RefArray()
             slot.kind = .array(array)
         }
-        return UnkeyedContainer(array: array, codingPath: codingPath)
+        return UnkeyedContainer(array: array, codingPath: codingPath, depth: depth, maxDepth: maxDepth)
     }
 
     func singleValueContainer() -> SingleValueEncodingContainer {
-        SingleValueContainer(slot: slot, codingPath: codingPath)
+        SingleValueContainer(slot: slot, codingPath: codingPath, depth: depth, maxDepth: maxDepth)
     }
 }
 
@@ -125,6 +156,8 @@ private final class JSONValueEncoderImpl: Encoder {
 private struct SingleValueContainer: SingleValueEncodingContainer {
     let slot: Slot
     var codingPath: [CodingKey]
+    let depth: Int
+    let maxDepth: Int
 
     mutating func encodeNil() { slot.kind = .value(.null) }
     mutating func encode(_ value: Bool) { slot.kind = .value(.bool(value)) }
@@ -142,7 +175,9 @@ private struct SingleValueContainer: SingleValueEncodingContainer {
     mutating func encode(_ value: UInt32) { slot.kind = .value(jsonNumber(value)) }
     mutating func encode(_ value: UInt64) { slot.kind = .value(jsonNumber(value)) }
     mutating func encode<T: Encodable>(_ value: T) throws {
-        try value.encode(to: JSONValueEncoderImpl(codingPath: codingPath, slot: slot))
+        try guardEncodeDepth(depth, maxDepth, value, codingPath)
+        try value.encode(
+            to: JSONValueEncoderImpl(codingPath: codingPath, slot: slot, depth: depth + 1, maxDepth: maxDepth))
     }
 }
 
@@ -151,6 +186,8 @@ private struct SingleValueContainer: SingleValueEncodingContainer {
 private struct KeyedContainer<Key: CodingKey>: KeyedEncodingContainerProtocol {
     let object: RefObject
     var codingPath: [CodingKey]
+    let depth: Int
+    let maxDepth: Int
 
     private func slot(_ key: Key) -> Slot { object.slot(forKey: key.stringValue) }
 
@@ -171,7 +208,10 @@ private struct KeyedContainer<Key: CodingKey>: KeyedEncodingContainerProtocol {
     mutating func encode(_ value: UInt64, forKey key: Key) { slot(key).kind = .value(jsonNumber(value)) }
 
     mutating func encode<T: Encodable>(_ value: T, forKey key: Key) throws {
-        try value.encode(to: JSONValueEncoderImpl(codingPath: codingPath + [key], slot: slot(key)))
+        try guardEncodeDepth(depth, maxDepth, value, codingPath + [key])
+        try value.encode(
+            to: JSONValueEncoderImpl(
+                codingPath: codingPath + [key], slot: slot(key), depth: depth + 1, maxDepth: maxDepth))
     }
 
     mutating func nestedContainer<NestedKey>(
@@ -179,21 +219,24 @@ private struct KeyedContainer<Key: CodingKey>: KeyedEncodingContainerProtocol {
     ) -> KeyedEncodingContainer<NestedKey> {
         let object = RefObject()
         slot(key).kind = .object(object)
-        return KeyedEncodingContainer(KeyedContainer<NestedKey>(object: object, codingPath: codingPath + [key]))
+        return KeyedEncodingContainer(
+            KeyedContainer<NestedKey>(
+                object: object, codingPath: codingPath + [key], depth: depth + 1, maxDepth: maxDepth))
     }
 
     mutating func nestedUnkeyedContainer(forKey key: Key) -> UnkeyedEncodingContainer {
         let array = RefArray()
         slot(key).kind = .array(array)
-        return UnkeyedContainer(array: array, codingPath: codingPath + [key])
+        return UnkeyedContainer(array: array, codingPath: codingPath + [key], depth: depth + 1, maxDepth: maxDepth)
     }
 
     mutating func superEncoder() -> Encoder {
-        JSONValueEncoderImpl(codingPath: codingPath, slot: object.slot(forKey: "super"))
+        JSONValueEncoderImpl(
+            codingPath: codingPath, slot: object.slot(forKey: "super"), depth: depth + 1, maxDepth: maxDepth)
     }
 
     mutating func superEncoder(forKey key: Key) -> Encoder {
-        JSONValueEncoderImpl(codingPath: codingPath + [key], slot: slot(key))
+        JSONValueEncoderImpl(codingPath: codingPath + [key], slot: slot(key), depth: depth + 1, maxDepth: maxDepth)
     }
 }
 
@@ -202,6 +245,8 @@ private struct KeyedContainer<Key: CodingKey>: KeyedEncodingContainerProtocol {
 private struct UnkeyedContainer: UnkeyedEncodingContainer {
     let array: RefArray
     var codingPath: [CodingKey]
+    let depth: Int
+    let maxDepth: Int
     var count: Int { array.slots.count }
 
     private func appendSlot() -> Slot { array.newSlot() }
@@ -225,7 +270,10 @@ private struct UnkeyedContainer: UnkeyedEncodingContainer {
 
     mutating func encode<T: Encodable>(_ value: T) throws {
         let key = nextIndexKey
-        try value.encode(to: JSONValueEncoderImpl(codingPath: codingPath + [key], slot: appendSlot()))
+        try guardEncodeDepth(depth, maxDepth, value, codingPath + [key])
+        try value.encode(
+            to: JSONValueEncoderImpl(
+                codingPath: codingPath + [key], slot: appendSlot(), depth: depth + 1, maxDepth: maxDepth))
     }
 
     mutating func nestedContainer<NestedKey>(
@@ -234,17 +282,19 @@ private struct UnkeyedContainer: UnkeyedEncodingContainer {
         let key = nextIndexKey
         let object = RefObject()
         appendSlot().kind = .object(object)
-        return KeyedEncodingContainer(KeyedContainer<NestedKey>(object: object, codingPath: codingPath + [key]))
+        return KeyedEncodingContainer(
+            KeyedContainer<NestedKey>(
+                object: object, codingPath: codingPath + [key], depth: depth + 1, maxDepth: maxDepth))
     }
 
     mutating func nestedUnkeyedContainer() -> UnkeyedEncodingContainer {
         let key = nextIndexKey
         let inner = RefArray()
         appendSlot().kind = .array(inner)
-        return UnkeyedContainer(array: inner, codingPath: codingPath + [key])
+        return UnkeyedContainer(array: inner, codingPath: codingPath + [key], depth: depth + 1, maxDepth: maxDepth)
     }
 
     mutating func superEncoder() -> Encoder {
-        JSONValueEncoderImpl(codingPath: codingPath, slot: appendSlot())
+        JSONValueEncoderImpl(codingPath: codingPath, slot: appendSlot(), depth: depth + 1, maxDepth: maxDepth)
     }
 }
