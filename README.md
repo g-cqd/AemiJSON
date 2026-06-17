@@ -156,14 +156,19 @@ suite under `Benchmarks/ADJSONSuite`).
 | Codable decode — generic (`Data` → struct) | **1.8×** `JSONDecoder` |
 | Codable decode — `@JSONCodable` fast path | **5.2×** `JSONDecoder` |
 | Codable encode — `@JSONCodable` fast path | **7.6×** `JSONEncoder` |
+| Codable encode — pretty (declaration order) | **≈1.2×** `JSONEncoder` |
 | `[Double]` decode — number-heavy | **2.7×** `JSONDecoder` |
+| Exact `Decimal` decode — short / long | **≈2.3× / 1.2×** `JSONDecoder` |
+| Untyped parse — peak resident memory | **~5–9× lower** than `JSONSerialization` |
 
 Tape parsing runs at roughly **1–1.5 GB/s** across the corpus (≈0.95 GB/s on number-heavy
-`canada.json`); lazy access is faster still, since it skips subtrees it never reads. Full untyped
-materialization into `JSONValue` edges just past `JSONSerialization`. The wins concentrate in lazy
-parsing and the typed/macro fast paths — untyped re-serialization, pretty/sorted encoding, and
-ISO-8601 `Date` decoding sit at parity, not ahead. Methodology, the parity cases, and
-per-feature throughput: see the **Benchmarking** guide.
+`canada.json`); lazy access is faster still, since it skips subtrees it never reads. The flat tape
+also holds peak memory flat (≈36 MB on the parse benchmark) where `JSONSerialization`'s object graph
+balloons to hundreds of MB. Full untyped materialization into `JSONValue` edges just past
+`JSONSerialization`. The remaining parity cases — untyped re-serialization, sorted encoding, and
+ISO-8601 `Date` decoding — sit at parity, not ahead (pretty encoding now streams in a single pass and
+pulls slightly ahead). Methodology, the parity cases, and per-feature throughput: see the
+**Benchmarking** guide.
 
 ## Standards
 

@@ -60,8 +60,8 @@ The suite is statistically rigorous and honest:
 - **Typed encode** `[User] → Data`: Foundation `JSONEncoder` vs ADJSON generic vs `@JSONCodable`,
   plus **compact / pretty / sorted** modes, and untyped `JSONValue → bytes` vs `JSONSerialization`.
 - **Number-heavy** `[Double]` decode — the hard case for any parser.
-- **Exact `Decimal`** and **ISO-8601 `Date`** decode — ADJSON vs Foundation on the strategy paths,
-  included so the comparison isn't cherry-picked to wins.
+- **Exact `Decimal`** (a win via the `UInt128` significand fast path) and **ISO-8601 `Date`** (≈parity,
+  the Sendable formatter) decode — ADJSON vs Foundation on the strategy paths.
 - **Query** — JSONPath (RFC 9535) filter and wildcard over a pre-parsed document.
 - **Validate** — JSON Schema (Draft 2020-12 subset) compiled once (here from `@Schemable`), run
   over a pre-parsed document, plus parse + validate end to end.
@@ -97,15 +97,30 @@ the same way):
 | Codable encode — `@JSONCodable` fast path | **7.6×** `JSONEncoder` |
 | `[Double]` decode — number-heavy | **2.7×** `JSONDecoder` |
 | `JSONValue` materialize (corpus) | **1.1–1.3×** `JSONSerialization` |
+| Codable encode — pretty (declaration order) | **≈1.2×** `JSONEncoder` (single streaming pass) |
+
+**Exact `Decimal` decode** (base-10, read from the raw source lexeme via a `UInt128` significand fast
+path — preserving values `Double` would round):
+
+| Workload | vs Foundation |
+|---|---|
+| `Decimal` decode — short values | **≈2.3×** `JSONDecoder` |
+| `Decimal` decode — long (31-digit) values | **≈1.2×** `JSONDecoder` |
+
+**Peak resident memory** (parse benchmark, 2 000-user payload; per-iteration peak RSS): ADJSON's flat
+tape holds ≈**36 MB** whether it parses the tape, reads two fields lazily, walks every node, or
+materializes a full `JSONValue` tree. Foundation's `JSONSerialization` object graph
+(`NSDictionary`/`NSArray`) peaks at ≈**110–340 MB** (p25–p99) on the same input — roughly **5× more at
+the median and ~9× at the tail**. The flat tape is the structural reason untyped parsing wins on both
+time and memory.
 
 **Where ADJSON matches rather than beats Foundation** — included so the picture isn't cherry-picked:
 
 | Workload | vs Foundation |
 |---|---|
 | Untyped re-serialize — `JSONValue → bytes` | ≈0.85× `JSONSerialization` |
-| Pretty / sorted Codable encode | ≈0.85–0.95× (ADJSON re-serializes through the tape) |
-| Exact `Decimal` decode | ≈0.75× `JSONDecoder` |
-| ISO-8601 `Date` decode | ≈0.9× `JSONDecoder` |
+| Sorted-key Codable encode | ≈0.95× (sorted output re-serializes through the tape — the streaming writer can't reorder members) |
+| ISO-8601 `Date` decode | ≈0.94× `JSONDecoder` (the Sendable, value-type `Date.ISO8601FormatStyle`, not Foundation's non-`Sendable` cached formatter — the 6% is the price of off-actor safety) |
 
 These paths are correct and Foundation-faithful; they are simply not where the tape model pays off.
 
