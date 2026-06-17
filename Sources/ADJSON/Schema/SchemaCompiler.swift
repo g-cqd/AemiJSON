@@ -58,7 +58,7 @@ final class SchemaCompiler {
 
         node.minLength = schema["minLength"].int
         node.maxLength = schema["maxLength"].int
-        if let p = schema["pattern"].string { node.pattern = SendableRegex(p) }
+        if let p = schema["pattern"].string { node.pattern = SchemaPattern(p) }
 
         node.minItems = schema["minItems"].int
         node.maxItems = schema["maxItems"].int
@@ -74,9 +74,9 @@ final class SchemaCompiler {
             node.properties = d
         }
         if let pp = schema["patternProperties"].object {
-            var list = [(SendableRegex, Int)]()
+            var list = [(SchemaPattern, Int)]()
             for (k, v) in pp {
-                if let re = SendableRegex(k) {
+                if let re = SchemaPattern(k) {
                     list.append((re, reserve(v, at: path + "/patternProperties/" + jsonPointerEscape(k))))
                 }
             }

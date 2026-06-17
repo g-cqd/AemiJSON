@@ -1,18 +1,26 @@
-import Foundation
+import ADJSONCore
 
-/// Thread-safe wrapper around `NSRegularExpression` (immutable + safe for concurrent
-/// matching). This is the only `@unchecked` in the schema layer.
-struct SendableRegex: @unchecked Sendable {
-    let regex: NSRegularExpression
+/// A compiled JSON Schema regular expression. The pattern is restricted to the RFC 9485 I-Regexp safe
+/// subset (which JSON Schema also recommends) and compiled to the standard-library `Regex`, so an
+/// attacker-supplied schema `pattern` cannot trigger catastrophic backtracking (ReDoS) and no ICU /
+/// `NSRegularExpression` is involved. An unsafe or malformed pattern fails to compile (`init?` returns
+/// nil) and that constraint is simply not enforced.
+///
+/// `@unchecked Sendable`: a `Regex` is immutable once compiled and matching never mutates it, so
+/// concurrent read-only matching from the `Sendable` `SchemaNode` is safe — the same contract the
+/// JSONPath `CompiledRegex` relies on.
+struct SchemaPattern: @unchecked Sendable {
+    let regex: Regex<AnyRegexOutput>
 
     init?(_ pattern: String) {
-        guard let r = try? NSRegularExpression(pattern: pattern) else { return nil }
-        regex = r
+        guard IRegexp.rejectionReason(pattern) == nil, let compiled = try? Regex(IRegexp.toSwift(pattern))
+        else { return nil }
+        regex = compiled
     }
 
-    func matches(_ s: String) -> Bool {
-        regex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil
-    }
+    /// JSON Schema `pattern` matches when the expression is found anywhere in the string (ECMA-262
+    /// `RegExp.prototype.test` semantics) — an unanchored search.
+    func matches(_ s: String) -> Bool { (try? regex.firstMatch(in: s)) != nil }
 }
 
 /// A compiled schema node. A value type: recursion is expressed as `Int` indices
@@ -33,7 +41,7 @@ struct SchemaNode: Sendable {
 
     var minLength: Int?
     var maxLength: Int?
-    var pattern: SendableRegex?
+    var pattern: SchemaPattern?
 
     var minItems: Int?
     var maxItems: Int?
@@ -44,7 +52,7 @@ struct SchemaNode: Sendable {
     var required: [String]?
 
     var properties: [String: Int]?
-    var patternProperties: [(SendableRegex, Int)]?
+    var patternProperties: [(SchemaPattern, Int)]?
     var additionalProperties: Int?
 
     var prefixItems: [Int]?

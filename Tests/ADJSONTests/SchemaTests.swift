@@ -31,6 +31,24 @@ private func valid(_ schema: JSONSchema, _ json: String) -> Bool { schema.isVali
     #expect(valid(schema(#"{"type":"integer"}"#), "2.0"))
 }
 
+// A catastrophic-backtracking `pattern` / `patternProperties` (ReDoS) must never hang: it falls
+// outside the RFC 9485 I-Regexp safe subset, so it is rejected at compile time and the constraint is
+// simply not enforced. Validating a crafted worst-case instance therefore returns promptly. A safe
+// pattern is still compiled and enforced. (If this ever regresses to a backtracking engine, the test
+// hangs rather than fails — which is itself the signal.)
+@Test func schemaPatternIsReDoSSafe() {
+    let evil = schema(#"{"type":"string","pattern":"^(a+)+$"}"#)
+    let bait = "\"" + String(repeating: "a", count: 40) + "!\""
+    #expect(valid(evil, bait))  // unsafe pattern dropped → the string is valid, and this returns fast
+
+    let safe = schema(#"{"type":"string","pattern":"^a"}"#)
+    #expect(valid(safe, #""abc""#))
+    #expect(!valid(safe, #""xyz""#))
+
+    let evilProps = schema(#"{"type":"object","patternProperties":{"^(a+)+$":{"type":"integer"}}}"#)
+    #expect(valid(evilProps, #"{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!":"x"}"#))  // returns fast; not applied
+}
+
 @Test func validatesEnumConst() {
     let e = schema(#"{"enum":[1,"two",null,{"a":1}]}"#)
     #expect(valid(e, "1"))
