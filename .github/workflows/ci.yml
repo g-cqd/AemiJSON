@@ -417,6 +417,38 @@ jobs:
             cat bench-output.md 2>/dev/null || echo "(no benchmark output captured)"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  docs-check:
+    name: Build docs (link check)
+    needs: build-test
+    # Build the combined DocC site on every push/PR (no Pages deploy) so a broken `<doc:>` or symbol
+    # link fails review instead of slipping to `main`, where the deploy-only `docs` job below is the
+    # first to surface it. `--warnings-as-errors` turns unresolved links into a build failure.
+    runs-on: macos-26
+    env:
+      ADJSON_DEV: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select latest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+      - name: Cache SwiftPM
+        uses: actions/cache@v5
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
+          restore-keys: |
+            spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
+            spm-${{ runner.os }}-docs-
+      - name: Build DocC (warnings as errors)
+        run: |
+          swift package --allow-writing-to-directory "$PWD/_docs_check" \
+            generate-documentation \
+            --enable-experimental-combined-documentation \
+            --target ADJSONCore --target ADJSON \
+            --disable-indexing --warnings-as-errors \
+            --output-path "$PWD/_docs_check"
+
   docs:
     name: Build & deploy docs (Pages)
     needs: build-test
