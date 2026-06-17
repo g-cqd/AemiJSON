@@ -57,7 +57,7 @@ public enum JSONString {
         out.reserveCapacity(length)
         var j = offset
         let end = offset + length
-        while j < end {
+        unescape: while j < end {
             let c = p[j]
             if c != 0x5C {
                 out.append(c)
@@ -81,6 +81,9 @@ public enum JSONString {
             case 0x76: out.append(0x0B)  // \v
             case 0x30: out.append(0x00)  // \0 (scanner ensured no trailing digit)
             case 0x78:  // \xHH → U+00HH (value <= 0xFF: the non-failable UInt8 scalar init, no force-unwrap)
+                // The scanner guarantees two hex digits follow, but don't make the in-bounds read
+                // depend on that invariant alone: bail if the buffer is somehow short.
+                guard j + 1 < end else { break unescape }
                 let value = UInt32(hexValue(p[j])) << 4 | UInt32(hexValue(p[j + 1]))
                 j += 2
                 Unicode.UTF8.encode(Unicode.Scalar(UInt8(truncatingIfNeeded: value))) { out.append($0) }

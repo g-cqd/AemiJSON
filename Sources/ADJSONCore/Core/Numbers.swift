@@ -113,6 +113,9 @@ public enum JSONNumber {
             }
             var e = 0
             var sawExpDigit = false
+            // Cap the accumulator so a pathologically long exponent (`1e` + thousands of digits) cannot
+            // overflow `Int`; any value ≥ 1_000_000 is far outside the ±22 the exact path accepts below,
+            // so clamping changes no accepted result — it only routes an over-large exponent to rejection.
             while i < end, p[i] >= 0x30, p[i] <= 0x39 {
                 if e < 1_000_000 { e = e * 10 + Int(p[i] - 0x30) }
                 sawExpDigit = true
