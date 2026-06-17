@@ -89,6 +89,28 @@ main thread), a schema-validation frame copies a whole compiled node (so 256), a
 decoder runs on small pool stacks (so 128 ≈ 2048 ÷ 16). Lower any of them when running untrusted
 input on a smaller stack; raise the decode/encode caps on a thread with a known-large stack.
 
+### Can the fixed caps be raised?
+
+The *configurable* limits — `maxDepth`, the Codable `maxDecodingDepth` / `maxEncodingDepth`, and the
+concurrent decode cap — are meant to be tuned by the caller for their stack. The *fixed* caps — schema
+validation (256), value mutation (256), and the JSONPath filter-parse cap (64) — are deliberately
+**not** raised and are not exposed as global knobs:
+
+- They already accept every realistic input. A 256-segment JSON Pointer, a 256-deep schema instance,
+  or a 64-deep `length()` nest is already pathological; the cap rejects the pathological case, it does
+  not limit real data.
+- Each fixed cap is a single constant that runs on **whatever thread the caller chose**. The values
+  are calibrated for the ~8 MB main thread; the same recursion on a ~512 KB worker (a cooperative-pool
+  thread) holds far fewer frames, and under a sanitizer — which inflates each frame ~2–3× — even 256
+  heavy schema / mutation frames approach that smaller budget. Raising the global default would turn a
+  fail-closed guard into a stack overflow there. The empirical boundaries are encoded in the
+  depth-safety tests, which pin the mutation check to the main actor for exactly this reason.
+
+If a workload genuinely needs deeper schema validation or mutation on a known-large stack, the safe
+shape is a per-call depth argument (as `SchemaValidator` already accepts internally, and Codable
+exposes through `maxDecodingDepth`), not a higher global constant — so a small-stack caller stays
+protected by default.
+
 ### Why some recursion is kept (guarded) rather than rewritten iteratively
 
 The parser, lazy navigation, SAX readers, `JSONValue` build/serialize/equality, and JSONPath descent
