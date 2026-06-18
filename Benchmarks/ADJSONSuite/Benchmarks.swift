@@ -395,11 +395,21 @@ nonisolated(unsafe) let benchmarks = {
         "twitter.json": "$.statuses[*].user.screen_name",
         "citm_catalog.json": "$..name",
         "canada.json": "$.features[*].geometry.type",
+        "github_events.json": "$[*].actor.login",
+        "gsoc-2018.json": "$[*].name",
+        "marine_ik.json": "$.images[*].name",
+        "twitterescaped.json": "$.statuses[*].user.screen_name",
+        "numbers.json": "$[0:1000]",
     ]
-    // A small RFC 6902 patch that adds one top-level key (every corpus root is an object).
-    let corpusRootAdd = try! JSONPatch(Data(#"[{"op":"add","path":"/_bench","value":true}]"#.utf8))
+    // A small RFC 6902 patch — add a top-level key for object roots, append for array roots.
+    let corpusObjectPatch = try! JSONPatch(Data(#"[{"op":"add","path":"/_bench","value":true}]"#.utf8))
+    let corpusArrayPatch = try! JSONPatch(Data(#"[{"op":"add","path":"/-","value":true}]"#.utf8))
 
-    for file in ["twitter.json", "citm_catalog.json", "canada.json"] {
+    let corpusFiles = [
+        "twitter.json", "citm_catalog.json", "canada.json", "github_events.json", "gsoc-2018.json",
+        "marine_ik.json", "twitterescaped.json", "numbers.json",
+    ]
+    for file in corpusFiles {
         guard let data = try? Data(contentsOf: corpusURL(file)) else { continue }
         let name = file.replacingOccurrences(of: ".json", with: "")
         // Forms parsed once and reused, so encode/query/patch measure only their own work.
@@ -407,6 +417,8 @@ nonisolated(unsafe) let benchmarks = {
         let adDocument = try! ADJSON.parse(data)
         let fnObject = try! JSONSerialization.jsonObject(with: data)
         let query = corpusQuery[file]!
+        var patch = corpusObjectPatch
+        if case .array = adValue { patch = corpusArrayPatch }
 
         // parse  (Data -> structure)
         Benchmark("corpus/\(name) Foundation") { bm in
@@ -436,7 +448,7 @@ nonisolated(unsafe) let benchmarks = {
             for _ in bm.scaledIterations { blackHole(try! adDocument.root.query(query)) }
         }
         Benchmark("corpus/\(name) patch ADJSON") { bm in
-            for _ in bm.scaledIterations { blackHole(try! corpusRootAdd.apply(to: adValue)) }
+            for _ in bm.scaledIterations { blackHole(try! patch.apply(to: adValue)) }
         }
     }
 }

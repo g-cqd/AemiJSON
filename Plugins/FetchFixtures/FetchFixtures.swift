@@ -37,6 +37,13 @@ struct FetchFixturesPlugin: CommandPlugin {
         try await download(
             "https://raw.githubusercontent.com/miloyip/nativejson-benchmark/master/data/canada.json",
             to: "Benchmarks/Corpus/canada.json")
+        // The broader simdjson-data corpus — a spread of real-world shapes: a GitHub API array,
+        // string/unicode-heavy (gsoc), number-heavy (marine_ik), escaped-unicode (twitterescaped),
+        // and a pure number array.
+        let simdData = "https://raw.githubusercontent.com/simdjson/simdjson-data/master/jsonexamples"
+        for file in ["github_events.json", "gsoc-2018.json", "marine_ik.json", "twitterescaped.json", "numbers.json"] {
+            try await download("\(simdData)/\(file)", to: "Benchmarks/Corpus/\(file)")
+        }
         try await download(
             "https://raw.githubusercontent.com/jsonpath-standard/jsonpath-compliance-test-suite/main/cts.json",
             to: "Tests/ADJSONTests/Resources/JSONPathCTS/cts.json")

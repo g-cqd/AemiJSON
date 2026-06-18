@@ -67,7 +67,11 @@ The suite is statistically rigorous and honest:
   over a pre-parsed document, plus parse + validate end to end.
 - **Mutate** — JSON Patch (RFC 6902) applied to a materialized `JSONValue`.
 - **Concurrent decode** — serial vs `ADJSON.decodeArrayConcurrently` on a pre-parsed document.
-- **Standard corpus** — `twitter.json`, `citm_catalog.json`, `canada.json`.
+- **Standard corpus** — real-world files run end to end (parse, untyped materialize, re-encode,
+  JSONPath query, JSON Patch), each beside its Foundation baseline where one exists:
+  `twitter.json`, `citm_catalog.json`, `canada.json`, plus the broader simdjson-data set
+  (`github_events`, `gsoc-2018`, `marine_ik`, `twitterescaped`, `numbers`) for a spread of shapes —
+  GitHub API, string/unicode-heavy, number-heavy, escaped strings, and a pure number array.
 
 Every comparison pits the real public API against Foundation; where Foundation has no equivalent —
 JSONPath, JSON Schema, JSON Patch/Merge Patch, SAX streaming, and `decodeArrayConcurrently` — the
