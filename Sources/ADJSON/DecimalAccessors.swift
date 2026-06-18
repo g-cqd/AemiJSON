@@ -107,6 +107,14 @@ func decimalFromLexeme(_ lexeme: String) -> Decimal? {
     return Decimal(string: lexeme, locale: ADJSONDecimal.posixLocale)
 }
 
+// A `Decimal` carrying only the precision a `Double` retains — its shortest round-trippable decimal
+// text. Used where the source lexeme is gone (a materialized `JSONValue` holds `Double`, not the raw
+// digits); read ``JSON/decimal`` on the parsed document for full source precision. nil for non-finite.
+func decimalFromDouble(_ value: Double) -> Decimal? {
+    guard value.isFinite else { return nil }
+    return decimalFromLexeme(value.description)
+}
+
 extension JSON {
     /// The number node parsed as a `Decimal` (base-10, ~38 significant digits), read from the original
     /// source lexeme so it preserves exact decimal values and integers beyond `Double`'s 2^53 — where
@@ -125,9 +133,7 @@ extension JSONValue {
     public var decimal: Decimal? {
         switch self {
         case .int(let value): return Decimal(value)
-        case .number(let value):
-            guard value.isFinite else { return nil }
-            return decimalFromLexeme(value.description)
+        case .number(let value): return decimalFromDouble(value)
         default: return nil
         }
     }

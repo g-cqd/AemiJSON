@@ -89,8 +89,14 @@ final class DecodeContext {
     @inline(__always) @inlinable func integer<T: FixedWidthInteger>(_ i: Int, _ type: T.Type) -> T? {
         let s = slot(i)
         guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
-        assertBytes(Slot.low(s), Slot.length(s))
-        return JSONNumber.parseInteger(bytes, Slot.low(s), Slot.length(s), type)
+        let off = Slot.low(s), len = Slot.length(s)
+        assertBytes(off, len)
+        if let v = JSONNumber.parseInteger(bytes, off, len, type) { return v }
+        // Foundation parity: a Codable integer decode accepts an integral-valued number written in
+        // float syntax (`100.0`, `1e2`) — `JSONDecoder` coerces via `T(exactly: Double)`. The exact
+        // integer-syntax parse above is tried first; only a fractional/exponent (or out-of-range)
+        // lexeme reaches this fallback, which succeeds solely when the value is integral and fits `T`.
+        return T(exactly: JSONNumber.parseDouble(bytes, off, len))
     }
 
     /// The raw number lexeme at `i` (the exact source digits), or nil for a non-number node. Lets the

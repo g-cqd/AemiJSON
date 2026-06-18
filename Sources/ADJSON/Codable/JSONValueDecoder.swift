@@ -153,9 +153,7 @@ struct JSONValueDecoderImpl: Decoder {
         switch value {
         case .int(let i): return Decimal(i)
         case .number(let d):
-            guard d.isFinite, let decimal = decimalFromLexeme(d.description) else {
-                throw typeMismatch(Decimal.self, value, codingPath)
-            }
+            guard let decimal = decimalFromDouble(d) else { throw typeMismatch(Decimal.self, value, codingPath) }
             return decimal
         default:
             throw typeMismatch(Decimal.self, value, codingPath)
