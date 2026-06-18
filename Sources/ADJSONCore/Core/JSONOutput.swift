@@ -220,6 +220,8 @@ public enum JSONOutput {
             }
 
             withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 24) { digits in
+                // `capacity: 24 > 0`, so the temporary buffer always has a base address.
+                guard let digitsBase = digits.baseAddress else { return }
                 // Gather the significant digits and the decimal-point position `pointPos`.
                 var dc = 0
                 var pointPos: Int
@@ -250,7 +252,7 @@ public enum JSONOutput {
                 }
                 var end = dc
                 while end > start, digits[end - 1] == 0x30 { end -= 1 }
-                body(negative, UnsafeBufferPointer(start: digits.baseAddress! + start, count: end - start), pointPos)
+                body(negative, UnsafeBufferPointer(start: digitsBase + start, count: end - start), pointPos)
             }
         }
     }

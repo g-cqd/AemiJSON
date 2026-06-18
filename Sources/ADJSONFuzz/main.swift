@@ -45,6 +45,21 @@ public func LLVMFuzzerTestOneInput(_ start: UnsafePointer<UInt8>?, _ count: Int)
         }
     }
 
+    // Differential grammar oracle: the tape parser and the pull SAX reader must agree on whether the
+    // WHOLE input is a valid document — they implement one grammar twice. A divergence is a drift bug,
+    // surfaced here as a crash so the fuzzer flags it (the runtime form of NumberGrammarParityTests /
+    // StringEscapeParityTests). Limited to the modes with identical acceptance semantics: `.iJSON` is
+    // excluded because it adds tape-only duplicate-key rejection the streaming reader does not perform.
+    for (mode, options) in [("strict", JSONParseOptions.strict), ("lenient", .lenient), ("json5", .json5)] {
+        let tapeAccepts = (try? ADJSON.parse(bytes, options: options)) != nil
+        var reader = JSONEventReader(bytes, options: options)
+        var saxAccepts = true
+        do { while try reader.next() != nil {} } catch { saxAccepts = false }
+        precondition(
+            tapeAccepts == saxAccepts,
+            "grammar divergence (\(mode)): tape=\(tapeAccepts) sax=\(saxAccepts)")
+    }
+
     // Value-model parse from the same bytes interpreted as UTF-8.
     let text = String(decoding: bytes, as: UTF8.self)
     _ = try? JSONValue(parsing: text)

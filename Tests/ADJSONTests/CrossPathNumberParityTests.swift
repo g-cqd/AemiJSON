@@ -121,4 +121,30 @@ struct CrossPathNumberParityTests {
         _ = try reader.next()  // 3.5
         #expect(reader.currentNumberLexeme == "3.5")
     }
+
+    // MARK: Fixed scratch-buffer bounds — exercised at their widest, so an off-by-one would corrupt.
+
+    @Test func integerScratchBufferHandlesWidestMagnitudes() {
+        func encode<T: FixedWidthInteger>(_ v: T) -> String {
+            var bytes = [UInt8]()
+            JSONOutput.appendInteger(v, to: &bytes)
+            return String(decoding: bytes, as: UTF8.self)
+        }
+        #expect(encode(UInt64.max) == "18446744073709551615")
+        #expect(encode(Int64.min) == "-9223372036854775808")
+        // 39 digits — the widest case the 40-byte `appendMagnitude` scratch must hold.
+        #expect(encode(UInt128.max) == "340282366920938463463374607431768211455")
+        #expect(encode(Int128.min) == "-170141183460469231731687303715884105728")
+    }
+
+    @Test func doubleScratchBufferHandlesExtremes() throws {
+        let extremes: [Double] = [
+            .greatestFiniteMagnitude, -.greatestFiniteMagnitude, .leastNonzeroMagnitude, .leastNormalMagnitude,
+            .pi, 0, -0.0,
+        ]
+        for d in extremes {
+            let s = String(decoding: try JSONValue.number(d).encodedBytes(), as: UTF8.self)
+            #expect(Double(s) == d, "round-trip failed for \(d): encoded \(s)")  // shortest form fit the 24-byte gather
+        }
+    }
 }

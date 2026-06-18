@@ -11,6 +11,9 @@ import PackagePlugin
 ///          reviewed exception opts out with a `// swift-format-ignore: NeverForceUnwrap` line above it.
 ///        - **no locale-sensitive `strtod`**, which is not a force-unwrap, so a small textual scan covers
 ///          it; a reviewed case opts out with a trailing `// lint:allow` comment.
+///        - **no ad-hoc number formatting**: `String(format:)` anywhere, or `snprintf`/`vsnprintf`
+///          outside `JSONOutput.swift`, must instead route through the single-source `JSONOutput` /
+///          `JSONShortest` byte emitters so number/locale formatting can't drift (same `// lint:allow`).
 /// Tests, benchmarks, macros, and the fuzz target are exempt from rule 2.
 @main
 struct LintPlugin: CommandPlugin {
@@ -39,6 +42,9 @@ struct LintPlugin: CommandPlugin {
 
         // 2b. Locale-sensitive `strtod` ban (not a force-unwrap, so swift-format can't express it).
         if scanForbiddenStrtod(root: root) { failed = true }
+
+        // 2c. Ad-hoc number / locale formatting ban — keep emission in the single-source `JSONOutput`.
+        if scanForbiddenNumberFormatting(root: root) { failed = true }
 
         if failed {
             Diagnostics.error("lint failed")
@@ -99,6 +105,44 @@ struct LintPlugin: CommandPlugin {
                         "\(file.lastPathComponent):\(offset + 1): locale-sensitive strtod is banned in shipped "
                             + "library code (annotate a reviewed case with // lint:allow)")
                     found = true
+                }
+            }
+        }
+        return found
+    }
+
+    /// Scan the shipped library targets for ad-hoc number / locale-sensitive formatting that must instead
+    /// route through the single-source `JSONOutput` / `JSONShortest` byte emitters: any `String(format:`
+    /// (locale-sensitive and a bypass), and any `snprintf` / `vsnprintf` outside `JSONOutput.swift` (whose
+    /// `%!.15g` SQLite formatter is the one sanctioned printf use). A reviewed case opts out with
+    /// `// lint:allow`. Returns true if any un-annotated use is found (each is reported as a diagnostic).
+    private func scanForbiddenNumberFormatting(root: URL) -> Bool {
+        var found = false
+        for target in ["Sources/ADJSON", "Sources/ADJSONCore"] {
+            let lib = root.appending(path: target)
+            guard let walker = FileManager.default.enumerator(at: lib, includingPropertiesForKeys: nil) else {
+                continue
+            }
+            while let file = walker.nextObject() as? URL {
+                guard file.pathExtension == "swift",
+                    let text = try? String(contentsOf: file, encoding: .utf8)
+                else { continue }
+                let isJSONOutput = file.lastPathComponent == "JSONOutput.swift"
+                for (offset, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                    if line.contains("lint:allow") { continue }
+                    if line.contains("String(format:") {
+                        Diagnostics.error(
+                            "\(file.lastPathComponent):\(offset + 1): String(format:) is banned in shipped library "
+                                + "code — route number/string emission through JSONOutput (annotate with // lint:allow)"
+                        )
+                        found = true
+                    }
+                    if !isJSONOutput, line.contains("snprintf(") {
+                        Diagnostics.error(
+                            "\(file.lastPathComponent):\(offset + 1): printf-style number formatting belongs in "
+                                + "JSONOutput (the single-source emitter); annotate a reviewed case with // lint:allow")
+                        found = true
+                    }
                 }
             }
         }
