@@ -24,8 +24,8 @@ let users = try ADJSON.JSONDecoder().decode([User].self, from: data)
 let bytes = try ADJSON.JSONEncoder().encode(users)
 ```
 
-Everything is value-typed and `Sendable`, parses off the main actor, and builds on the
-Synchronization framework (`Atomic`, `Mutex`). The default profile is **strict**: the grammar
+Everything is value-typed and `Sendable`, parses off the main actor, and uses the Synchronization
+framework (`Atomic` for process-wide metrics, `Mutex` for the encoder buffer pool). The default profile is **strict**: the grammar
 follows RFC 8259 / ECMA-404 / ISO/IEC 21778:2017 with RFC 3629 UTF-8 well-formedness, and it
 passes the full nst/JSONTestSuite (318/318).
 
@@ -39,8 +39,8 @@ passes the full nst/JSONTestSuite (318/318).
   (RFC 6901), Patch (RFC 6902), Merge Patch (RFC 7396), Relative Pointer.
 - **Concurrency-safe.** Immutable documents; parallel array decode across cores.
 - **Lean.** The engine ships as a separate, Foundation-free `ADJSONCore` product — no Foundation,
-  no swift-syntax; its one dependency, `OrderedCollections`, is itself Foundation-free with no
-  transitive deps — for consumers that want a minimal JSON core. See <doc:Architecture>.
+  no swift-syntax; its dependencies, `OrderedCollections` and `ADFCore`, are themselves
+  Foundation-free with no transitive deps — for consumers that want a minimal JSON core. See <doc:Architecture>.
 
 ## Topics
 

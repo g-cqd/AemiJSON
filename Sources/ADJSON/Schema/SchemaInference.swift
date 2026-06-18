@@ -124,8 +124,8 @@ private func render(_ root: SchemaAccumulator) -> String {
     return done[ObjectIdentifier(root)] ?? "{}"
 }
 
-// Assemble one node's schema text from its already-rendered children — byte-identical to the former
-// recursive `render` body, with each child lookup replaced by its cached rendering.
+// Assemble one node's schema text from its already-rendered children — each child is looked up by
+// its cached rendering, so a node composes its JSON from finished parts without recursing.
 private func renderNode(_ acc: SchemaAccumulator, children: [ObjectIdentifier: String]) -> String {
     var parts: [String] = []
     var types = acc.types

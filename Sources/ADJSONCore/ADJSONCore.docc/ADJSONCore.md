@@ -7,9 +7,9 @@ navigation, the eager `JSONValue` tree, and JSONPath / Pointer / Patch.
 
 `ADJSONCore` is the lean core of the library — tape parsing, the lazy ``JSON`` cursor over a
 ``JSONDocument``, the materialized ``JSONValue``, query and mutation (JSONPath, Pointer, Patch,
-Merge Patch), and the low-level byte helpers the encoders share. Its only dependency,
-`OrderedCollections`, is itself Foundation-free with no transitive dependencies, so the core stays
-portable and dependency-strict.
+Merge Patch), and the low-level byte helpers the encoders share. Its dependencies,
+`OrderedCollections` and `ADFCore` (ADFoundation's shared byte/number primitives), are themselves
+Foundation-free with no transitive dependencies, so the core stays portable and dependency-strict.
 
 The umbrella ``ADJSON`` module re-exports everything here (`import ADJSON` sees the full core) and
 adds Foundation interop, Codable (`JSONEncoder` / `JSONDecoder`), JSON Schema, and the macros. Depend

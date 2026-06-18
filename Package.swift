@@ -75,8 +75,8 @@ var packageDependencies: [Package.Dependency] = [
     adfoundationDependency,
     .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0"),
     // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
-    // with zero transitive package dependencies (measured), so the core stays portable; it is the
-    // one shipped dependency of `ADJSONCore` beyond the standard library.
+    // with zero transitive package dependencies (measured), so the core stays portable; together with
+    // `ADFCore` it is one of the two shipped dependencies of `ADJSONCore` beyond the standard library.
     .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"),
 ]
 if isDev {

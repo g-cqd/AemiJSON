@@ -83,8 +83,8 @@ run it on Linux (the CI `fuzz` job does this on every `main` push / dispatch, ti
 from the vendored corpora + CTS):
 
 ```sh
-ADJSON_FUZZ=1 swift build --target ADJSONFuzz
-"$(ADJSON_FUZZ=1 swift build --target ADJSONFuzz --show-bin-path)/ADJSONFuzz" corpus -max_total_time=300
+ADJSON_FUZZ=1 swift build --product ADJSONFuzz
+"$(ADJSON_FUZZ=1 swift build --product ADJSONFuzz --show-bin-path)/ADJSONFuzz" corpus -max_total_time=300
 ```
 
 A crash writes a `crash-*` reproducer; commit it as a regression test under `Tests/`.

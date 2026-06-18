@@ -89,7 +89,7 @@ The generated code reads each field by its statically-known key directly off the
 `KeyedDecodingContainer`, no per-field `String` key) and writes into a value-type buffer with
 no class indirection. Built-in conformances make `[User]`, `User?`, and `[String: User]`
 themselves fast, so a top-level array or a nested field skips Codable's collection machinery
-too. Roughly doubles both directions over the generic path — see <doc:Benchmarking>.
+too. Measurably faster in both directions than the generic Codable path — see <doc:Benchmarking>.
 
 ### Scope and fallbacks
 

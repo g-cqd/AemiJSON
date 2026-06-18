@@ -6,32 +6,33 @@ How ADJSON is built, and the reasoning behind the choices that shaped it.
 
 ADJSON ships as two layers. **`ADJSONCore`** is the engine — the tape parser, lazy ``/ADJSONCore/JSON`` /
 ``/ADJSONCore/JSONDocument`` / ``/ADJSONCore/JSONValue``, and the query types (``/ADJSONCore/JSONPath``, ``/ADJSONCore/JSONPointer``,
-``/ADJSONCore/JSONPatch``, ``/ADJSONCore/JSONMergePatch``) — and is **Foundation-free and swift-syntax-free**. Its one
-dependency is **swift-collections' `OrderedCollections`**, which backs the order-preserving eager
-``/ADJSONCore/JSONValue/object(_:)``: it is itself Foundation-free with zero transitive package dependencies
-(measured), so the core stays lean and portable. **`ADJSON`** is the umbrella that re-exports the
+``/ADJSONCore/JSONPatch``, ``/ADJSONCore/JSONMergePatch``) — and is **Foundation-free and swift-syntax-free**. It
+depends on two Foundation-free packages with zero transitive package dependencies (measured):
+**swift-collections' `OrderedCollections`**, which backs the order-preserving eager
+``/ADJSONCore/JSONValue`` object, and **ADFoundation's `ADFCore`**, the shared byte / number / UTF-8
+primitives the engine builds on — so the core stays lean and portable. **`ADJSON`** is the umbrella that re-exports the
 core (`@_exported import`) and layers the `Data` conveniences, the Codable coders, JSON Schema, and
 the `@JSONCodable` / `@Schemable` macros on top.
 
 The split keeps Foundation at the boundary. The byte-scanning and encoding hot paths already
-operate on `UnsafePointer<UInt8>` / `[UInt8]`, so the only Foundation type in the engine's public
-API was `Data` — which moves to the umbrella as a thin overload (`parse(Array(data))`). The
-Codable error types (`DecodingError` / `EncodingError`) are standard-library, not Foundation, so
-the core's encode path keeps them without pulling Foundation in. A consumer that wants the lean,
-Foundation-free engine can therefore depend on `ADJSONCore` alone; everyone else uses `ADJSON` and
-sees the same flat API as before. Internals that the umbrella's inlinable fast paths reach across
+operate on `UnsafePointer<UInt8>` / `[UInt8]`, so the only Foundation type the engine's public API
+would expose is `Data`; that lives in the umbrella as a thin overload (`parse(Array(data))`),
+keeping the core Foundation-free. The Codable error types (`DecodingError` / `EncodingError`) are
+standard-library, not Foundation, so the core's encode path keeps them without pulling Foundation
+in. A consumer that wants the lean, Foundation-free engine can therefore depend on `ADJSONCore`
+alone; everyone else uses `ADJSON` and gets the full flat API. Internals that the umbrella's inlinable fast paths reach across
 the module boundary are exposed with `package` (or `public`, where they are named by code that
 inlines into *your* module), so the split is performance-neutral.
 
 ### Why `OrderedDictionary` for eager objects
 
-The lazy ``/ADJSONCore/JSON`` view always preserved member order (it walks the tape), but the eager
-``/ADJSONCore/JSONValue`` used a plain `Dictionary`, which dropped it — so materialize → mutate → re-encode
-could reorder keys. Switching ``/ADJSONCore/JSONValue/object(_:)`` to `OrderedDictionary` fixes that **and** is
-*faster* for the small objects JSON is made of: its compact array-backed layout beat `Dictionary`'s
-hashing by ~33% on a 10-key build+lookup micro-benchmark, ~2.5% on end-to-end materialization, and
-~6.7% on encode. Object value-equality stays order-insensitive (JSON objects are unordered), so the
-order is preserved for serialization without making `==` order-sensitive.
+The eager ``/ADJSONCore/JSONValue`` object is backed by `OrderedDictionary`, so member order
+survives materialize → mutate → re-encode (the lazy ``/ADJSONCore/JSON`` view preserves order for
+free by walking the tape). `OrderedDictionary` is **also** *faster* for the small objects JSON is
+made of: its compact array-backed layout beats `Dictionary`'s hashing by ~33% on a 10-key
+build+lookup micro-benchmark, ~2.5% on end-to-end materialization, and ~6.7% on encode. Object
+value-equality stays order-insensitive (JSON objects are unordered), so the order is preserved for
+serialization without making `==` order-sensitive.
 
 ## The tape
 
@@ -101,9 +102,10 @@ default 512). The same recursion-free posture is applied to the other depth-sens
 
 Strict mode enforces the RFC 8259 number grammar, validates string escapes, and checks RFC
 3629 UTF-8 well-formedness (rejecting overlongs, surrogates, and code points above U+10FFFF)
-inline, in the same pass. Duplicate-key detection (the I-JSON profile) buckets keys by an
-FNV-1a hash to stay O(1) expected rather than O(n²), so a hostile object can't force quadratic
-work.
+inline, in the same pass. Duplicate-key detection (the I-JSON profile) buckets keys by a
+per-process-seeded hash (Swift's `Hasher`, i.e. SipHash) to stay O(1) expected rather than O(n²) —
+so a hostile object can't force quadratic work, and can't precompute colliding keys to force the
+byte-compare fallback.
 
 ## Shared tokenizer and the streaming readers
 
@@ -135,8 +137,8 @@ across tasks and actors with no synchronization. `ADJSON.decodeArrayConcurrently
 exploits this — it scans once, then hands disjoint element ranges to a task group; each worker
 binds **its own** base pointer over the shared read-only storage, so there is no shared mutable
 state and the work is data-race free under Swift 6's strict checking. Process-wide
-``/ADJSONCore/ADJSON/Metrics`` use `Atomic` from the Synchronization framework; the encoder's scratch-buffer
-pool uses `Mutex`.
+``/ADJSONCore/ADJSON/Metrics`` use `Atomic` from the Synchronization framework; the encoder's
+scratch-buffer pool (`ADFCore.ByteBufferPool`) uses a `Mutex`.
 
 ## The `@JSONCodable` fast path
 
@@ -171,17 +173,17 @@ a candidate for the *borrowed-buffer* entry and cold accessors; the unsafe surfa
 
 **`UTF8Span` and `InlineArray` are a deliberate "do not adopt yet" decision, not an oversight.**
 Both ship only in the 2025 SDKs (iOS 26 / macOS 26 …), so adopting either would raise the library's
-deployment floor above the current iOS 18 / macOS 15 minimum — which is pinned by
-`Synchronization.Mutex`, the one OS-version-sensitive dependency. Beyond the floor, `UTF8Span` would
+deployment floor above the current iOS 18 / macOS 15 minimum — which is pinned by the Synchronization
+framework's `Atomic`/`Mutex`, the one OS-version-sensitive dependency. Beyond the floor, `UTF8Span` would
 force a *separate* UTF-8 validation pass over the bytes, defeating the single-pass tape design (the
 scanner validates inline as it tokenizes). The recommendation is revisited only if the floor rises
 for another reason. (`Package.swift` carries the same note next to the `platforms:` declaration.)
 
 ## Dependencies evaluated but not adopted
 
-The dependency surface is kept deliberately small — the core ships only `OrderedCollections` (itself
-Foundation-free, no transitive deps). Other Apple / swift-server packages were considered and **not**
-adopted:
+The dependency surface is kept deliberately small — the core ships only `OrderedCollections` and
+`ADFCore` (both Foundation-free, no transitive deps). Other Apple / swift-server packages were
+considered and **not** adopted:
 
 - **swift-algorithms** — the hot loops (the SWAR scanner, the explicit-stack walks) are hand-tuned
   over raw pointers; `chunks` / `windows` / `uniqued` don't fit those paths and would add a dependency

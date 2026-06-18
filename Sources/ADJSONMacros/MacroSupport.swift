@@ -11,8 +11,8 @@ let integerTypes: Set<String> = [
     "Int", "Int8", "Int16", "Int32", "Int64", "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
 ]
 
-// True when the struct declares a custom `CodingKeys` enum. Both macros skip such types: the
-// JSON key names would no longer match the property names they assume.
+// True when the struct declares a custom `CodingKeys` enum. Both macros skip such types: a custom
+// `CodingKeys` can remap JSON keys away from the property names the generated fast path assumes.
 func declaresCodingKeys(_ decl: StructDeclSyntax) -> Bool {
     decl.memberBlock.members.contains { member in
         member.decl.as(EnumDeclSyntax.self)?.name.text == "CodingKeys"

@@ -126,7 +126,7 @@ struct SchemaValidator {
             if node.uniqueItems {
                 // O(n) expected first pass: bucket elements by a semantic hash (consistent with
                 // `jsonSemanticEqual`), confirming with the full pairwise compare only on a hash
-                // collision. The all-pairs scan this replaces was O(n²) comparisons — each itself
+                // collision. This avoids the naive all-pairs scan's O(n²) comparisons — each itself
                 // O(element size) — a quadratic-×-deep DoS amplifier on a hostile array. The hash is
                 // random-seeded (`Hasher`), so a flood of collisions can't be precomputed.
                 var seen: [Int: [Int]] = [:]

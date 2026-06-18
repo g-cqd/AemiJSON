@@ -21,8 +21,8 @@ public enum JSONValue: Sendable, Equatable {
 
 extension JSONValue {
     // Custom value equality. `.int` and `.number` are the same JSON number domain, so they compare
-    // numerically (`.int(5) == .number(5.0)`), which keeps every hand-built `.number(...)` test in
-    // step with parsed integers (now `.int`). Objects compare by membership (unordered — not
+    // numerically (`.int(5) == .number(5.0)`), so a hand-built `.number(5.0)` equals the `.int(5)` an
+    // integer literal parses to. Objects compare by membership (unordered — not
     // `OrderedDictionary`'s order-sensitive `==`).
     //
     // The walk is **iterative**: a work-stack of value pairs replaces structural recursion, so
@@ -206,8 +206,8 @@ extension JSONValue {
     /// A generous policy ceiling on serialization nesting. `write` is *iterative* (see below), so it
     /// cannot overflow the stack at any depth — this cap only rejects pathological trees, and it sits
     /// far above the depth at which a `JSONValue` tree could even be held (its ARC deallocation, like
-    /// any recursive Swift value type, recurses and overflows around ~30–40k). Raised well past the
-    /// old 512 so a value parsed with a high `maxDepth` still round-trips through `encoded()`.
+    /// any recursive Swift value type, recurses and overflows around ~30–40k). Set far above the parse
+    /// `maxDepth` so a value parsed with a high `maxDepth` still round-trips through `encoded()`.
     static let maxEncodingDepth = 1_000_000
 
     /// Serialize to compact UTF-8 JSON bytes using the given profile. The default (`.rfc8259`) is

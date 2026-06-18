@@ -26,9 +26,9 @@ Knobs: `nonFinite` (throw / `null` / string literals), `numberFormat` (`.swiftSh
 > line/paragraph separators U+2028 / U+2029 — for safely embedding JSON inside HTML or a `<script>`
 > block. It is honored on every encode path (Codable, `@JSONCodable`, `JSONValue`, `JSONStreamWriter`).
 
-> Note: `keyOrder` and `nilStrategy` are honored by ``/ADJSON/ADJSONCore/JSONValue/encoded(options:)`` and
-> ``JSONStreamWriter``, not by the streaming Codable path (which emits in the encoder's call
-> order and omits `nil` optionals, matching Foundation).
+> Note: `keyOrder` and `nilStrategy` are honored by ``/ADJSONCore/JSONValue/encodedBytes(options:)``
+> (and its `Data`-returning `encoded(options:)` overload) and ``JSONStreamWriter``, not by the
+> streaming Codable path (which emits in the encoder's call order and omits `nil` optionals, matching Foundation).
 
 ## How numbers are rendered
 

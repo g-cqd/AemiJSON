@@ -8,7 +8,7 @@ public import Foundation
 // / `JSONDecoder`, including the defaults (`.deferredToDate`, `.base64`).
 
 /// `CodingKey` for an array position — used only to build a `codingPath` for error contexts. Shared
-/// by the `JSONValue` decoder and encoder, which previously defined it identically in each.
+/// by the `JSONValue` decoder and encoder so both report identical array-position paths.
 struct IndexKey: CodingKey {
     let intValue: Int?
     var stringValue: String { "Index \(intValue ?? 0)" }
@@ -108,7 +108,7 @@ struct EncodeStrategies {
     @usableFromInline var key: ADJSON.JSONDecoder.KeyDecodingStrategy = .useDefaultKeys
 }
 
-// MARK: - snake_case conversion (ported from swift-foundation's JSONEncoder/JSONDecoder)
+// MARK: - snake_case conversion (matches swift-foundation's JSONEncoder/JSONDecoder semantics)
 
 /// `camelCase` → `snake_case`, e.g. `oneTwoThree` → `one_two_three`, `aURL` → `a_url`.
 func convertToSnakeCase(_ key: String) -> String {

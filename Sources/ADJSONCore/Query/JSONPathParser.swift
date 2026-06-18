@@ -19,11 +19,11 @@ struct JSONPathParser {
     // exhaust the stack. `depth` is incremented at the two mutual-recursion entry points below
     // (`parseSegments`, `parsePrimary`) and also bounds `evalFilter`'s walk of the resulting AST.
     //
-    // The cap is deliberately small: each nesting level costs ~3 KB of native stack, so the former
-    // 256 overflowed a 512 KB secondary-thread stack (the realistic floor off the main thread) at
-    // ~160 levels — before the guard could fire. The RFC 9535 compliance suite never nests deeper
-    // than 3, so 64 keeps a 20× headroom over any real query while staying well inside a small
-    // stack (~205 KB worst case); anything deeper is pathological and is rejected, not crashed.
+    // The cap is deliberately small: each nesting level costs ~3 KB of native stack, so a 512 KB
+    // secondary-thread stack (the realistic floor off the main thread) would overflow at ~160 levels —
+    // before a larger guard could fire. The RFC 9535 compliance suite never nests deeper than 3, so 64
+    // keeps a 20× headroom over any real query while staying well inside a small stack (~205 KB worst
+    // case); anything deeper is pathological and is rejected, not crashed.
     var depth = 0
     static let maxDepth = 64
     // Monotonic counter handing every `RelQuery` a stable id (see `RelQuery.id`) for filter caching.
@@ -301,13 +301,12 @@ struct JSONPathParser {
 
     // MARK: - Filter expressions
 
-    // Design note (intentional skip): the filter grammar is a hand-written precedence-climbing
-    // recursive descent (`parseOr` → `parseAnd` → `parseNot` → `parsePrimary` → `parseComparand`),
-    // NOT a Pratt parser / PDA. A Pratt rewrite was considered and deliberately not done: the only
-    // recursion here is structural (parenthesised sub-expressions and nested bracket-filters), and it
-    // is already bounded by `enter()` / `maxDepth` (64) and proven stack-safe — `&&`/`||` iterate and
-    // `!` folds by parity, so there is no unbounded recursion left for a rewrite to remove. It would
-    // be cosmetic and risk a CTS regression for no safety or correctness gain.
+    // Design note: the filter grammar is a hand-written precedence-climbing recursive descent
+    // (`parseOr` → `parseAnd` → `parseNot` → `parsePrimary` → `parseComparand`), NOT a Pratt parser /
+    // PDA. A Pratt form would be cosmetic here: the only recursion is structural (parenthesised
+    // sub-expressions and nested bracket-filters), already bounded by `enter()` / `maxDepth` (64) and
+    // proven stack-safe — `&&`/`||` iterate and `!` folds by parity, so no unbounded recursion remains
+    // to remove. A rewrite would risk a CTS regression for no safety or correctness gain.
     mutating func parseFilter() throws(JSONPathError) -> FilterExpr { try parseOr() }
 
     mutating func parseOr() throws(JSONPathError) -> FilterExpr {
@@ -341,8 +340,7 @@ struct JSONPathParser {
     mutating func parseNot() throws(JSONPathError) -> FilterExpr {
         // Consume the whole run of leading `!` iteratively, tracking parity, so a crafted
         // `[?!!!…!@]` (200k `!`) can't recurse one frame per `!` and overflow the stack.
-        // `!!x ≡ x`, so only an odd count negates; this is semantically identical to the
-        // former per-`!` recursion but runs in O(1) stack.
+        // `!!x ≡ x`, so only an odd count negates — folding the whole run in O(1) stack.
         skipWS()
         var negate = false
         while peek() == 0x21 {  // '!'

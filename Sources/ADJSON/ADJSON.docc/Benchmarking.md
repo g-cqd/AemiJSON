@@ -153,7 +153,7 @@ lazy tape and the typed/macro decode paths.
   (existentials, per-field `String` keys, dynamic dispatch); the macro fast path bypasses them.
 - **Number-heavy payloads** stress number materialization more than structure; `canada.json`
   is the stress test.
-- **Untyped materialization edges ahead.** Building a full `JSONValue` tree in one pass now
+- **Untyped materialization edges ahead.** Building a full `JSONValue` tree in one pass
   matches or slightly beats `JSONSerialization` across the corpus; even so, ADJSON's advantage
   is *not* materializing — the lazy tape and typed decode are where it pulls ahead.
 - **Schema validation walks every node** (type and constraint checks), so it is heavier than a

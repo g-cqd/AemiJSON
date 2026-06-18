@@ -45,8 +45,8 @@ Reference the namespaced types as `ADJSON.JSONDecoder` etc. where Foundation is 
 ### Foundation-free core
 
 Want only the engine — tape parsing, lazy navigation, `JSONValue`, and JSONPath/Pointer/Patch —
-with **no Foundation and no swift-syntax** in your dependency graph (just `OrderedCollections`,
-itself Foundation-free with no transitive deps)? Depend on the `ADJSONCore` product instead:
+with **no Foundation and no swift-syntax** in your dependency graph (just `OrderedCollections` and
+`ADFCore`, both Foundation-free with no transitive deps)? Depend on the `ADJSONCore` product instead:
 
 ```swift
 .target(name: "MyEngine", dependencies: [.product(name: "ADJSONCore", package: "ADJSON")])
@@ -79,7 +79,8 @@ func echo(_ buffer: ByteBuffer) throws -> ByteBuffer {
 ```
 
 **Requirements:** Swift 6.3+ toolchain (built and tested on 6.3); macOS 15+ / iOS 18+ /
-tvOS 18+ / watchOS 11+ / visionOS 2+ (the floor is set by `Synchronization.Mutex`).
+tvOS 18+ / watchOS 11+ / visionOS 2+ (the floor is set by the Synchronization framework's
+`Atomic`/`Mutex`).
 
 ## A quick tour
 
@@ -166,7 +167,7 @@ Tape parsing runs at roughly **1–1.5 GB/s** across the corpus (≈0.95 GB/s on
 also holds peak memory flat (≈36 MB on the parse benchmark) where `JSONSerialization`'s object graph
 balloons to hundreds of MB. Full untyped materialization into `JSONValue` edges just past
 `JSONSerialization`. The remaining parity cases — untyped re-serialization, sorted encoding, and
-ISO-8601 `Date` decoding — sit at parity, not ahead (pretty encoding now streams in a single pass and
+ISO-8601 `Date` decoding — sit at parity, not ahead (pretty encoding streams in a single pass and
 pulls slightly ahead). Methodology, the parity cases, and per-feature throughput: see the
 **Benchmarking** guide.
 

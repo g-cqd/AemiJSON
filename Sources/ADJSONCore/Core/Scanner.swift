@@ -50,11 +50,11 @@ struct TapeBuilder {
         return slots
     }
 
-    // Scalar whitespace skip. A SWAR (word-at-a-time) variant was implemented and benchmarked but
-    // *regressed* ~2.2× on realistic pretty-printed input (522 vs 1169 MB/s): JSON whitespace runs
-    // are short (a newline + a few indent spaces), so the per-call word load + mask latency sits on
-    // the parse critical path without the 8-bytes-at-a-time payoff, while this scalar loop is
-    // branch-predictable and cache-resident. Kept scalar deliberately (measured, not assumed).
+    // Scalar whitespace skip — deliberately not SWAR. JSON whitespace runs are short (a newline + a
+    // few indent spaces), so a word-at-a-time load + mask would sit on the parse critical path without
+    // the 8-bytes-at-a-time payoff, whereas this scalar loop is branch-predictable and cache-resident.
+    // Measured: SWAR regresses ~2.2× on realistic pretty-printed input (522 vs 1169 MB/s), so scalar
+    // is the deliberate choice (measured, not assumed).
     @inline(__always) mutating func skipWS() {
         if json5 {
             skipWSAndCommentsJSON5()
@@ -90,9 +90,9 @@ struct TapeBuilder {
         }
     }
 
-    // Iterative tape construction: an explicit `stack` of open containers replaces recursive
+    // Iterative tape construction: an explicit `stack` of open containers stands in for recursive
     // descent, so nesting costs heap (O(depth)) rather than call-stack frames and can't overflow
-    // the stack at any depth. The emitted tape is byte-identical to the recursive version.
+    // the stack at any depth. The emitted tape is identical to what a recursive descent would produce.
     mutating func parseValue() throws(JSONError) {
         while true {
             // Positioned at the start of a value.
@@ -242,8 +242,8 @@ struct TapeBuilder {
     // many keys could exploit (DoS). Hash collisions fall back to a byte compare.
     //
     // The hash is Swift's `Hasher` (SipHash), seeded randomly per process, so an attacker cannot
-    // precompute a flood of colliding keys to force the O(bucket²) fallback — the fixed-seed FNV-1a
-    // this replaced was vulnerable to exactly that HashDoS.
+    // precompute a flood of colliding keys to force the O(bucket²) byte-compare fallback (a fixed-seed
+    // hash would be vulnerable to exactly that HashDoS).
     //
     // NOTE: keys are compared by their RAW (still-escaped) bytes, so two keys equal only after
     // unescaping (`"a"` vs `"a"`) are NOT reported as duplicates. This is a deliberate perf

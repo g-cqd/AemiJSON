@@ -43,7 +43,7 @@ extension DecodeContext {
     /// caller's `defer { popDepth() }` must NOT run when this throws — pair it as
     /// `try pushDepth(); defer { popDepth() }`. Both the generic dispatch (`decodeValue`) and the
     /// fast-container readers (`fastArray`/`fastDictionary`) flow through here, so every descent is
-    /// counted (the fast path used to bypass the guard — see `FastDecodeCursor`).
+    /// counted — the fast path included, via `pushDepth` in its container readers (see `FastDecodeCursor`).
     @inlinable func pushDepth() throws {
         decodeDepth += 1
         guard decodeDepth <= maxDecodeDepth else {

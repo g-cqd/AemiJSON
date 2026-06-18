@@ -64,7 +64,7 @@ data; lower it on a small-stack worker thread (default ~512 KB → ~16× shallow
 var decoder = ADJSON.JSONDecoder()
 decoder.options = JSONParseOptions(maxDepth: 100_000)  // iterative parser accepts deep input
 decoder.maxDecodingDepth = 256                          // but cap the recursive decode (lower on small stacks)
-// A 100k-deep document now throws DecodingError instead of crashing.
+// A 100k-deep document is rejected with a DecodingError rather than overflowing the stack.
 ```
 
 ## The failure-safety policy at a glance
