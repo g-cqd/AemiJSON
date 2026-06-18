@@ -16,43 +16,56 @@ extension JSON {
     /// allocates no intermediate value tree. Integer-shaped numbers within `Int64` keep full
     /// precision; other numbers follow `options.numberFormat` (matching ``JSONValue``).
     public func encodedBytes(options: JSONEncodingOptions = .rfc8259) throws -> [UInt8] {
-        let writer = JSONWriter(capacity: 256)
-        writer.escapeSlashes = options.escapeSlashes
-        writer.escapeHTMLUnsafe = options.escapeHTMLUnsafe
+        // Serialize straight into a value-type `[UInt8]` (no class `JSONWriter` indirection), the same
+        // win `JSONValue.encodedBytes` gets: the buffer stays uniquely referenced so each append elides
+        // its copy-on-write check. The escape policy rides along in `options`.
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(256)
         let pretty = options.prettyPrinted
+        let escapeSlashes = options.escapeSlashes
+        let escapeHTMLUnsafe = options.escapeHTMLUnsafe
         var stack: [WriteOp] = [.value(self, depth: 0)]
         while let op = stack.popLast() {
             switch op {
             case .byte(let b):
-                writer.byte(b)
+                bytes.append(b)
             case .key(let k, let pretty):
-                if pretty { writer.writeKeyPretty(k) } else { writer.writeKey(k) }
+                JSONOutput.appendString(k, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
+                if pretty {
+                    bytes.append(0x20)
+                    bytes.append(0x3A)
+                    bytes.append(0x20)  // `"k" : ` — space-colon-space
+                } else {
+                    bytes.append(0x3A)
+                }
             case .indent(let level, let comma):
-                if comma { writer.byte(0x2C) }
-                writer.newlineIndent(level)
+                if comma { bytes.append(0x2C) }
+                bytes.append(0x0A)
+                for _ in 0..<(level * 2) { bytes.append(0x20) }
             case .value(let node, let depth):
                 guard depth <= JSONValue.maxEncodingDepth else {
                     throw EncodingError.invalidValue(
                         node, .init(codingPath: [], debugDescription: "Nesting exceeds \(JSONValue.maxEncodingDepth)"))
                 }
                 // Scalar dispatch mirrors `JSONValue.scalarValue` exactly: an integer-shaped token
-                // within Int64 prints via `writeInteger`, every other number via the shared
+                // within Int64 prints via `appendInteger`, every other number via the shared
                 // `writeNumber` (so a fraction / out-of-Int64 integer collapses identically).
                 if node.isNull {
-                    writer.writeNull()
+                    JSONOutput.appendNull(to: &bytes)
                 } else if let b = node.bool {
-                    writer.writeBool(b)
+                    JSONOutput.appendBool(b, to: &bytes)
                 } else if let i = node.integer(Int64.self) {
-                    writer.writeInteger(i)
+                    JSONOutput.appendInteger(i, to: &bytes)
                 } else if node.isNumberKind, let d = node.double {
-                    try JSONValue.writeNumber(d, into: writer, options: options)
+                    try JSONValue.writeNumber(d, into: &bytes, options: options)
                 } else if let s = node.string {
-                    writer.writeString(s)
+                    JSONOutput.appendString(
+                        s, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
                 } else if node.isArray {
                     let elements = node.arrayValue
-                    writer.byte(0x5B)
+                    bytes.append(0x5B)
                     if elements.isEmpty {
-                        writer.byte(0x5D)
+                        bytes.append(0x5D)
                     } else {
                         stack.append(.byte(0x5D))
                         if pretty { stack.append(.indent(level: depth, comma: false)) }
@@ -72,9 +85,9 @@ extension JSON {
                     pairs.reserveCapacity(node.count)
                     node.forEachMember { pairs.append(($0, $1)) }
                     if options.keyOrder == .sorted { pairs.sort { $0.0 < $1.0 } }
-                    writer.byte(0x7B)
+                    bytes.append(0x7B)
                     if pairs.isEmpty {
-                        writer.byte(0x7D)
+                        bytes.append(0x7D)
                     } else {
                         stack.append(.byte(0x7D))
                         if pretty { stack.append(.indent(level: depth, comma: false)) }
@@ -91,10 +104,10 @@ extension JSON {
                         }
                     }
                 } else {
-                    writer.writeNull()  // missing sentinel → null (matches scalarValue)
+                    JSONOutput.appendNull(to: &bytes)  // missing sentinel → null (matches scalarValue)
                 }
             }
         }
-        return writer.bytes
+        return bytes
     }
 }

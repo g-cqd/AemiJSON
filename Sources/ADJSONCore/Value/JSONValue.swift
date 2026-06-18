@@ -393,9 +393,4 @@ extension JSONValue {
     static func writeNumber(_ d: Double, into bytes: inout [UInt8], options: JSONEncodingOptions) throws {
         try JSONOutput.appendDouble(d, options: options, to: &bytes)
     }
-
-    /// Overload for the lazy `JSON` cursor serializer, which still drives a class `JSONWriter`.
-    static func writeNumber(_ d: Double, into writer: JSONWriter, options: JSONEncodingOptions) throws {
-        try writeNumber(d, into: &writer.bytes, options: options)
-    }
 }
