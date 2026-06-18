@@ -216,9 +216,10 @@ extension JSONValue {
     /// throws if the tree nests beyond `maxEncodingDepth`. The umbrella `ADJSON` module adds a
     /// `Data`-returning `encoded()` overload for Foundation interop.
     public func encodedBytes(options: JSONEncodingOptions = .rfc8259) throws -> [UInt8] {
-        let writer = JSONWriter(capacity: 256)
-        try write(into: writer, depth: 0, options: options)
-        return writer.bytes
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(256)
+        try write(into: &bytes, depth: 0, options: options)
+        return bytes
     }
 
     /// One unit of serialization work on the explicit stack: emit a value, write an object key,
@@ -231,90 +232,97 @@ extension JSONValue {
         case indent(level: Int, comma: Bool)
     }
 
-    func write(into writer: JSONWriter, depth: Int, options: JSONEncodingOptions) throws {
-        writer.escapeSlashes = options.escapeSlashes
-        writer.escapeHTMLUnsafe = options.escapeHTMLUnsafe
-        // Compact + declaration-order is the overwhelmingly common case; a shallow tree serializes
-        // fastest by direct recursion straight into the writer (no `WriteOp` buffering — the same
-        // regression the eager-tree parse had). Pretty/sorted output, or any subtree past
-        // `maxFastDepth`, takes the iterative walk below; a deep subtree is handed off to it
-        // mid-recursion, so the call stack stays bounded and the emitted bytes are identical either
-        // way. The only nesting limit is `maxEncodingDepth` (a high policy ceiling, see above),
-        // enforced on the iterative path — the recursive fast path hands off at `maxFastDepth` long
-        // before reaching it.
+    // Serialize straight into a value-type `[UInt8]` threaded `inout` — no class `JSONWriter`
+    // indirection, so the buffer stays uniquely referenced and each append elides its copy-on-write
+    // uniqueness check (the value-semantics win the `@JSONCodable` fast path already gets). The escape
+    // policy rides along in `options`, applied per `JSONOutput.appendString` call. Compact +
+    // declaration-order is the overwhelmingly common case and recurses directly; pretty/sorted output,
+    // or any subtree past `maxFastDepth`, takes the iterative explicit-stack walk below, with
+    // byte-identical output. `maxEncodingDepth` (a high policy ceiling) is enforced on the iterative
+    // path; the recursive fast path hands off at `maxFastDepth` long before reaching it.
+    func write(into bytes: inout [UInt8], depth: Int, options: JSONEncodingOptions) throws {
         if !options.prettyPrinted, options.keyOrder == .declaration {
-            try writeCompact(self, into: writer, depth: depth, options: options)
+            try writeCompact(self, into: &bytes, depth: depth, options: options)
         } else {
-            try writeIterative(into: writer, depth: depth, options: options)
+            try writeIterative(into: &bytes, depth: depth, options: options)
         }
     }
 
-    // Direct-recursion compact serializer: emits scalars and containers straight into the writer.
-    // A child at or past `maxFastDepth` is delegated to the iterative walk (same writer, same
-    // bytes), so real-world shallow trees never pay the explicit-stack overhead and deep ones still
-    // can't overflow the call stack.
     private func writeCompact(
-        _ value: JSONValue, into writer: JSONWriter, depth: Int, options: JSONEncodingOptions
+        _ value: JSONValue, into bytes: inout [UInt8], depth: Int, options: JSONEncodingOptions
     ) throws {
         switch value {
         case .null:
-            writer.writeNull()
+            JSONOutput.appendNull(to: &bytes)
         case .bool(let b):
-            writer.writeBool(b)
+            JSONOutput.appendBool(b, to: &bytes)
         case .int(let i):
-            writer.writeInteger(i)
+            JSONOutput.appendInteger(i, to: &bytes)
         case .number(let d):
-            try Self.writeNumber(d, into: writer, options: options)
+            try Self.writeNumber(d, into: &bytes, options: options)
         case .string(let s):
-            writer.writeString(s)
+            JSONOutput.appendString(
+                s, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
         case .array(let elements):
-            writer.byte(0x5B)
+            bytes.append(0x5B)
             var first = true
             for element in elements {
-                if !first { writer.byte(0x2C) }
+                if !first { bytes.append(0x2C) }
                 first = false
-                try writeCompactChild(element, into: writer, depth: depth + 1, options: options)
+                try writeCompactChild(element, into: &bytes, depth: depth + 1, options: options)
             }
-            writer.byte(0x5D)
+            bytes.append(0x5D)
         case .object(let members):
-            writer.byte(0x7B)
+            bytes.append(0x7B)
             var first = true
             for (key, member) in members {
-                if !first { writer.byte(0x2C) }
+                if !first { bytes.append(0x2C) }
                 first = false
-                writer.writeKey(key)
-                try writeCompactChild(member, into: writer, depth: depth + 1, options: options)
+                JSONOutput.appendString(
+                    key, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+                bytes.append(0x3A)
+                try writeCompactChild(member, into: &bytes, depth: depth + 1, options: options)
             }
-            writer.byte(0x7D)
+            bytes.append(0x7D)
         }
     }
 
     @inline(__always)
     private func writeCompactChild(
-        _ value: JSONValue, into writer: JSONWriter, depth: Int, options: JSONEncodingOptions
+        _ value: JSONValue, into bytes: inout [UInt8], depth: Int, options: JSONEncodingOptions
     ) throws {
         if depth >= Self.maxFastDepth {
-            try value.writeIterative(into: writer, depth: depth, options: options)
+            try value.writeIterative(into: &bytes, depth: depth, options: options)
         } else {
-            try writeCompact(value, into: writer, depth: depth, options: options)
+            try writeCompact(value, into: &bytes, depth: depth, options: options)
         }
     }
 
-    func writeIterative(into writer: JSONWriter, depth: Int, options: JSONEncodingOptions) throws {
+    func writeIterative(into bytes: inout [UInt8], depth: Int, options: JSONEncodingOptions) throws {
         // Explicit-stack preorder emission: containers push their closing byte, then their children
         // interleaved with separators in reverse, so a deeply nested tree serializes with no call
-        // recursion. Output order is identical to the former recursive walk.
+        // recursion. Output order is identical to the recursive `writeCompact`.
         let pretty = options.prettyPrinted
+        let escapeSlashes = options.escapeSlashes
+        let escapeHTMLUnsafe = options.escapeHTMLUnsafe
         var stack: [WriteOp] = [.value(self, depth: depth)]
         while let op = stack.popLast() {
             switch op {
             case .byte(let b):
-                writer.byte(b)
+                bytes.append(b)
             case .key(let k, let pretty):
-                if pretty { writer.writeKeyPretty(k) } else { writer.writeKey(k) }
+                JSONOutput.appendString(k, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
+                if pretty {
+                    bytes.append(0x20)
+                    bytes.append(0x3A)
+                    bytes.append(0x20)  // `"k" : ` — space-colon-space
+                } else {
+                    bytes.append(0x3A)
+                }
             case .indent(let level, let comma):
-                if comma { writer.byte(0x2C) }
-                writer.newlineIndent(level)
+                if comma { bytes.append(0x2C) }
+                bytes.append(0x0A)
+                for _ in 0..<(level * 2) { bytes.append(0x20) }
             case .value(let value, let depth):
                 guard depth <= Self.maxEncodingDepth else {
                     throw EncodingError.invalidValue(
@@ -322,19 +330,20 @@ extension JSONValue {
                 }
                 switch value {
                 case .null:
-                    writer.writeNull()
+                    JSONOutput.appendNull(to: &bytes)
                 case .bool(let b):
-                    writer.writeBool(b)
+                    JSONOutput.appendBool(b, to: &bytes)
                 case .int(let i):
-                    writer.writeInteger(i)
+                    JSONOutput.appendInteger(i, to: &bytes)
                 case .number(let d):
-                    try Self.writeNumber(d, into: writer, options: options)
+                    try Self.writeNumber(d, into: &bytes, options: options)
                 case .string(let s):
-                    writer.writeString(s)
+                    JSONOutput.appendString(
+                        s, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
                 case .array(let elements):
-                    writer.byte(0x5B)
+                    bytes.append(0x5B)
                     if elements.isEmpty {
-                        writer.byte(0x5D)
+                        bytes.append(0x5D)
                     } else {
                         stack.append(.byte(0x5D))
                         if pretty { stack.append(.indent(level: depth, comma: false)) }
@@ -350,10 +359,10 @@ extension JSONValue {
                         }
                     }
                 case .object(let members):
-                    writer.byte(0x7B)
+                    bytes.append(0x7B)
                     let pairs = options.keyOrder == .sorted ? members.sorted { $0.key < $1.key } : Array(members)
                     if pairs.isEmpty {
-                        writer.byte(0x7D)
+                        bytes.append(0x7D)
                     } else {
                         stack.append(.byte(0x7D))
                         if pretty { stack.append(.indent(level: depth, comma: false)) }
@@ -381,7 +390,12 @@ extension JSONValue {
     // int-vs-float shape: `"2"` parses to `.int` → `2`, `"2.0"` parses to `.number` → `2.0`. Shares
     // `JSONOutput.appendDouble` with the Codable streaming path, so all encoders agree. Use `.ecma262`
     // for `JSON.stringify` parity. `static` + `internal` so `JSON.encodedBytes` shares this formatting.
+    static func writeNumber(_ d: Double, into bytes: inout [UInt8], options: JSONEncodingOptions) throws {
+        try JSONOutput.appendDouble(d, options: options, to: &bytes)
+    }
+
+    /// Overload for the lazy `JSON` cursor serializer, which still drives a class `JSONWriter`.
     static func writeNumber(_ d: Double, into writer: JSONWriter, options: JSONEncodingOptions) throws {
-        try JSONOutput.appendDouble(d, options: options, to: &writer.bytes)
+        try writeNumber(d, into: &writer.bytes, options: options)
     }
 }
