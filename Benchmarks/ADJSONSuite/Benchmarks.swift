@@ -387,11 +387,28 @@ nonisolated(unsafe) let benchmarks = {
         }
     }
 
-    // MARK: corpus  (real-world files; registered only when the fixtures are present)
+    // MARK: corpus  (real-world files; registered only when the fixtures are present). Each file runs
+    // the full lifecycle on real data — parse, untyped materialize, query, patch, and re-encode — with
+    // the Foundation baseline next to each ADJSON variant that has one, so the wins (and the parity
+    // cases) hold up beyond the synthetic payload.
+    let corpusQuery = [  // a realistic per-file JSONPath (RFC 9535) extraction
+        "twitter.json": "$.statuses[*].user.screen_name",
+        "citm_catalog.json": "$..name",
+        "canada.json": "$.features[*].geometry.type",
+    ]
+    // A small RFC 6902 patch that adds one top-level key (every corpus root is an object).
+    let corpusRootAdd = try! JSONPatch(Data(#"[{"op":"add","path":"/_bench","value":true}]"#.utf8))
 
     for file in ["twitter.json", "citm_catalog.json", "canada.json"] {
         guard let data = try? Data(contentsOf: corpusURL(file)) else { continue }
         let name = file.replacingOccurrences(of: ".json", with: "")
+        // Forms parsed once and reused, so encode/query/patch measure only their own work.
+        let adValue = try! JSONValue(parsing: data)
+        let adDocument = try! ADJSON.parse(data)
+        let fnObject = try! JSONSerialization.jsonObject(with: data)
+        let query = corpusQuery[file]!
+
+        // parse  (Data -> structure)
         Benchmark("corpus/\(name) Foundation") { bm in
             for _ in bm.scaledIterations { blackHole(try! JSONSerialization.jsonObject(with: data)) }
         }
@@ -400,6 +417,26 @@ nonisolated(unsafe) let benchmarks = {
         }
         Benchmark("corpus/\(name) ADJSON walk") { bm in
             for _ in bm.scaledIterations { blackHole(adWalk(try! ADJSON.parse(data).root)) }
+        }
+        Benchmark("corpus/\(name) ADJSON JSONValue") { bm in
+            for _ in bm.scaledIterations { blackHole(try! JSONValue(parsing: data)) }
+        }
+        // encode  (structure -> Data), re-serializing the pre-parsed forms
+        Benchmark("corpus/\(name) encode ADJSON") { bm in
+            for _ in bm.scaledIterations { blackHole(try! adValue.encodedBytes()) }
+        }
+        Benchmark("corpus/\(name) encode ADJSON cursor") { bm in
+            for _ in bm.scaledIterations { blackHole(try! adDocument.root.encodedBytes()) }
+        }
+        Benchmark("corpus/\(name) encode Foundation") { bm in
+            for _ in bm.scaledIterations { blackHole(try! JSONSerialization.data(withJSONObject: fnObject)) }
+        }
+        // manipulate  (query + patch) on the pre-parsed forms
+        Benchmark("corpus/\(name) query ADJSON") { bm in
+            for _ in bm.scaledIterations { blackHole(try! adDocument.root.query(query)) }
+        }
+        Benchmark("corpus/\(name) patch ADJSON") { bm in
+            for _ in bm.scaledIterations { blackHole(try! corpusRootAdd.apply(to: adValue)) }
         }
     }
 }
