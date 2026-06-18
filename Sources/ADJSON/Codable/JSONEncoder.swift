@@ -13,10 +13,10 @@ extension ADJSON {
         /// `encodeIfPresent`-omitted nils) and makes `encode` throw.
         public var options: JSONEncodingOptions = .rfc8259
         /// Foundation `.prettyPrinted` parity: when set (or via `options.prettyPrinted`), output is
-        /// indented. Pretty output in declaration order streams in a single pass, so it shares the
-        /// streaming number format (an integral `Double` stays `2.0`, like the compact path). Sorted
-        /// keys (`options.keyOrder == .sorted`) are still produced by re-serializing through the parsed
-        /// tape, which canonicalizes integral doubles to Foundation's `2`.
+        /// indented. Pretty output in declaration order streams in a single pass; sorted output still
+        /// re-serializes through the parsed tape (the streaming writer can't reorder members). All
+        /// three share the streaming number format — an integral `Double` stays `2.0` (a bare `2` comes
+        /// only from an integer-typed value), consistent across compact, pretty, and sorted.
         public var prettyPrinted: Bool = false
         /// How `Date` values are encoded (default `.deferredToDate`, matching Foundation).
         public var dateEncodingStrategy: DateEncodingStrategy = .deferredToDate

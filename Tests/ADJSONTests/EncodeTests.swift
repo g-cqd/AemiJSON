@@ -67,6 +67,26 @@ private let samples: [E] = [
     #expect(obj.title.string == "t")
 }
 
+// A `Float` encodes in its own shortest 32-bit form (`Float.description`), not the noisy widened
+// `Double` form (`Float(0.1)` was emitting "0.10000000149011612"). Non-integral values match
+// Foundation; integral values keep ".0" (faithful, consistent with the Double policy).
+@Test func encodesFloatAsShortestFloatForm() throws {
+    struct F: Codable, Equatable { var v: Float }
+    let cases: [(Float, String)] = [
+        (0.1, "0.1"), (0.2, "0.2"), (3.14, "3.14"), (-0.25, "-0.25"), (1.5, "1.5"),
+        (0.30000001, "0.3"), (1e20, "1e+20"), (2, "2.0"),
+    ]
+    let adj = ADJSON.JSONEncoder()
+    for (x, s) in cases {
+        let bytes = try adj.encode(F(v: x))
+        #expect(String(decoding: bytes, as: UTF8.self) == "{\"v\":\(s)}")
+        #expect(try ADJSON.JSONDecoder().decode(F.self, from: bytes) == F(v: x))
+    }
+    // Top-level fragment (single-value container) and array element (unkeyed container).
+    #expect(String(decoding: try adj.encode(Float(0.1)), as: UTF8.self) == "0.1")
+    #expect(String(decoding: try adj.encode([Float(0.1), 1.5]), as: UTF8.self) == "[0.1,1.5]")
+}
+
 @Test func rejectsNonFiniteDouble() {
     struct F: Encodable { var v: Double }
     #expect(throws: EncodingError.self) {
@@ -96,7 +116,7 @@ private let samples: [E] = [
     let obj = JSONValue.object(["b": .number(2), "a": .number(1)])
     #expect(
         String(decoding: try obj.encoded(options: JSONEncodingOptions(keyOrder: .sorted)), as: UTF8.self)
-            == #"{"a":1,"b":2}"#)
+            == #"{"a":1.0,"b":2.0}"#)
     // The default profile stays strict.
     #expect(throws: EncodingError.self) { try JSONValue.number(.nan).encoded() }
 }
@@ -257,10 +277,10 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     }
 }
 
-// The single-pass pretty path shares the streaming number format, so an integral `Double` stays
-// `2.0` (consistent with compact). Sorted+pretty still routes through the re-emit, which
-// canonicalizes it to `2` — this pins both routes so the divergence is intentional and visible.
-@Test func singlePassPrettyKeepsIntegralDoubleVsSortedReEmit() throws {
+// Every encode mode shares one number policy: an integral `Double` stays `2.0`. Declaration-order
+// pretty (single pass) and sorted+pretty (tape re-emit) now agree — the sorted route no longer
+// canonicalizes it to `2`.
+@Test func prettyEmitsIntegralDoubleConsistentlyAcrossModes() throws {
     struct F: Encodable {
         var a: Double = 2.0
         var b: Double = 3.5
@@ -273,7 +293,8 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     var sorted = ADJSON.JSONEncoder()
     sorted.prettyPrinted = true
     sorted.options = JSONEncodingOptions(keyOrder: .sorted)
-    #expect(String(decoding: try sorted.encode(F()), as: UTF8.self) == "{\n  \"a\" : 2,\n  \"b\" : 3.5\n}")
+    #expect(
+        String(decoding: try sorted.encode(F()), as: UTF8.self) == "{\n  \"a\" : 2.0,\n  \"b\" : 3.5\n}")
 }
 
 @Test func jsonValuePrettyPrintsNestedStructure() throws {
@@ -284,9 +305,9 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     #expect(
         out == """
             {
-              "a" : 1,
+              "a" : 1.0,
               "b" : [
-                2,
+                2.0,
                 "x"
               ],
               "e" : {}

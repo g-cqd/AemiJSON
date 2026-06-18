@@ -15,11 +15,15 @@ public struct JSONEncodingOptions: Sendable {
 
     /// How `Double`/`Float` values are rendered.
     public enum NumberFormat: Sendable, Equatable {
-        /// Swift's shortest round-trippable form (`Double.description`, the default). The Codable
-        /// encoder renders a value typed `Double` faithfully, so `Double(2)` becomes `2.0`; the
-        /// `JSONValue` model instead collapses integral magnitudes to `2` to preserve integer
-        /// round-trips (it stores only `Double`). Neither matches Foundation byte-for-byte — use
-        /// `.ecma262` for `JSON.stringify` parity.
+        /// The shortest round-trippable decimal in a canonical form (the default). A `Double`/`Float`
+        /// always keeps a fractional part (`Double(2)` → `2.0`) or an exponent, so it never reads as a
+        /// bare integer — only the `.int` case / integer-typed values render bare digits, and this holds
+        /// uniformly across compact, pretty, sorted, the `JSONValue` tree, and the lazy cursor. The
+        /// significant digits come from Swift's `Double.description`, but ADJSON owns the placement —
+        /// fixed notation for a scientific exponent in `-4...15`, otherwise scientific (`e±NN`, ≥2
+        /// exponent digits). That keeps output stable across Swift toolchains and removes
+        /// `description`'s value-dependent fixed/scientific flip near 2^53. Not Foundation byte-for-byte
+        /// (Foundation drops the trailing `.0`) — use `.ecma262` for `JSON.stringify` parity.
         case swiftShortest
         /// ECMA-262 `Number::toString` (what `JSON.stringify` emits: `5.0`→`5`, `1e-7`, `-0`→`0`).
         case ecma262

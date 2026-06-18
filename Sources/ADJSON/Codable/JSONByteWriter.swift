@@ -63,6 +63,10 @@ public struct _JSONByteWriter {
         try JSONOutput.appendDouble(v, options: options, to: &bytes)
     }
 
+    @inlinable public mutating func float(_ v: Float) throws {
+        try JSONOutput.appendFloat(v, options: options, to: &bytes)
+    }
+
     @inlinable public mutating func encode<T: Encodable>(_ v: T) throws {
         depth += 1
         defer { depth -= 1 }

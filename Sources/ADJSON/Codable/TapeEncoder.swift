@@ -41,6 +41,10 @@ final class EncodeState {
         try JSONOutput.appendDouble(v, options: options, to: &w.bytes)
     }
 
+    @inline(__always) func appendFloat(_ v: Float) throws {
+        try JSONOutput.appendFloat(v, options: options, to: &w.bytes)
+    }
+
     /// True when a key-encoding strategy is set, which forces the generic path so the transform in
     /// `KeyedTapeEncodingContainer.member` applies to every object key (the fast writer can't).
     var keyStrategyActive: Bool {
@@ -219,7 +223,7 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
     }
     mutating func encode(_ v: Float, forKey key: Key) throws {
         member(key)
-        try state.appendDouble(Double(v))
+        try state.appendFloat(v)
     }
     mutating func encode(_ v: Int, forKey key: Key) {
         member(key)
@@ -322,7 +326,7 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
     }
     mutating func encode(_ v: Float) throws {
         elem()
-        try state.appendDouble(Double(v))
+        try state.appendFloat(v)
     }
     mutating func encode(_ v: Int) {
         elem()
@@ -401,7 +405,7 @@ private struct SingleValueTapeEncodingContainer: SingleValueEncodingContainer {
         try state.appendDouble(v)
     }
     mutating func encode(_ v: Float) throws {
-        try state.appendDouble(Double(v))
+        try state.appendFloat(v)
     }
     mutating func encode(_ v: Int) { state.w.writeInteger(v) }
     mutating func encode(_ v: Int8) { state.w.writeInteger(v) }

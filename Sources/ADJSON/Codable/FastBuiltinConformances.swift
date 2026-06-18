@@ -49,7 +49,7 @@ extension Float: ADJSONFastDecodable {
     }
 }
 extension Float: ADJSONFastEncodable {
-    @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) throws { try w.double(Double(self)) }
+    @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) throws { try w.float(self) }
 }
 
 extension ADJSONFastDecodable where Self: FixedWidthInteger {

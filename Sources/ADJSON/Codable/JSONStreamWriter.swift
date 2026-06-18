@@ -135,8 +135,8 @@ public struct JSONStreamWriter: ~Copyable {
             }
             return
         }
-        // Shared finite-double emission (no integer promotion — JS keeps a real a real).
-        JSONOutput.appendFiniteDouble(v, numberFormat: options.numberFormat, integerPromotion: false, to: &bytes)
+        // Shared finite-double emission (a real stays a real — `2.0`, never bare `2`).
+        JSONOutput.appendFiniteDouble(v, numberFormat: options.numberFormat, to: &bytes)
     }
 
     public mutating func bool(_ v: Bool) {

@@ -141,12 +141,13 @@ struct SQLiteJSONFunctionTests {
 
     @Test func jsonQuote() {
         #expect(SQLiteJSON.quote(.number(3.5)) == "3.5")
-        #expect(SQLiteJSON.quote(.number(5)) == "5")  // integral double collapses, like a JSON int
+        #expect(SQLiteJSON.quote(.number(5)) == "5.0")  // a real stays a real (use `.int` for a JSON int)
         #expect(SQLiteJSON.quote(.string("verdant")) == #""verdant""#)
         #expect(SQLiteJSON.quote(.string("a\"b")) == #""a\"b""#)  // quote escaped
         #expect(SQLiteJSON.quote(.bool(true)) == "true")
         #expect(SQLiteJSON.quote(.null) == "null")
-        #expect(SQLiteJSON.quote(.array([.number(1), .number(2)])) == "[1,2]")
+        #expect(SQLiteJSON.quote(.int(5)) == "5")  // a JSON integer renders bare
+        #expect(SQLiteJSON.quote(.array([.number(1), .number(2)])) == "[1.0,2.0]")
         #expect(SQLiteJSON.quote(.number(.infinity)) == "null")  // non-finite → well-formed null
     }
 

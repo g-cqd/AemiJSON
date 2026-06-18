@@ -140,17 +140,17 @@ public enum JSONOutput {
         v < 10 ? 0x30 + v : 0x61 + (v - 10)
     }
 
-    /// Appends a finite `Double` formatted per ECMA-262 §6.1.6.1.20 `Number::toString` — i.e. what
-    /// JavaScript `JSON.stringify` emits, which differs from `Double.description` (integral doubles
-    /// lose the trailing `.0`, `-0` becomes `0`, exponents aren't zero-padded, and the
-    /// decimal↔exponential threshold is `n > 21` / `n ≤ -6`). It reuses Swift's shortest
-    /// round-trippable digits (from `description`) and only re-renders their placement. The caller
-    /// must have already handled non-finite values.
-    public static func appendECMANumber(_ v: Double, to bytes: inout [UInt8]) {
-        // `description` is the only allocation (Swift's shortest round-trippable digits, ASCII); its
-        // bytes are read in place via `withUTF8`, and the digit gathering uses a stack buffer — a
-        // finite double prints in ≤ 24 ASCII bytes, so its significant digits fit a fixed 24-byte
-        // span with no further heap allocation.
+    /// Parse Swift's shortest decimal (`Double.description`) for a **finite** `v` into its significant
+    /// digits and decimal-point position, then invoke `body` — the one place the encoders source
+    /// shortest digits, shared by ``appendECMANumber(_:to:)`` and ``JSONShortest/appendShortest(_:to:)``
+    /// under different placement rules. `digits` are the significant digits (no leading/trailing zeros);
+    /// `pointPos` is how many of them fall before the decimal point (value = digits × 10^(pointPos −
+    /// count)); `digits.count == 0` signals zero. `description` is the only allocation (Swift's
+    /// correctly-rounded shortest digits, ASCII, locale-independent); the gather uses a 24-byte stack
+    /// span — a finite double prints in ≤ 24 ASCII bytes. `body` is non-escaping (runs inside the span).
+    static func withShortestDigits(
+        _ v: Double, _ body: (_ negative: Bool, _ digits: UnsafeBufferPointer<UInt8>, _ pointPos: Int) -> Void
+    ) {
         var desc = v.description
         desc.withUTF8 { d in
             let count = d.count
@@ -224,37 +224,47 @@ public enum JSONOutput {
                 }
                 var end = dc
                 while end > start, digits[end - 1] == 0x30 { end -= 1 }
-                if start >= end {  // value is zero (including -0)
-                    bytes.append(0x30)
-                    return
-                }
+                body(negative, UnsafeBufferPointer(start: digits.baseAddress! + start, count: end - start), pointPos)
+            }
+        }
+    }
 
-                let k = end - start
-                let n = pointPos
-                if negative { bytes.append(0x2D) }
-                if k <= n, n <= 21 {
-                    for x in start..<end { bytes.append(digits[x]) }
-                    for _ in 0..<(n - k) { bytes.append(0x30) }
-                } else if n > 0, n <= 21 {
-                    for x in start..<(start + n) { bytes.append(digits[x]) }
+    /// Appends a finite `Double` formatted per ECMA-262 §6.1.6.1.20 `Number::toString` — i.e. what
+    /// JavaScript `JSON.stringify` emits, which differs from `Double.description` (integral doubles
+    /// lose the trailing `.0`, `-0` becomes `0`, exponents aren't zero-padded, and the
+    /// decimal↔exponential threshold is `n > 21` / `n ≤ -6`). Reuses Swift's shortest digits via
+    /// ``withShortestDigits(_:_:)`` and only re-renders their placement. Caller handles non-finite.
+    public static func appendECMANumber(_ v: Double, to bytes: inout [UInt8]) {
+        withShortestDigits(v) { negative, digits, pointPos in
+            let k = digits.count
+            if k == 0 {  // zero — ECMA renders `-0` as `0`, so no sign
+                bytes.append(0x30)
+                return
+            }
+            let n = pointPos
+            if negative { bytes.append(0x2D) }
+            if k <= n, n <= 21 {
+                for x in 0..<k { bytes.append(digits[x]) }
+                for _ in 0..<(n - k) { bytes.append(0x30) }
+            } else if n > 0, n <= 21 {
+                for x in 0..<n { bytes.append(digits[x]) }
+                bytes.append(0x2E)
+                for x in n..<k { bytes.append(digits[x]) }
+            } else if n > -6, n <= 0 {
+                bytes.append(0x30)
+                bytes.append(0x2E)
+                for _ in 0..<(-n) { bytes.append(0x30) }
+                for x in 0..<k { bytes.append(digits[x]) }
+            } else {
+                bytes.append(digits[0])
+                if k > 1 {
                     bytes.append(0x2E)
-                    for x in (start + n)..<end { bytes.append(digits[x]) }
-                } else if n > -6, n <= 0 {
-                    bytes.append(0x30)
-                    bytes.append(0x2E)
-                    for _ in 0..<(-n) { bytes.append(0x30) }
-                    for x in start..<end { bytes.append(digits[x]) }
-                } else {
-                    bytes.append(digits[start])
-                    if k > 1 {
-                        bytes.append(0x2E)
-                        for x in (start + 1)..<end { bytes.append(digits[x]) }
-                    }
-                    bytes.append(0x65)  // 'e'
-                    let e = n - 1
-                    bytes.append(e >= 0 ? 0x2B : 0x2D)
-                    appendInteger(abs(e), to: &bytes)
+                    for x in 1..<k { bytes.append(digits[x]) }
                 }
+                bytes.append(0x65)  // 'e'
+                let e = n - 1
+                bytes.append(e >= 0 ? 0x2B : 0x2D)
+                appendInteger(abs(e), to: &bytes)
             }
         }
     }
@@ -275,34 +285,25 @@ public enum JSONOutput {
 
     /// Emits a **finite** `Double` per `numberFormat` — the single place the three number formats are
     /// rendered, so the streaming encoder, the `JSONValue` tree walk, the lazy `JSON` cursor, and the
-    /// JS stream writer all agree byte-for-byte. `integerPromotion` (the `JSONValue`/tree convention)
-    /// renders an integral magnitude below 2^53 without a fractional part (`2`, not `2.0`) under
-    /// `.swiftShortest`; the Codable value paths leave it `false` so a `Double` stays `2.0`. The caller
-    /// must have already handled non-finite values. The shortest (`.swiftShortest`) form is
+    /// JS stream writer all agree byte-for-byte. A `Double` always keeps its fractional/exponent form
+    /// (`2.0`, never bare `2` — a bare integer comes only from the `.int` case / integer types). The
+    /// caller must have already handled non-finite values. The shortest (`.swiftShortest`) form is
     /// `Double.description` — the one spot a future direct byte formatter would replace.
     @inlinable
     public static func appendFiniteDouble(
-        _ v: Double, numberFormat: JSONEncodingOptions.NumberFormat, integerPromotion: Bool, to bytes: inout [UInt8]
+        _ v: Double, numberFormat: JSONEncodingOptions.NumberFormat, to bytes: inout [UInt8]
     ) {
-        if integerPromotion, case .swiftShortest = numberFormat, v == v.rounded(), abs(v) < 9.007_199_254_740_992e15 {
-            appendInteger(Int64(v), to: &bytes)
-            return
-        }
         switch numberFormat {
         case .ecma262: appendECMANumber(v, to: &bytes)
-        case .swiftShortest: bytes.append(contentsOf: v.description.utf8)
+        case .swiftShortest: JSONShortest.appendShortest(v, to: &bytes)
         case .sqlitePrintfG: appendSQLitePrintfG(v, to: &bytes)
         }
     }
 
     /// Emits a `Double` per the encoding `options`: `nonFinite` chooses throw / `null` / string-literal,
-    /// and a finite value goes through ``appendFiniteDouble(_:numberFormat:integerPromotion:to:)``.
-    /// `integerPromotion` is the `JSONValue`/tree convention (integral `Double` → `2`); the streaming
-    /// Codable paths pass `false` so a `Double` stays `2.0`. The single source of truth for every
-    /// double the encoders emit.
-    public static func appendDouble(
-        _ v: Double, options: JSONEncodingOptions, integerPromotion: Bool = false, to bytes: inout [UInt8]
-    ) throws {
+    /// and a finite value goes through ``appendFiniteDouble(_:numberFormat:to:)``. A `Double` always
+    /// renders faithfully (`2.0`, not `2`). The single source of truth for every double the encoders emit.
+    public static func appendDouble(_ v: Double, options: JSONEncodingOptions, to bytes: inout [UInt8]) throws {
         guard v.isFinite else {
             switch options.nonFinite {
             case .throw:
@@ -317,7 +318,44 @@ public enum JSONOutput {
             }
             return
         }
-        appendFiniteDouble(v, numberFormat: options.numberFormat, integerPromotion: integerPromotion, to: &bytes)
+        appendFiniteDouble(v, numberFormat: options.numberFormat, to: &bytes)
+    }
+
+    /// Emits a **finite** `Float` per `numberFormat`. Under the default `.swiftShortest` it uses
+    /// `Float.description` — the *shortest* 32-bit form (`0.1`, not the `0.10000000149011612` you get by
+    /// widening to `Double`), matching Foundation. `.ecma262` / `.sqlitePrintfG` are binary64 profiles
+    /// (JS / SQLite), so they widen to `Double` — documented, not the default path.
+    @inlinable
+    public static func appendFiniteFloat(
+        _ v: Float, numberFormat: JSONEncodingOptions.NumberFormat, to bytes: inout [UInt8]
+    ) {
+        switch numberFormat {
+        case .ecma262: appendECMANumber(Double(v), to: &bytes)
+        case .swiftShortest: bytes.append(contentsOf: v.description.utf8)
+        case .sqlitePrintfG: appendSQLitePrintfG(Double(v), to: &bytes)
+        }
+    }
+
+    /// Emits a `Float` per the encoding `options`: `nonFinite` chooses throw / `null` / string-literal,
+    /// and a finite value goes through ``appendFiniteFloat(_:numberFormat:to:)``. The single source of
+    /// truth for every `Float` the encoders emit — so `Float` keeps its own shortest form rather than a
+    /// widened `Double`'s.
+    public static func appendFloat(_ v: Float, options: JSONEncodingOptions, to bytes: inout [UInt8]) throws {
+        guard v.isFinite else {
+            switch options.nonFinite {
+            case .throw:
+                throw EncodingError.invalidValue(
+                    v, .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
+            case .null:
+                appendNull(to: &bytes)
+            case .stringLiterals(let pos, let neg, let nan):
+                appendString(
+                    v.isNaN ? nan : (v > 0 ? pos : neg), to: &bytes,
+                    escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+            }
+            return
+        }
+        appendFiniteFloat(v, numberFormat: options.numberFormat, to: &bytes)
     }
 
     /// SQLite's `%!.15g` real rendering, byte-for-byte with `sqlite3` `json()`/`json_quote()`. The

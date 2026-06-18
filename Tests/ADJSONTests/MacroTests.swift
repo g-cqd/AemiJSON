@@ -45,6 +45,20 @@ private let macroSamples: [MUser] = [
     #expect(mine == macroSamples)
 }
 
+@JSONCodable
+private struct MFloat: Codable, Equatable {
+    var ratio: Float
+    var name: String
+}
+
+// A `Float` field on the `@JSONCodable` fast path must emit the shortest 32-bit form (through the
+// fixed `Float` fast conformance), not the widened-Double noise (`0.10000000149011612`).
+@Test func macroFastPathEncodesFloatAsShortestForm() throws {
+    let bytes = try ADJSON.JSONEncoder().encode(MFloat(ratio: 0.1, name: "x"))
+    #expect(String(decoding: bytes, as: UTF8.self) == #"{"ratio":0.1,"name":"x"}"#)
+    #expect(try ADJSON.JSONDecoder().decode(MFloat.self, from: bytes) == MFloat(ratio: 0.1, name: "x"))
+}
+
 // `@JSONDecodable` on a `Decodable`-ONLY type (note: not `Codable`/`Encodable`). That this file
 // compiles is the proof the macro doesn't force the encode side.
 @JSONDecodable

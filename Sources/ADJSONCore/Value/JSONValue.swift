@@ -374,17 +374,14 @@ extension JSONValue {
         }
     }
 
-    // `Double`-case number emission. A parsed JSON integer within Int64 is held as `.int` and
-    // emitted exactly via `writeInteger`, so this path only sees `.number(Double)` — a fraction, an
-    // exponent, an out-of-Int64 integer, or a hand-built `.number(...)`. It delegates to the shared
-    // `JSONOutput.appendDouble` with `integerPromotion: true`: under `.swiftShortest` an integral
-    // `Double` magnitude below 2^53 is rendered without a fractional part (`2`, not `2.0`), so a
-    // hand-built `.number(2)` and an out-of-Int64 integer round-trip as integers (`.number` can't
-    // otherwise tell `2` from `2.0`). This intentionally differs from the Codable encode path, which
-    // passes `integerPromotion: false` so a value typed `Double` stays `2.0`. Neither reproduces
-    // Foundation's formatter byte-for-byte; use `.ecma262` for `JSON.stringify` parity. `static` +
-    // `internal` so the tape-cursor serializer (`JSON.encodedBytes`) shares this exact formatting.
+    // `Double`-case number emission. A parsed JSON integer within Int64 is held as `.int` and emitted
+    // exactly via `writeInteger`, so this path only sees `.number(Double)` — a fraction, an exponent,
+    // an out-of-Int64 integer, or a hand-built `.number(...)` — and renders it faithfully (`2.0`, never
+    // bare `2`; a bare integer comes only from `.int`). The parse round-trip preserves the source's
+    // int-vs-float shape: `"2"` parses to `.int` → `2`, `"2.0"` parses to `.number` → `2.0`. Shares
+    // `JSONOutput.appendDouble` with the Codable streaming path, so all encoders agree. Use `.ecma262`
+    // for `JSON.stringify` parity. `static` + `internal` so `JSON.encodedBytes` shares this formatting.
     static func writeNumber(_ d: Double, into writer: JSONWriter, options: JSONEncodingOptions) throws {
-        try JSONOutput.appendDouble(d, options: options, integerPromotion: true, to: &writer.bytes)
+        try JSONOutput.appendDouble(d, options: options, to: &writer.bytes)
     }
 }
