@@ -135,6 +135,13 @@ extension _FastDecodeCursor {
         guard let d = ctx.double(index) else { throw mismatch(Double.self) }
         return d
     }
+    /// Parse the current number node straight to `Float` (single rounding via ``DecodeContext/float``),
+    /// not `Float(currentDouble())` — narrowing a `Double` rounds twice and can land on a different
+    /// `Float` bit pattern than rounding the source decimal directly.
+    @inlinable public func currentFloat() throws -> Float {
+        guard let f = ctx.float(index) else { throw mismatch(Float.self) }
+        return f
+    }
     @inlinable public func currentInteger<T: FixedWidthInteger>(_ type: T.Type) throws -> T {
         guard let n = ctx.integer(index, type) else { throw mismatch(T.self) }
         return n

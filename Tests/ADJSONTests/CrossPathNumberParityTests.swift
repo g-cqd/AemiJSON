@@ -147,4 +147,131 @@ struct CrossPathNumberParityTests {
             #expect(Double(s) == d, "round-trip failed for \(d): encoded \(s)")  // shortest form fit the 24-byte gather
         }
     }
+
+    // MARK: Float decode is single-rounded — no double rounding (decimal→Double→Float).
+
+    // The bug: `Float` was decoded as `Float(Double(lexeme))` — the decimal was parsed to `Double`,
+    // then narrowed to `Float`, rounding twice. For some decimals that lands on a DIFFERENT `Float`
+    // bit pattern than rounding the decimal straight to the nearest `Float`. Decode must equal
+    // `Float("<digits>")` (the correctly-rounded-nearest Float), NOT `Float(Double("<digits>"))`.
+
+    // A one-field `@JSONCodable` carrier so the fast (`_FastDecodeCursor`) Float path is exercised.
+    @JSONCodable struct FloatBox: Codable, Equatable { var f: Float }
+
+    // Decimals where `Float(Double(s)) != Float(s)` — found by sampling near Float rounding boundaries.
+    // Each is a literal where the old (double-rounding) decode produced the wrong `Float` bit pattern.
+    private static let doubleRoundingDivergent: [String] = [
+        "1.4390599421183441e-16",
+        "5.9058874869559463e-13",
+        "2.9142915511370937e-11",
+        "3.8608163333009315e-09",
+        "8.1179565292188727e-09",
+        "5.1856581292405555e+17",
+        "1.1806857639640219e+24",
+        "5.009292489747905e+26",
+        "1.6817101679662769e+29"
+    ]
+
+    // Sanity-check the fixtures actually exercise the bug: each must round to different Float bits the
+    // two ways. (If a future toolchain changed std-lib rounding so one no longer diverges, this flags it.)
+    @Test func divergentFixturesActuallyDoubleRound() {
+        for s in Self.doubleRoundingDivergent {
+            let direct = Float(s)!
+            let viaDouble = Float(Double(s)!)
+            #expect(
+                direct.bitPattern != viaDouble.bitPattern,
+                "fixture \(s) no longer diverges: Float(s) and Float(Double(s)) agree — pick another")
+        }
+    }
+
+    // Decode each divergent decimal through EVERY live Float path and assert it equals the
+    // correctly-rounded-nearest `Float(s)` (single rounding), not the old `Float(Double(s))`.
+    @Test func floatDecodeIsSingleRoundedAcrossPaths() throws {
+        for s in Self.doubleRoundingDivergent {
+            let expected = Float(s)!  // correctly-rounded-nearest Float of the source decimal
+            let wrong = Float(Double(s)!)  // what the old double-rounding decode produced
+
+            // Byte/tape Codable path (single-value container via [Float]).
+            let bytes = try ADJSON.JSONDecoder().decode([Float].self, from: Data("[\(s)]".utf8))
+            #expect(bytes.first?.bitPattern == expected.bitPattern, "byte path double-rounded \(s)")
+            #expect(bytes.first?.bitPattern != wrong.bitPattern || expected.bitPattern == wrong.bitPattern)
+
+            // @JSONCodable fast path (_FastDecodeCursor.currentFloat).
+            let fast = try ADJSON.JSONDecoder().decode(FloatBox.self, from: Data(#"{"f":\#(s)}"#.utf8))
+            #expect(fast.f.bitPattern == expected.bitPattern, "fast path double-rounded \(s)")
+
+            // Lazy cursor accessor (`JSON.float`), which re-parses the source lexeme.
+            let doc = try ADJSON.parse("[\(s)]")
+            #expect(doc.root[index: 0].float?.bitPattern == expected.bitPattern, "JSON.float double-rounded \(s)")
+        }
+    }
+
+    // Encode→decode must reproduce the exact `Float` bit pattern. Covers the divergent set plus a
+    // randomized sweep of arbitrary `Float`s: encode (shortest `Float.description`), decode, compare bits.
+    @Test func floatEncodeDecodeIsBitIdentical() throws {
+        var sample: [Float] = [
+            0, -0.0, 1, -1, .pi, .leastNonzeroMagnitude, .leastNormalMagnitude,
+            .greatestFiniteMagnitude, -.greatestFiniteMagnitude, 0.1, 0.2, 0.3, 1.0 / 3.0,
+            Float(bitPattern: 0x0000_0001), Float(bitPattern: 0x007F_FFFF)  // smallest subnormal / largest subnormal
+        ]
+        sample += Self.doubleRoundingDivergent.map { Float($0)! }
+
+        var rng = SystemRandomNumberGenerator()
+        for _ in 0 ..< 20_000 {
+            let f = Float(bitPattern: UInt32.random(in: 0 ... 0xFFFF_FFFF, using: &rng))
+            if f.isFinite { sample.append(f) }
+        }
+
+        for f in sample {
+            let json = try ADJSON.JSONEncoder().encode(FloatBox(f: f))
+            // The encoder emits the shortest `Float` decimal; decode must invert it to the same bits.
+            let viaBytes = try ADJSON.JSONDecoder().decode(FloatBox.self, from: json)
+            #expect(
+                viaBytes.f.bitPattern == f.bitPattern,
+                "round-trip lost bits for \(f) → \(String(decoding: json, as: UTF8.self))")
+            // Re-decode through the single-value/array path too.
+            let arr = try ADJSON.JSONEncoder().encode([f])
+            let viaArray = try ADJSON.JSONDecoder().decode([Float].self, from: arr)
+            #expect(viaArray.first?.bitPattern == f.bitPattern, "array round-trip lost bits for \(f)")
+        }
+    }
+
+    // Float nonconforming-float / special values still decode at Float width (not via a narrowed Double).
+    // A plain `Codable` carrier routes through the generic container → `decodeFloat`, which (unlike the
+    // `@JSONCodable` fast path, by design) honours the nonConformingFloat string strategy.
+    private struct PlainFloatBox: Codable, Equatable { var f: Float }
+
+    @Test func floatSpecialValuesDecode() throws {
+        // ±0 keeps its sign bit.
+        let negZero = try ADJSON.JSONDecoder().decode([Float].self, from: Data("[-0.0]".utf8)).first!
+        #expect(negZero.bitPattern == Float(-0.0).bitPattern)
+        let posZero = try ADJSON.JSONDecoder().decode([Float].self, from: Data("[0.0]".utf8)).first!
+        #expect(posZero.bitPattern == Float(0).bitPattern)
+
+        // nonConformingFloat string literals decode to Float-width inf/nan.
+        var decoder = ADJSON.JSONDecoder()
+        decoder.nonConformingFloatDecodingStrategy = .convertFromString(
+            positiveInfinity: "Inf", negativeInfinity: "-Inf", nan: "NaN")
+        let inf = try decoder.decode(PlainFloatBox.self, from: Data(#"{"f":"Inf"}"#.utf8))
+        #expect(inf.f == .infinity)
+        let negInf = try decoder.decode(PlainFloatBox.self, from: Data(#"{"f":"-Inf"}"#.utf8))
+        #expect(negInf.f == -.infinity)
+        let nan = try decoder.decode(PlainFloatBox.self, from: Data(#"{"f":"NaN"}"#.utf8))
+        #expect(nan.f.isNaN)
+    }
+
+    // Double decode must be UNCHANGED by the Float fix: the same divergent decimals decode to the
+    // ordinary `Double(s)`, and the byte path still equals Foundation's `JSONDecoder`.
+    @Test func doubleDecodeIsUnchanged() throws {
+        for s in Self.doubleRoundingDivergent {
+            let expected = Double(s)!
+            let viaBytes = try ADJSON.JSONDecoder().decode([Double].self, from: Data("[\(s)]".utf8))
+            #expect(viaBytes.first == expected, "Double byte-path decode changed for \(s)")
+            let viaFoundation = try Foundation.JSONDecoder().decode([Double].self, from: Data("[\(s)]".utf8))
+            #expect(viaBytes.first == viaFoundation.first, "Double byte path diverged from Foundation for \(s)")
+            // The lazy cursor's Double accessor is likewise untouched.
+            let doc = try ADJSON.parse("[\(s)]")
+            #expect(doc.root[index: 0].double == expected)
+        }
+    }
 }

@@ -45,7 +45,7 @@ extension Double: ADJSONFastEncodable {
 }
 extension Float: ADJSONFastDecodable {
     @inlinable public static func __adjsonDecode(_ c: _FastDecodeCursor) throws -> Float {
-        Float(try c.currentDouble())
+        try c.currentFloat()
     }
 }
 extension Float: ADJSONFastEncodable {

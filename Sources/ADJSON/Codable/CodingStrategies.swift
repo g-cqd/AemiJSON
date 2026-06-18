@@ -179,9 +179,24 @@ enum DateDataDecoding {
 
 extension DecodeContext {
     /// `double`, plus the nonConformingFloat fallback: a configured string literal (`"Infinity"`,
-    /// etc.) decodes to ±Infinity / NaN. The choke point for every generic `Double`/`Float` decode.
+    /// etc.) decodes to ±Infinity / NaN. The choke point for every generic `Double` decode.
     func decodeFloatingPoint(_ index: Int) -> Double? {
         if let d = double(index) { return d }
+        guard case .convertFromString(let pos, let neg, let nan) = strategies.nonConformingFloat,
+            let s = string(index)
+        else { return nil }
+        if s == pos { return .infinity }
+        if s == neg { return -.infinity }
+        if s == nan { return .nan }
+        return nil
+    }
+
+    /// The `Float`-width sibling of `decodeFloatingPoint`. Parses the number straight to `Float`
+    /// (single rounding via ``float``) instead of narrowing a `Double` — the only way a `Float`
+    /// round-trips its exact bit pattern. The nonconforming-float string fallback (`"Infinity"`,
+    /// `"NaN"`, …) decodes to the `Float`-width ±Infinity / NaN, identical to the `Double` path.
+    func decodeFloat(_ index: Int) -> Float? {
+        if let f = float(index) { return f }
         guard case .convertFromString(let pos, let neg, let nan) = strategies.nonConformingFloat,
             let s = string(index)
         else { return nil }

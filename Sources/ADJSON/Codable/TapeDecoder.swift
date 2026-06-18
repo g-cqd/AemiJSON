@@ -86,6 +86,17 @@ final class DecodeContext {
         return JSONNumber.parseDouble(bytes, Slot.low(s), Slot.length(s))
     }
 
+    /// Parse the number node at `i` straight to `Float`, correctly rounded to the nearest `Float`.
+    /// NOT `Float(double(i))`: narrowing a `Double` rounds twice and can yield a different `Float` bit
+    /// pattern than rounding the source decimal directly (double rounding). The encoder writes the
+    /// shortest `Float` decimal, so this single-rounded parse is what round-trips its exact bits.
+    @inline(__always) @inlinable func float(_ i: Int) -> Float? {
+        let s = slot(i)
+        guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
+        assertBytes(Slot.low(s), Slot.length(s))
+        return JSONNumber.parseFloat(bytes, Slot.low(s), Slot.length(s))
+    }
+
     @inline(__always) @inlinable func integer<T: FixedWidthInteger>(_ i: Int, _ type: T.Type) -> T? {
         let s = slot(i)
         guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
@@ -235,8 +246,8 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
 
     func decode(_ type: Float.Type, forKey key: Key) throws -> Float {
         let vi = try requireIndex(key)
-        guard let d = ctx.decodeFloatingPoint(vi) else { throw mismatch(type, key) }
-        return Float(d)
+        guard let f = ctx.decodeFloat(vi) else { throw mismatch(type, key) }
+        return f
     }
 
     func decode(_ type: Int.Type, forKey key: Key) throws -> Int { try integer(type, key) }
@@ -330,7 +341,7 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
     mutating func decode(_ type: String.Type) throws -> String { try scalar { c, i in c.string(i) } }
     mutating func decode(_ type: Double.Type) throws -> Double { try scalar { c, i in c.decodeFloatingPoint(i) } }
     mutating func decode(_ type: Float.Type) throws -> Float {
-        try scalar { c, i in c.decodeFloatingPoint(i).map(Float.init) }
+        try scalar { c, i in c.decodeFloat(i) }
     }
     mutating func decode(_ type: Int.Type) throws -> Int { try scalar { c, i in c.integer(i, type) } }
     mutating func decode(_ type: Int8.Type) throws -> Int8 { try scalar { c, i in c.integer(i, type) } }
@@ -401,7 +412,7 @@ private struct SingleValueTapeDecodingContainer: SingleValueDecodingContainer {
     func decode(_ type: Bool.Type) throws -> Bool { try value(ctx.bool(index), type) }
     func decode(_ type: String.Type) throws -> String { try value(ctx.string(index), type) }
     func decode(_ type: Double.Type) throws -> Double { try value(ctx.decodeFloatingPoint(index), type) }
-    func decode(_ type: Float.Type) throws -> Float { try value(ctx.decodeFloatingPoint(index).map(Float.init), type) }
+    func decode(_ type: Float.Type) throws -> Float { try value(ctx.decodeFloat(index), type) }
     func decode(_ type: Int.Type) throws -> Int { try value(ctx.integer(index, type), type) }
     func decode(_ type: Int8.Type) throws -> Int8 { try value(ctx.integer(index, type), type) }
     func decode(_ type: Int16.Type) throws -> Int16 { try value(ctx.integer(index, type), type) }

@@ -64,8 +64,13 @@ public struct JSON: Sendable {
     }
 
     public var float: Float? {
-        guard let d = double else { return nil }
-        return Float(d)
+        guard tag == JSONKind.number.rawValue else { return nil }
+        let off = Slot.low(slot)
+        let len = Slot.length(slot)
+        // Parse the source decimal straight to `Float` (single rounding) rather than `Float(double)`:
+        // narrowing a `Double` rounds twice and can yield a different `Float` bit pattern than rounding
+        // the source decimal directly. This matches the Codable byte/tape `Float` decode path.
+        return doc.withBytePointer { JSONNumber.parseFloat($0, off, len) }
     }
 
     /// The number node's raw source text — the exact lexeme as it appeared in the input — or nil for a
