@@ -30,6 +30,10 @@ struct TapeBuilder {
     }
 
     init(_ p: UnsafePointer<UInt8>, _ n: Int, options: JSONParseOptions) {
+        // Owner/lifetime/bounds: the caller (`ADJSON.parse`, inside `withUnsafeBufferPointer`) owns `p`
+        // for `p[0 ..< n]` and keeps it alive for this builder's whole lifetime; the builder reads only
+        // within `[0, n)` (every access is guarded by `i < n`) and never lets `p` escape.
+        assert(n >= 0, "TapeBuilder requires a non-negative byte count")
         self.p = p
         self.n = n
         self.strict = options.isStrict
@@ -267,6 +271,17 @@ struct TapeBuilder {
             {
                 throw JSONError.duplicateKey(at: keyStart)
             }
+        }
+        // Reserve the per-frame `seenKeys` once, on the object's first key, so the dictionary skips the
+        // 1→2→4… rehash chain it would otherwise pay as each distinct key grows it. The scanner is
+        // single-pass, so the object's *total* member count isn't in hand here (it's only final at the
+        // closing `}`), and pre-scanning it would cost an extra O(members) walk; a small fixed reserve
+        // covers the common small/medium object in one allocation without over-allocating a 1-key one,
+        // and larger objects grow from there as before. `isEmpty` makes this fire exactly once per
+        // object frame (array frames never call `recordKey`). Capacity never affects which key throws or
+        // when, so the duplicate-key semantics stay byte-for-byte identical.
+        if stack[frame].seenKeys.isEmpty {
+            stack[frame].seenKeys.reserveCapacity(8)
         }
         stack[frame].seenKeys[hash, default: []].append((offset, length))
     }

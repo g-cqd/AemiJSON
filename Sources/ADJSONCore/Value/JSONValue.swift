@@ -121,9 +121,11 @@ extension JSONValue {
         return .null  // a missing sentinel materializes as null
     }
 
-    /// One in-progress container in the iterative materializer. Children are walked in document
-    /// order via a forward cursor (`next`); `openKey` holds the object key whose (container) value
-    /// is currently being built one frame deeper.
+    /// One in-progress container in the iterative materializer. Children are walked in document order
+    /// straight off the tape via a resumable cursor (``JSON/childAfterCursor(_:)``) — no per-container
+    /// snapshot of the children is taken, so only one copy of each child is ever live (the parsed tape
+    /// plus the growing result), not two. `openKey` holds the object key whose (container) value is
+    /// currently being built one frame deeper.
     private struct BuildFrame {
         enum Step {
             case scalarAdded
@@ -132,36 +134,24 @@ extension JSONValue {
         }
 
         let isObject: Bool
-        let nodes: [JSON]
-        let keys: [String]
-        var next = 0
+        let container: JSON
+        var cursor: Int
+        var remaining: Int
         var array: [JSONValue]
         var object: OrderedDictionary<String, JSONValue>
         var openKey: String?
 
         init(_ node: JSON) {
             let c = node.count
+            container = node
+            cursor = node.firstChildCursor
+            remaining = c
             if node.isObject {
                 isObject = true
-                var ks: [String] = []
-                var vs: [JSON] = []
-                ks.reserveCapacity(c)
-                vs.reserveCapacity(c)
-                node.forEachMember { k, v in
-                    ks.append(k)
-                    vs.append(v)
-                }
-                keys = ks
-                nodes = vs
                 array = []
                 object = OrderedDictionary<String, JSONValue>(minimumCapacity: c)
             } else {
                 isObject = false
-                var vs: [JSON] = []
-                vs.reserveCapacity(c)
-                node.forEachElement { vs.append($0) }
-                nodes = vs
-                keys = []
                 array = []
                 array.reserveCapacity(c)
                 object = [:]  // OrderedDictionary empty literal
@@ -180,15 +170,17 @@ extension JSONValue {
             }
         }
 
-        /// Consume the next child: scalars are added in place; a container is handed back to descend.
+        /// Consume the next child off the tape cursor: scalars are added in place; a container is handed
+        /// back to descend. The cursor advances over the child's whole subtree (`next`), so the descend
+        /// resumes at the following sibling — identical order to `forEachMember`/`forEachElement`.
         mutating func advance() -> Step {
-            guard next < nodes.count else { return .done }
-            let node = nodes[next]
-            let key = isObject ? keys[next] : nil
-            next += 1
+            guard remaining > 0 else { return .done }
+            let (key, node, next) = container.childAfterCursor(cursor)
+            cursor = next
+            remaining -= 1
             if let scalar = JSONValue.scalarValue(node) {
-                // `key` is non-nil exactly for an object frame (see its binding above), so this routes
-                // object members by key and array elements positionally without a force unwrap.
+                // `key` is non-nil exactly for an object frame, so this routes object members by key and
+                // array elements positionally without a force unwrap.
                 if let key {
                     object[key] = scalar
                 } else {

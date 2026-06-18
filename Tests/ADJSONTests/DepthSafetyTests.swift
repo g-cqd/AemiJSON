@@ -43,6 +43,41 @@ struct DepthSafetyTests {
         #expect(begins == depth)
     }
 
+    @Test func iterativeMaterializerMatchesLazyViewPastFastDepth() throws {
+        // `JSONValue(_:)` recurses directly up to `maxFastDepth` (128) and hands deeper subtrees to the
+        // explicit-stack `buildIteratively`. Exercise that fallback (which the parity suites otherwise
+        // never reach) with object- and array-nesting deeper than 128, carrying mixed scalars and
+        // multi-member objects at each level, and assert the materialized tree is byte-identical to a
+        // re-parse and that re-encoding round-trips exactly.
+        func deepObject(_ depth: Int) -> String {
+            // {"k":<int>,"child":{…}} nested `depth` deep, innermost child an array of scalars + object.
+            var s = #"{"leaf":[1,-2,3.5,"x",true,null,{"a":1,"b":2}]}"#
+            for d in 0 ..< depth { s = #"{"i":\#(d),"child":\#(s),"flag":\#(d % 2 == 0)}"# }
+            return s
+        }
+        for depth in [129, 200, 400] {  // all strictly past maxFastDepth so the iterative path runs
+            let text = deepObject(depth)
+            let opts = JSONParseOptions(maxDepth: depth + 8)
+            let lazy = try ADJSON.parse(text, options: opts).root
+            let materialized = JSONValue(lazy)  // <- buildIteratively / BuildFrame
+            // Byte-identical to a value built straight from the parsed bytes.
+            let viaBytes = try JSONValue(parsing: text, options: opts)
+            #expect(materialized == viaBytes, "depth \(depth): iterative materialize diverged")
+            // Re-encode (also iterative past maxFastDepth) and re-parse: exact round-trip.
+            let encoded = try materialized.encodedBytes()
+            let reparsed = try JSONValue(parsing: String(decoding: encoded, as: UTF8.self), options: opts)
+            #expect(reparsed == materialized, "depth \(depth): round-trip changed the tree")
+        }
+        // A deep array spine (>128) with a trailing object leaf — the array branch of BuildFrame.
+        let arrDepth = 300
+        let arrText =
+            String(repeating: "[", count: arrDepth) + #"{"k":"v","n":7}"#
+            + String(repeating: "]", count: arrDepth)
+        let opts = JSONParseOptions(maxDepth: arrDepth + 8)
+        let mat = JSONValue(try ADJSON.parse(arrText, options: opts).root)
+        #expect(mat == (try JSONValue(parsing: arrText, options: opts)))
+    }
+
     @Test func decoderRecursionGuardFailsClosed() throws {
         // A `Decodable` that recurses per nesting level. With the guard set below the (small) test
         // thread's capacity, a deeply nested document throws a catchable error instead of crashing.

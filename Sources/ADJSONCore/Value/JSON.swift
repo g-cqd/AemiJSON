@@ -204,6 +204,32 @@ public struct JSON: Sendable {
         }
     }
 
+    // MARK: Resumable child cursor (for the iterative `JSONValue` materializer)
+
+    /// The tape index of this container's first child slot — an array element, or an object member's
+    /// key — for use as the seed of ``childAfterCursor(_:)``. Meaningful only when ``isArray`` /
+    /// ``isObject``; the caller bounds iteration by ``count``.
+    @inline(__always)
+    package var firstChildCursor: Int { index + 1 }
+
+    /// One step of an explicit child walk in document order, resuming from a saved tape `cursor` (seeded
+    /// by ``firstChildCursor`` and threaded through `next`). Returns the child value, its key when this
+    /// is an object (`nil` for an array), and the cursor for the following child. Uses the very same
+    /// tape navigation (`nextIndex`) and key decode (`decodeKey`) as ``forEachMember`` /
+    /// ``forEachElement``, so the traversal order and decoded keys are identical — it just hands control
+    /// back to the caller between children instead of driving a closure, letting the materializer walk
+    /// without first snapshotting every child into an array. The caller guarantees `cursor` is a valid
+    /// child slot (it has visited fewer than ``count`` children).
+    package func childAfterCursor(_ cursor: Int) -> (key: String?, value: JSON, next: Int) {
+        if tag == JSONKind.object.rawValue {
+            let keySlot = doc.tape[cursor]
+            let key = doc.withBytePointer { decodeKey($0, keySlot) }
+            let valueIndex = cursor + 1
+            return (key, JSON(doc: doc, index: valueIndex), nextIndex(after: valueIndex))
+        }
+        return (nil, JSON(doc: doc, index: cursor), nextIndex(after: cursor))
+    }
+
     // MARK: Subscripts / dynamic member lookup
 
     /// Look up an object member by key. Each lookup is an O(n) tape walk over the object's members
