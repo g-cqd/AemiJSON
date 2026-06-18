@@ -4,6 +4,9 @@ public enum JSONString {
     // Decode a JSON string body (between quotes) that contains escape sequences.
     // The no-escape fast path is handled by the caller via `String(decoding:)`.
     public static func unescape(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> String {
+        // Caller owns `p` for `p[offset ..< offset + length]` for this call; reads stay in that range
+        // and `p` never escapes. Offsets/lengths come from the tape and are non-negative.
+        assert(offset >= 0 && length >= 0, "unescape requires a non-negative byte range")
         var out: [UInt8] = []
         out.reserveCapacity(length)
         var j = offset
@@ -55,6 +58,8 @@ public enum JSONString {
     // continuations (`\` + LF/CR/CRLF/U+2028/U+2029 → elided), and identity escapes (`\X` → `X`).
     // The scanner has already validated these, so this only re-materializes them.
     public static func unescapeJSON5(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> String {
+        // Same contract as `unescape`: caller owns `p[offset ..< offset + length]`, `p` does not escape.
+        assert(offset >= 0 && length >= 0, "unescapeJSON5 requires a non-negative byte range")
         var out: [UInt8] = []
         out.reserveCapacity(length)
         var j = offset
@@ -134,6 +139,9 @@ public enum JSONString {
     public static func unescapedEquals(
         _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, _ target: UnsafePointer<UInt8>, _ targetLength: Int
     ) -> Bool {
+        // Caller owns `p[offset ..< offset + length]` and `target[0 ..< targetLength]` for this call;
+        // neither pointer escapes. All four indices are non-negative (tape- / String-UTF8-derived).
+        assert(offset >= 0 && length >= 0 && targetLength >= 0, "unescapedEquals requires non-negative ranges")
         var t = 0
         // Match one decoded byte against the target; false on overrun or mismatch.
         func emit(_ b: UInt8) -> Bool {

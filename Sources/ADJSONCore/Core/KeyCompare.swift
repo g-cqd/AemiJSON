@@ -32,6 +32,8 @@ public enum JSONKey {
     public static func matches(
         _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, _ key: String
     ) -> Bool {
+        // Caller owns `p[off ..< off + len]` for this call; `p` is read-only and never escapes.
+        assert(off >= 0 && len >= 0, "key match requires a non-negative byte range")
         if escaped {
             var k = key
             return k.withUTF8 { kb in

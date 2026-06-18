@@ -252,6 +252,8 @@ public enum JSONOutput {
                 }
                 var end = dc
                 while end > start, digits[end - 1] == 0x30 { end -= 1 }
+                // The buffer addresses the stack `digits` allocation, valid only for this `body` call —
+                // `body` must consume it inline and must not store or return it (it dangles after).
                 body(negative, UnsafeBufferPointer(start: digitsBase + start, count: end - start), pointPos)
             }
         }

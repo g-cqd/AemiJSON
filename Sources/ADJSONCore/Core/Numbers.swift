@@ -20,6 +20,8 @@ public enum JSONNumber {
     // (≤15 UTF-8 bytes) use the inline small-string buffer, so no heap allocation occurs.
     @inline(__always)
     public static func parseDouble(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Double {
+        // Caller owns `p[offset ..< offset + length]` for this call; `p` is read-only and never escapes.
+        assert(offset >= 0 && length >= 0, "parseDouble requires a non-negative byte range")
         if let fast = parseDoubleFast(p, offset, length) { return fast }
         // The slow path also covers the JSON5-only spellings (Infinity / NaN / hex). The fast path
         // already returned for every strict/lenient number it can, so this never runs on their hot
@@ -136,6 +138,8 @@ public enum JSONNumber {
     public static func parseInteger<T: FixedWidthInteger>(
         _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, _ type: T.Type
     ) -> T? {
+        // Caller owns `p[offset ..< offset + length]` for this call; `p` is read-only and never escapes.
+        assert(offset >= 0 && length >= 0, "parseInteger requires a non-negative byte range")
         var idx = offset
         let end = offset + length
         guard idx < end else { return nil }
