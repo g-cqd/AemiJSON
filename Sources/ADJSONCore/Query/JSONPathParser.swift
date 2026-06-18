@@ -14,16 +14,30 @@ public struct JSONPathError: Error, Sendable, Equatable {
 struct JSONPathParser {
     let bytes: [UInt8]
     var i = 0
-    // Bounds the parser's structural recursion (parenthesised filter sub-expressions and nested
-    // bracket-filters / relative queries) so a crafted query (`((((…))))`, `[?@[?@[?…]]]`) can't
-    // exhaust the stack. `depth` is incremented at the two mutual-recursion entry points below
-    // (`parseSegments`, `parsePrimary`) and also bounds `evalFilter`'s walk of the resulting AST.
+    // Bounds the parser's structural recursion (parenthesised filter sub-expressions, nested
+    // bracket-filters / relative queries, and nested `length()`) so a crafted query (`((((…))))`,
+    // `[?@[?@[?…]]]`, `length(length(…))`) can't exhaust the stack. `depth` is incremented at every
+    // mutual-recursion entry point below (`parseSegments`, `parsePrimary`, `parseComparand`) and also
+    // bounds `evalFilter`'s walk of the resulting AST. (A bare member/bracket chain `$.a.a…` /
+    // `$[0][0]…` is NOT recursive — `parseSegments` loops over sibling segments at constant `depth` —
+    // so it is unbounded by this cap and stack-safe regardless.)
     //
-    // The cap is deliberately small: each nesting level costs ~3 KB of native stack, so a 512 KB
-    // secondary-thread stack (the realistic floor off the main thread) would overflow at ~160 levels —
-    // before a larger guard could fire. The RFC 9535 compliance suite never nests deeper than 3, so 64
-    // keeps a 20× headroom over any real query while staying well inside a small stack (~205 KB worst
-    // case); anything deeper is pathological and is rejected, not crashed.
+    // The binding case is the *heaviest* recursive path, the nested bracket-filter `[?@[?@[?…]]]`:
+    // each textual level traverses the full mutual-recursion chain
+    // (`parseSegments`→`parseBracket`→`parseBracketSelector`→`parseFilter`→`parseOr`→`parseAnd`→
+    // `parseNot`→`parsePrimary`→`parseComparand`→`parseRelQuery`→`parseSegments`), bumping `depth` ~3×
+    // and consuming ~7.5 KB of native stack per level. Crucially, because `depth` climbs ~3× per
+    // textual level, the cap is reached far sooner (in native frames) than its face value suggests.
+    //
+    // Sized against the realistic small-stack floor (a 512 KB secondary-thread stack — matching an
+    // event-loop / worker thread), empirically bisected on a 512 KB `Thread` (see PathParserDepthTests):
+    // the nested-filter path overflows that stack at `depth` ≈ 214 (debug) and — because an ASan build,
+    // which CI runs, inflates each frame ~2-3× — at `depth` ≈ 85 under ASan. A `depth` cap of 64 stops
+    // the recursion at ~64 native frames, ~21 counter-units (≈25 %) below even the ASan ceiling, so the
+    // GUARD always fires before the stack does. (The lighter paths — parentheses ~3 KB/level,
+    // `length()` ~2 KB/level — have far higher ceilings still.) 64 also keeps ~20× headroom over the
+    // RFC 9535 compliance suite, which never nests deeper than 3; anything deeper is pathological and is
+    // rejected, not crashed.
     var depth = 0
     static let maxDepth = 64
     // Monotonic counter handing every `RelQuery` a stable id (see `RelQuery.id`) for filter caching.

@@ -109,7 +109,8 @@ private let store = doc(
 @Test func deeplyNestedFilterStructureIsRejectedNotOverflowed() {
     // The filter parser's only growing recursion is structural (parens / nested bracket-filters);
     // the `enter()`/maxDepth guard must reject pathological nesting with an error rather than
-    // recurse to a crash. The guard fires at `maxDepth` (64) — far below the per-level stack budget —
+    // recurse to a crash. The guard fires at `maxDepth` (64) — sized below the native-stack budget of
+    // the heaviest (nested-filter) path on a 512 KB worker stack (see PathParserDepthTests) —
     // regardless of total length. (`&&`/`||`/`!` runs are already iterative, covered elsewhere.)
     let deepParens = "$[?" + String(repeating: "(", count: 1_000) + "@" + String(repeating: ")", count: 1_000) + "]"
     #expect(throws: JSONPathError.self) { try JSONPath(deepParens) }
