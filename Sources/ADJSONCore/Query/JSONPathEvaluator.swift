@@ -98,12 +98,18 @@ enum JSONPathEvaluator {
     // Recurses over the filter AST for the nested `&&`/`||`/`!` structure (the leaf tests —
     // existence, comparison, regex — bottom out into the iterative `evaluate`). The AST is produced
     // by `JSONPathParser`, whose `enter()`/`maxDepth` guard caps logical nesting, so this recursion
-    // is bounded (≤ `JSONPathParser.maxDepth`) and a crafted query can't drive it to overflow.
-    static func evalFilter(_ e: FilterExpr, current: JSON, root: JSON, cache: FilterCache) -> Bool {
+    // is bounded (≤ `JSONPathParser.maxDepth`). The local `depth` guard self-bounds it too, so it
+    // never depends on that far-away invariant: an over-deep AST conservatively matches nothing.
+    static func evalFilter(
+        _ e: FilterExpr, current: JSON, root: JSON, cache: FilterCache, depth: Int = 0
+    ) -> Bool {
+        guard depth <= JSONPathParser.maxDepth else { return false }
         switch e {
-            case .or(let xs): return xs.contains { evalFilter($0, current: current, root: root, cache: cache) }
-            case .and(let xs): return xs.allSatisfy { evalFilter($0, current: current, root: root, cache: cache) }
-            case .not(let x): return !evalFilter(x, current: current, root: root, cache: cache)
+            case .or(let xs):
+                return xs.contains { evalFilter($0, current: current, root: root, cache: cache, depth: depth + 1) }
+            case .and(let xs):
+                return xs.allSatisfy { evalFilter($0, current: current, root: root, cache: cache, depth: depth + 1) }
+            case .not(let x): return !evalFilter(x, current: current, root: root, cache: cache, depth: depth + 1)
             case .existence(let q): return !evalQuery(q, current: current, root: root, cache: cache).isEmpty
             case .comparison(let l, let op, let r):
                 return compare(

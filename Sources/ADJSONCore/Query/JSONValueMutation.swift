@@ -4,17 +4,16 @@ import OrderedCollections
 // (RFC 6902). These live in the Query layer — not in `Value` — so the value model stays
 // pure data + (de)serialization and the addressing/patch error domain is owned here.
 //
-// `adding`/`removing`/`replacing` recurse once per consumed pointer token (the path depth, which
-// the patch document controls). For a parsed patch that is bounded by the parser's `maxDepth`, but
-// a programmatically-built `JSONPointer` (or a multi-megabyte path string) is not — so each guards
-// against `maxMutationDepth` and throws `JSONPatchError.depthExceeded` rather than overflowing the
-// stack. (`value(at:)` is already iterative.) Converting these to an explicit stack is a follow-up.
+// `adding`/`removing`/`replacing` walk the pointer path with an explicit `descend` frame stack and
+// rebuild the spine bottom-up — no native recursion, so a pathologically deep (often attacker-built)
+// pointer cannot overflow the stack; depth is bounded only by the `maxMutationDepth` frame-array cap,
+// which throws `JSONPatchError.depthExceeded`. Only the containers ON the path are rebuilt; every
+// untouched subtree stays shared. (`value(at:)` is likewise iterative.)
 
 extension JSONValue {
-    /// Native-recursion cap for the pointer-mutation primitives. Sized well above any real pointer
-    /// depth yet far below the stack-overflow point on a small worker thread; frames here are light
-    /// (a switch + a copy-on-write container reference), so this is independent of the heavier
-    /// decode/encode caps and the parser's `maxDepth`.
+    /// Upper bound on pointer-path depth for the mutation primitives. The walk is iterative, so this
+    /// is a memory cap on the `descend` frame array (not a stack-overflow guard) — sized well above
+    /// any real pointer depth; a deeper (usually attacker-built) path throws `depthExceeded`.
     static let maxMutationDepth = 256
 
     /// The value at an RFC 6901 pointer, or nil if it doesn't resolve.
@@ -35,92 +34,130 @@ extension JSONValue {
         return current
     }
 
-    func adding(_ tokens: ArraySlice<String>, _ value: JSONValue, _ depth: Int = 0) throws(JSONPatchError) -> JSONValue
-    {
-        guard depth < Self.maxMutationDepth else { throw JSONPatchError.depthExceeded }
-        guard let first = tokens.first else { return value }  // empty path replaces the root
-        let rest = tokens.dropFirst()
-        switch self {
-            case .object(var members):
-                if rest.isEmpty {
-                    members[first] = value
-                } else {
-                    guard let child = members[first] else { throw JSONPatchError.pathNotFound }
-                    members[first] = try child.adding(rest, value, depth + 1)
-                }
-                return .object(members)
-            case .array(var elements):
-                if rest.isEmpty {
-                    if first == "-" {
-                        elements.append(value)
-                    } else {
-                        guard let i = JSONPointer.arrayIndex(first), i <= elements.count else {
-                            throw JSONPatchError.pathNotFound
-                        }
-                        elements.insert(value, at: i)
-                    }
-                } else {
-                    guard let i = JSONPointer.arrayIndex(first), i < elements.count else {
+    /// One descended container on the path from the root to the mutation point:
+    /// the container value and the token taken from it to reach the next level.
+    private typealias Frame = (container: JSONValue, token: String)
+
+    /// Walks `tokens` to the container that holds the FINAL token, recording each
+    /// ancestor container and the token taken from it. Returns nil for an empty
+    /// path (the caller decides what that means per operation). Fully iterative —
+    /// a pathologically deep pointer can't overflow the stack; depth is bounded by
+    /// the `maxMutationDepth` frame-array cap. Every intermediate child is required
+    /// to exist (a missing one is `pathNotFound`).
+    private func descend(
+        _ tokens: ArraySlice<String>
+    ) throws(JSONPatchError) -> (frames: [Frame], leaf: JSONValue, last: String)? {
+        guard tokens.count <= Self.maxMutationDepth else { throw JSONPatchError.depthExceeded }
+        guard let last = tokens.last else { return nil }
+        var frames: [Frame] = []
+        frames.reserveCapacity(tokens.count - 1)
+        var node = self
+        var index = tokens.startIndex
+        let stop = tokens.index(before: tokens.endIndex)
+        while index < stop {
+            let token = tokens[index]
+            switch node {
+                case .object(let members):
+                    guard let child = members[token] else { throw JSONPatchError.pathNotFound }
+                    frames.append((node, token))
+                    node = child
+                case .array(let elements):
+                    guard let i = JSONPointer.arrayIndex(token), i < elements.count else {
                         throw JSONPatchError.pathNotFound
                     }
-                    elements[i] = try elements[i].adding(rest, value, depth + 1)
-                }
-                return .array(elements)
-            default:
-                throw JSONPatchError.pathNotFound
+                    frames.append((node, token))
+                    node = elements[i]
+                default:
+                    throw JSONPatchError.pathNotFound
+            }
+            index = tokens.index(after: index)
         }
+        return (frames, node, last)
     }
 
-    func removing(_ tokens: ArraySlice<String>, _ depth: Int = 0) throws(JSONPatchError) -> JSONValue {
-        guard depth < Self.maxMutationDepth else { throw JSONPatchError.depthExceeded }
-        guard let first = tokens.first else { throw JSONPatchError.pathNotFound }
-        let rest = tokens.dropFirst()
-        switch self {
-            case .object(var members):
-                guard let existing = members[first] else { throw JSONPatchError.pathNotFound }
-                if rest.isEmpty {
-                    members[first] = nil
-                } else {
-                    members[first] = try existing.removing(rest, depth + 1)
-                }
-                return .object(members)
-            case .array(var elements):
-                guard let i = JSONPointer.arrayIndex(first), i < elements.count else {
-                    throw JSONPatchError.pathNotFound
-                }
-                if rest.isEmpty {
-                    elements.remove(at: i)
-                } else {
-                    elements[i] = try elements[i].removing(rest, depth + 1)
-                }
-                return .array(elements)
-            default:
-                throw JSONPatchError.pathNotFound
+    /// Folds a rewritten leaf back up the spine: only the containers on the path
+    /// are rebuilt (each frame's child slot was proven to exist in `descend`, so
+    /// this can't fail), leaving every untouched subtree shared.
+    private static func rebuild(_ frames: [Frame], _ child: JSONValue) -> JSONValue {
+        var result = child
+        for frame in frames.reversed() {
+            switch frame.container {
+                case .object(var members):
+                    members[frame.token] = result
+                    result = .object(members)
+                case .array(var elements):
+                    if let i = JSONPointer.arrayIndex(frame.token), i < elements.count {
+                        elements[i] = result
+                    }
+                    result = .array(elements)
+                default:
+                    break  // unreachable: `descend` only frames object/array containers
+            }
         }
+        return result
     }
 
-    func replacing(
-        _ tokens: ArraySlice<String>, _ value: JSONValue, _ depth: Int = 0
-    ) throws(JSONPatchError)
-        -> JSONValue
-    {
-        guard depth < Self.maxMutationDepth else { throw JSONPatchError.depthExceeded }
-        guard let first = tokens.first else { return value }
-        let rest = tokens.dropFirst()
-        switch self {
+    func adding(_ tokens: ArraySlice<String>, _ value: JSONValue) throws(JSONPatchError) -> JSONValue {
+        guard let (frames, leaf, last) = try descend(tokens) else { return value }  // empty path replaces the root
+        let newLeaf: JSONValue
+        switch leaf {
             case .object(var members):
-                guard let existing = members[first] else { throw JSONPatchError.pathNotFound }
-                members[first] = rest.isEmpty ? value : try existing.replacing(rest, value, depth + 1)
-                return .object(members)
+                members[last] = value
+                newLeaf = .object(members)
             case .array(var elements):
-                guard let i = JSONPointer.arrayIndex(first), i < elements.count else {
-                    throw JSONPatchError.pathNotFound
+                if last == "-" {
+                    elements.append(value)
+                } else {
+                    guard let i = JSONPointer.arrayIndex(last), i <= elements.count else {
+                        throw JSONPatchError.pathNotFound
+                    }
+                    elements.insert(value, at: i)
                 }
-                elements[i] = rest.isEmpty ? value : try elements[i].replacing(rest, value, depth + 1)
-                return .array(elements)
+                newLeaf = .array(elements)
             default:
                 throw JSONPatchError.pathNotFound
         }
+        return Self.rebuild(frames, newLeaf)
+    }
+
+    func removing(_ tokens: ArraySlice<String>) throws(JSONPatchError) -> JSONValue {
+        guard let (frames, leaf, last) = try descend(tokens) else { throw JSONPatchError.pathNotFound }
+        let newLeaf: JSONValue
+        switch leaf {
+            case .object(var members):
+                guard members[last] != nil else { throw JSONPatchError.pathNotFound }
+                members[last] = nil
+                newLeaf = .object(members)
+            case .array(var elements):
+                guard let i = JSONPointer.arrayIndex(last), i < elements.count else {
+                    throw JSONPatchError.pathNotFound
+                }
+                elements.remove(at: i)
+                newLeaf = .array(elements)
+            default:
+                throw JSONPatchError.pathNotFound
+        }
+        return Self.rebuild(frames, newLeaf)
+    }
+
+    func replacing(_ tokens: ArraySlice<String>, _ value: JSONValue) throws(JSONPatchError) -> JSONValue {
+        guard let (frames, leaf, last) = try descend(tokens) else { return value }
+        let newLeaf: JSONValue
+        switch leaf {
+            case .object(var members):
+                guard members[last] != nil else { throw JSONPatchError.pathNotFound }
+                members[last] = value
+                newLeaf = .object(members)
+            case .array(var elements):
+                guard let i = JSONPointer.arrayIndex(last), i < elements.count else {
+                    throw JSONPatchError.pathNotFound
+                }
+                elements[i] = value
+                newLeaf = .array(elements)
+            default:
+                throw JSONPatchError.pathNotFound
+        }
+        return Self.rebuild(frames, newLeaf)
     }
 }
 
