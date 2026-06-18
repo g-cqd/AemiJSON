@@ -136,7 +136,7 @@ private let store = doc(
         #"$[?search(@.s, "(a*)*")]"#,  // nested unbounded quantifier
         #"$[?match(@.s, "\\1")]"#,  // backreference (pattern is \1)
         #"$[?match(@.s, "(?=a)")]"#,  // lookahead
-        #"$[?search(@.s, "(?:ab)+")]"#,  // non-capturing group extension
+        #"$[?search(@.s, "(?:ab)+")]"#  // non-capturing group extension
     ]
     for q in unsafe { #expect(throws: JSONPathError.self) { try JSONPath(q) } }
 
@@ -144,7 +144,7 @@ private let store = doc(
         #"$[?search(@.s, "[AB]")]"#,
         #"$[?search(@.s, "a.*b")]"#,
         #"$[?search(@.s, "(ab)+")]"#,
-        #"$[?match(@.s, "a+b+")]"#,
+        #"$[?match(@.s, "a+b+")]"#
     ]
     for q in safe { #expect(throws: Never.self) { try JSONPath(q) } }
 }

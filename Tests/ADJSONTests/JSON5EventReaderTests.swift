@@ -10,26 +10,26 @@ private func readerValue(_ text: String, options: JSONParseOptions) throws -> JS
     var reader = JSONEventReader(text, options: options)
     func value(from event: JSONEvent) throws -> JSONValue {
         switch event {
-        case .null: return .null
-        case .bool(let b): return .bool(b)
-        case .number(let d): return .number(d)
-        case .string(let s): return .string(s)
-        case .beginArray:
-            var arr: [JSONValue] = []
-            while let e = try reader.next() {
-                if case .endArray = e { return .array(arr) }
-                arr.append(try value(from: e))
-            }
-            throw JSONError.unexpectedEndOfInput
-        case .beginObject:
-            var obj = OrderedDictionary<String, JSONValue>()
-            while let e = try reader.next() {
-                if case .endObject = e { return .object(obj) }
-                guard case .key(let k) = e, let ve = try reader.next() else { throw JSONError.unexpectedEndOfInput }
-                obj[k] = try value(from: ve)
-            }
-            throw JSONError.unexpectedEndOfInput
-        case .endArray, .endObject, .key: throw JSONError.unexpectedEndOfInput
+            case .null: return .null
+            case .bool(let b): return .bool(b)
+            case .number(let d): return .number(d)
+            case .string(let s): return .string(s)
+            case .beginArray:
+                var arr: [JSONValue] = []
+                while let e = try reader.next() {
+                    if case .endArray = e { return .array(arr) }
+                    arr.append(try value(from: e))
+                }
+                throw JSONError.unexpectedEndOfInput
+            case .beginObject:
+                var obj = OrderedDictionary<String, JSONValue>()
+                while let e = try reader.next() {
+                    if case .endObject = e { return .object(obj) }
+                    guard case .key(let k) = e, let ve = try reader.next() else { throw JSONError.unexpectedEndOfInput }
+                    obj[k] = try value(from: ve)
+                }
+                throw JSONError.unexpectedEndOfInput
+            case .endArray, .endObject, .key: throw JSONError.unexpectedEndOfInput
         }
     }
     guard let first = try reader.next() else { throw JSONError.unexpectedEndOfInput }
@@ -50,7 +50,7 @@ private func readerValue(_ text: String, options: JSONParseOptions) throws -> JS
         "{a:1,/*c*/b:2}",  // comment between members
         "{ $id: 1, _x: 2, café: 3 }",  // identifier keys incl. non-ASCII
         "[]",
-        "{}",
+        "{}"
     ]
     for doc in docs {
         let viaReader = try readerValue(doc, options: .json5)
@@ -96,33 +96,33 @@ private func valueFromEvents(_ events: [JSONEvent]) throws -> JSONValue {
         let ev = events[pos]
         pos += 1
         switch ev {
-        case .null: return .null
-        case .bool(let b): return .bool(b)
-        case .number(let d): return .number(d)
-        case .string(let s): return .string(s)
-        case .beginArray:
-            var arr: [JSONValue] = []
-            while pos < events.count {
-                if case .endArray = events[pos] {
-                    pos += 1
-                    return .array(arr)
+            case .null: return .null
+            case .bool(let b): return .bool(b)
+            case .number(let d): return .number(d)
+            case .string(let s): return .string(s)
+            case .beginArray:
+                var arr: [JSONValue] = []
+                while pos < events.count {
+                    if case .endArray = events[pos] {
+                        pos += 1
+                        return .array(arr)
+                    }
+                    arr.append(try value())
                 }
-                arr.append(try value())
-            }
-            throw JSONError.unexpectedEndOfInput
-        case .beginObject:
-            var obj = OrderedDictionary<String, JSONValue>()
-            while pos < events.count {
-                if case .endObject = events[pos] {
+                throw JSONError.unexpectedEndOfInput
+            case .beginObject:
+                var obj = OrderedDictionary<String, JSONValue>()
+                while pos < events.count {
+                    if case .endObject = events[pos] {
+                        pos += 1
+                        return .object(obj)
+                    }
+                    guard case .key(let k) = events[pos] else { throw JSONError.unexpectedEndOfInput }
                     pos += 1
-                    return .object(obj)
+                    obj[k] = try value()
                 }
-                guard case .key(let k) = events[pos] else { throw JSONError.unexpectedEndOfInput }
-                pos += 1
-                obj[k] = try value()
-            }
-            throw JSONError.unexpectedEndOfInput
-        case .endArray, .endObject, .key: throw JSONError.unexpectedEndOfInput
+                throw JSONError.unexpectedEndOfInput
+            case .endArray, .endObject, .key: throw JSONError.unexpectedEndOfInput
         }
     }
     return try value()
@@ -135,7 +135,7 @@ private func streamValue(_ text: String, chunkSize: Int, options: JSONParseOptio
     var idx = 0
     while idx < bytes.count {
         let end = Swift.min(idx + chunkSize, bytes.count)
-        events.append(contentsOf: try reader.feed(Array(bytes[idx..<end])))
+        events.append(contentsOf: try reader.feed(Array(bytes[idx ..< end])))
         idx = end
     }
     events.append(contentsOf: try reader.finish())
@@ -146,7 +146,7 @@ private func streamValue(_ text: String, chunkSize: Int, options: JSONParseOptio
     let docs = [
         "{a:1}", "{'a':1, b:2,}", "[1,2,3,]", "// c\n{x: 0xFF}", "{inf: Infinity, pos: +3}",
         #"{s:'it\'s', t:"a\nb"}"#, "/* block */ [.5, 5., -2.5e1, 0x10]", "{a:1,/*c*/b:2}",
-        "{ $id: 1, _x: 2 }", "[ {a:1}, {b:[2,3,]}, ]", "{a /* gap */ : 1}",
+        "{ $id: 1, _x: 2 }", "[ {a:1}, {b:[2,3,]}, ]", "{a /* gap */ : 1}"
     ]
     for doc in docs {
         let tape = JSONValue(try ADJSON.parse(doc, options: .json5).root)

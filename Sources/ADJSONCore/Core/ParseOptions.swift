@@ -72,6 +72,12 @@ public struct JSONParseOptions: Sendable {
     public static let iJSON = JSONParseOptions(
         validation: .strict, duplicateKeys: .throwError, restrictsNumbersToIEEE754: true)
 
-    @inline(__always) var isStrict: Bool { if case .strict = validation { return true } else { return false } }
-    @inline(__always) var isJSON5: Bool { if case .json5 = validation { return true } else { return false } }
+    @inline(__always) var isStrict: Bool {
+        guard case .strict = validation else { return false }
+        return true
+    }
+    @inline(__always) var isJSON5: Bool {
+        guard case .json5 = validation else { return false }
+        return true
+    }
 }

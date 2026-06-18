@@ -16,7 +16,7 @@ private func parses(_ bytes: [UInt8], _ options: JSONParseOptions = .strict) -> 
     }
     for invalid in [
         "01", "-01", "00", "1.", "-", ".5", "+5", "1e", "1e+", "1.2.3", "0x1", "--1", "Infinity", "NaN", "1.e5", "0.",
-        ".",
+        "."
     ] {
         #expect(!parses(invalid), "should reject \(invalid)")
     }

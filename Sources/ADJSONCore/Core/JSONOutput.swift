@@ -59,7 +59,7 @@ public enum JSONOutput {
                 buf[idx] = 0x30 + UInt8(truncatingIfNeeded: n % 10)
                 n /= 10
             } while n > 0
-            bytes.append(contentsOf: buf[idx..<40])
+            bytes.append(contentsOf: buf[idx ..< 40])
         }
     }
 
@@ -144,20 +144,20 @@ public enum JSONOutput {
     public static func appendEscape(_ b: UInt8, to bytes: inout [UInt8]) {
         bytes.append(0x5C)
         switch b {
-        case 0x22: bytes.append(0x22)
-        case 0x5C: bytes.append(0x5C)
-        case 0x2F: bytes.append(0x2F)
-        case 0x0A: bytes.append(0x6E)
-        case 0x0D: bytes.append(0x72)
-        case 0x09: bytes.append(0x74)
-        case 0x08: bytes.append(0x62)
-        case 0x0C: bytes.append(0x66)
-        default:
-            bytes.append(0x75)
-            bytes.append(0x30)
-            bytes.append(0x30)
-            bytes.append(hexDigit(b >> 4))
-            bytes.append(hexDigit(b & 0xF))
+            case 0x22: bytes.append(0x22)
+            case 0x5C: bytes.append(0x5C)
+            case 0x2F: bytes.append(0x2F)
+            case 0x0A: bytes.append(0x6E)
+            case 0x0D: bytes.append(0x72)
+            case 0x09: bytes.append(0x74)
+            case 0x08: bytes.append(0x62)
+            case 0x0C: bytes.append(0x66)
+            default:
+                bytes.append(0x75)
+                bytes.append(0x30)
+                bytes.append(0x30)
+                bytes.append(hexDigit(b >> 4))
+                bytes.append(hexDigit(b & 0xF))
         }
     }
 
@@ -226,17 +226,17 @@ public enum JSONOutput {
                 var dc = 0
                 var pointPos: Int
                 if dotAt >= 0 {
-                    for x in pos..<dotAt {
+                    for x in pos ..< dotAt {
                         digits[dc] = d[x]
                         dc += 1
                     }
-                    for x in (dotAt + 1)..<mantEnd {
+                    for x in (dotAt + 1) ..< mantEnd {
                         digits[dc] = d[x]
                         dc += 1
                     }
                     pointPos = dotAt - pos
                 } else {
-                    for x in pos..<mantEnd {
+                    for x in pos ..< mantEnd {
                         digits[dc] = d[x]
                         dc += 1
                     }
@@ -272,22 +272,22 @@ public enum JSONOutput {
             let n = pointPos
             if negative { bytes.append(0x2D) }
             if k <= n, n <= 21 {
-                for x in 0..<k { bytes.append(digits[x]) }
-                for _ in 0..<(n - k) { bytes.append(0x30) }
+                for x in 0 ..< k { bytes.append(digits[x]) }
+                for _ in 0 ..< (n - k) { bytes.append(0x30) }
             } else if n > 0, n <= 21 {
-                for x in 0..<n { bytes.append(digits[x]) }
+                for x in 0 ..< n { bytes.append(digits[x]) }
                 bytes.append(0x2E)
-                for x in n..<k { bytes.append(digits[x]) }
+                for x in n ..< k { bytes.append(digits[x]) }
             } else if n > -6, n <= 0 {
                 bytes.append(0x30)
                 bytes.append(0x2E)
-                for _ in 0..<(-n) { bytes.append(0x30) }
-                for x in 0..<k { bytes.append(digits[x]) }
+                for _ in 0 ..< (-n) { bytes.append(0x30) }
+                for x in 0 ..< k { bytes.append(digits[x]) }
             } else {
                 bytes.append(digits[0])
                 if k > 1 {
                     bytes.append(0x2E)
-                    for x in 1..<k { bytes.append(digits[x]) }
+                    for x in 1 ..< k { bytes.append(digits[x]) }
                 }
                 bytes.append(0x65)  // 'e'
                 let e = n - 1
@@ -305,7 +305,7 @@ public enum JSONOutput {
     public static func ecmaNumberToString(_ v: Double) -> String {
         if v.isNaN { return "NaN" }
         if v.isInfinite { return v < 0 ? "-Infinity" : "Infinity" }
-        var bytes = [UInt8]()
+        var bytes: [UInt8] = []
         bytes.reserveCapacity(24)  // ECMA-262 doubles render in ≤ 24 ASCII bytes
         appendECMANumber(v, to: &bytes)
         return String(decoding: bytes, as: UTF8.self)
@@ -322,9 +322,9 @@ public enum JSONOutput {
         _ v: Double, numberFormat: JSONEncodingOptions.NumberFormat, to bytes: inout [UInt8]
     ) {
         switch numberFormat {
-        case .ecma262: appendECMANumber(v, to: &bytes)
-        case .swiftShortest: JSONShortest.appendShortest(v, to: &bytes)
-        case .sqlitePrintfG: appendSQLitePrintfG(v, to: &bytes)
+            case .ecma262: appendECMANumber(v, to: &bytes)
+            case .swiftShortest: JSONShortest.appendShortest(v, to: &bytes)
+            case .sqlitePrintfG: appendSQLitePrintfG(v, to: &bytes)
         }
     }
 
@@ -334,15 +334,15 @@ public enum JSONOutput {
     public static func appendDouble(_ v: Double, options: JSONEncodingOptions, to bytes: inout [UInt8]) throws {
         guard v.isFinite else {
             switch options.nonFinite {
-            case .throw:
-                throw EncodingError.invalidValue(
-                    v, .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
-            case .null:
-                appendNull(to: &bytes)
-            case .stringLiterals(let pos, let neg, let nan):
-                appendString(
-                    v.isNaN ? nan : (v > 0 ? pos : neg), to: &bytes,
-                    escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+                case .throw:
+                    throw EncodingError.invalidValue(
+                        v, .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
+                case .null:
+                    appendNull(to: &bytes)
+                case .stringLiterals(let pos, let neg, let nan):
+                    appendString(
+                        v.isNaN ? nan : (v > 0 ? pos : neg), to: &bytes,
+                        escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
             }
             return
         }
@@ -358,9 +358,9 @@ public enum JSONOutput {
         _ v: Float, numberFormat: JSONEncodingOptions.NumberFormat, to bytes: inout [UInt8]
     ) {
         switch numberFormat {
-        case .ecma262: appendECMANumber(Double(v), to: &bytes)
-        case .swiftShortest: bytes.append(contentsOf: v.description.utf8)
-        case .sqlitePrintfG: appendSQLitePrintfG(Double(v), to: &bytes)
+            case .ecma262: appendECMANumber(Double(v), to: &bytes)
+            case .swiftShortest: bytes.append(contentsOf: v.description.utf8)
+            case .sqlitePrintfG: appendSQLitePrintfG(Double(v), to: &bytes)
         }
     }
 
@@ -371,15 +371,15 @@ public enum JSONOutput {
     public static func appendFloat(_ v: Float, options: JSONEncodingOptions, to bytes: inout [UInt8]) throws {
         guard v.isFinite else {
             switch options.nonFinite {
-            case .throw:
-                throw EncodingError.invalidValue(
-                    v, .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
-            case .null:
-                appendNull(to: &bytes)
-            case .stringLiterals(let pos, let neg, let nan):
-                appendString(
-                    v.isNaN ? nan : (v > 0 ? pos : neg), to: &bytes,
-                    escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+                case .throw:
+                    throw EncodingError.invalidValue(
+                        v, .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
+                case .null:
+                    appendNull(to: &bytes)
+                case .stringLiterals(let pos, let neg, let nan):
+                    appendString(
+                        v.isNaN ? nan : (v > 0 ? pos : neg), to: &bytes,
+                        escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
             }
             return
         }
@@ -418,14 +418,14 @@ public enum JSONOutput {
         }
         // Already has a fractional digit: copy verbatim.
         if dotIndex >= 0 {
-            for i in 0..<count { bytes.append(UInt8(bitPattern: buf[i])) }
+            for i in 0 ..< count { bytes.append(UInt8(bitPattern: buf[i])) }
             return
         }
         // No '.': insert ".0" — before the exponent if present, else at the end.
         let cut = expIndex >= 0 ? expIndex : count
-        for i in 0..<cut { bytes.append(UInt8(bitPattern: buf[i])) }
+        for i in 0 ..< cut { bytes.append(UInt8(bitPattern: buf[i])) }
         bytes.append(0x2E)
         bytes.append(0x30)
-        for i in cut..<count { bytes.append(UInt8(bitPattern: buf[i])) }
+        for i in cut ..< count { bytes.append(UInt8(bitPattern: buf[i])) }
     }
 }

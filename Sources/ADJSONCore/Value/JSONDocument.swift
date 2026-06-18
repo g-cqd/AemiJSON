@@ -12,8 +12,8 @@ public final class JSONDocument: Sendable {
 
         @inline(__always) var count: Int {
             switch self {
-            case .bytes(let b): return b.count
-            case .source(let s): return s.withBytes { $0.count }
+                case .bytes(let b): return b.count
+                case .source(let s): return s.withBytes { $0.count }
             }
         }
     }

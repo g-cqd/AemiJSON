@@ -41,7 +41,10 @@ extension ADJSON {
         /// extended number grammar). Matches `Foundation.JSONDecoder.allowsJSON5`. Setting it to
         /// `false` restores strict RFC 8259 parsing.
         public var allowsJSON5: Bool {
-            get { if case .json5 = options.validation { return true } else { return false } }
+            get {
+                guard case .json5 = options.validation else { return false }
+                return true
+            }
             set { options.validation = newValue ? .json5 : .strict }
         }
 

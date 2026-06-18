@@ -35,28 +35,31 @@ public struct JSON: Sendable {
 
     public var bool: Bool? {
         switch tag {
-        case JSONKind.boolTrue.rawValue: return true
-        case JSONKind.boolFalse.rawValue: return false
-        default: return nil
+            case JSONKind.boolTrue.rawValue: return true
+            case JSONKind.boolFalse.rawValue: return false
+            default: return nil
         }
     }
 
     public var int: Int? {
         guard tag == JSONKind.number.rawValue, Slot.flags(slot) & 1 == 1 else { return nil }
-        let off = Slot.low(slot), len = Slot.length(slot)
+        let off = Slot.low(slot)
+        let len = Slot.length(slot)
         return doc.withBytePointer { JSONNumber.parseInteger($0, off, len, Int.self) }
     }
 
     public var double: Double? {
         guard tag == JSONKind.number.rawValue else { return nil }
-        let off = Slot.low(slot), len = Slot.length(slot)
+        let off = Slot.low(slot)
+        let len = Slot.length(slot)
         return doc.withBytePointer { JSONNumber.parseDouble($0, off, len) }
     }
 
     /// Parse the number as any fixed-width integer type (used by the decoder).
     func integer<T: FixedWidthInteger>(_ type: T.Type) -> T? {
         guard tag == JSONKind.number.rawValue else { return nil }
-        let off = Slot.low(slot), len = Slot.length(slot)
+        let off = Slot.low(slot)
+        let len = Slot.length(slot)
         return doc.withBytePointer { JSONNumber.parseInteger($0, off, len, T.self) }
     }
 
@@ -71,7 +74,8 @@ public struct JSON: Sendable {
     /// (RFC 8259 numbers), so the decode never fails.
     public var numberLexeme: String? {
         guard tag == JSONKind.number.rawValue else { return nil }
-        let off = Slot.low(slot), len = Slot.length(slot)
+        let off = Slot.low(slot)
+        let len = Slot.length(slot)
         return doc.withBytePointer {
             String(decoding: UnsafeBufferPointer(start: $0 + off, count: len), as: UTF8.self)
         }
@@ -79,7 +83,8 @@ public struct JSON: Sendable {
 
     public var string: String? {
         guard tag == JSONKind.string.rawValue else { return nil }
-        let off = Slot.low(slot), len = Slot.length(slot)
+        let off = Slot.low(slot)
+        let len = Slot.length(slot)
         let esc = Slot.flags(slot) & 1 == 1
         return doc.withBytePointer { p in
             if !esc { return String(decoding: UnsafeBufferPointer(start: p + off, count: len), as: UTF8.self) }
@@ -99,7 +104,8 @@ public struct JSON: Sendable {
     /// for unescaped nodes. The literal is matched as raw UTF-8, so non-ASCII literals work too.
     public func utf8Equals(_ literal: StaticString) -> Bool {
         guard tag == JSONKind.string.rawValue else { return false }
-        let off = Slot.low(slot), len = Slot.length(slot)
+        let off = Slot.low(slot)
+        let len = Slot.length(slot)
         if Slot.flags(slot) & 1 == 1 {
             // JSON5's escape set requires the dedicated decoder, so it materializes once; strict/lenient
             // compare the decoded bytes on the fly via the alloc-free comparator.
@@ -123,7 +129,8 @@ public struct JSON: Sendable {
     /// escape it.
     public func withUTF8Bytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R? {
         guard tag == JSONKind.string.rawValue, Slot.flags(slot) & 1 == 0 else { return nil }
-        let off = Slot.low(slot), len = Slot.length(slot)
+        let off = Slot.low(slot)
+        let len = Slot.length(slot)
         return try doc.withBytePointer { p in
             try body(UnsafeRawBufferPointer(start: p + off, count: len))
         }
@@ -142,10 +149,10 @@ public struct JSON: Sendable {
     public var array: [JSON]? {
         guard tag == JSONKind.array.rawValue else { return nil }
         let c = Slot.count(slot)
-        var out = [JSON]()
+        var out: [JSON] = []
         out.reserveCapacity(c)
         var i = index + 1
-        for _ in 0..<c {
+        for _ in 0 ..< c {
             out.append(JSON(doc: doc, index: i))
             i = nextIndex(after: i)
         }
@@ -158,7 +165,7 @@ public struct JSON: Sendable {
         var out = [String: JSON](minimumCapacity: c)
         doc.withBytePointer { p in
             var i = index + 1
-            for _ in 0..<c {
+            for _ in 0 ..< c {
                 let k = doc.tape[i]
                 let keyStr = decodeKey(p, k)
                 out[keyStr] = JSON(doc: doc, index: i + 1)
@@ -175,7 +182,7 @@ public struct JSON: Sendable {
         guard tag == JSONKind.array.rawValue else { return }
         let c = Slot.count(slot)
         var i = index + 1
-        for _ in 0..<c {
+        for _ in 0 ..< c {
             body(JSON(doc: doc, index: i))
             i = nextIndex(after: i)
         }
@@ -189,7 +196,7 @@ public struct JSON: Sendable {
         let c = Slot.count(slot)
         doc.withBytePointer { p in
             var i = index + 1
-            for _ in 0..<c {
+            for _ in 0 ..< c {
                 let k = doc.tape[i]
                 body(decodeKey(p, k), JSON(doc: doc, index: i + 1))
                 i = nextIndex(after: i + 1)
@@ -230,7 +237,7 @@ public struct JSON: Sendable {
         return doc.withBytePointer { p -> JSON in
             var i = index + 1
             var found = -1  // last match wins (consistent with `object` and JS / Foundation)
-            for _ in 0..<c {
+            for _ in 0 ..< c {
                 let k = doc.tape[i]
                 let valIdx = i + 1
                 if keyMatches(p, k, key) {
@@ -248,7 +255,7 @@ public struct JSON: Sendable {
         let c = Slot.count(slot)
         guard idx < c else { return .missing(doc) }
         var i = index + 1
-        for _ in 0..<idx { i = nextIndex(after: i) }
+        for _ in 0 ..< idx { i = nextIndex(after: i) }
         return JSON(doc: doc, index: i)
     }
 
@@ -306,7 +313,8 @@ public struct JSON: Sendable {
 
     @inline(__always)
     private func decodeKey(_ p: UnsafePointer<UInt8>, _ keySlot: UInt64) -> String {
-        let off = Slot.low(keySlot), len = Slot.length(keySlot)
+        let off = Slot.low(keySlot)
+        let len = Slot.length(keySlot)
         if Slot.flags(keySlot) & 1 == 1 {
             return doc.isJSON5 ? JSONString.unescapeJSON5(p, off, len) : JSONString.unescape(p, off, len)
         }

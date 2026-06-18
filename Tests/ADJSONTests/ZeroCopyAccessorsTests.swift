@@ -97,7 +97,7 @@ import Testing
     }
     let bodies = [
         "", "hello", #"a\"b"#, #"\\"#, #"\/"#, #"\n\t\r\b\f"#, #"Aé中"#,
-        #"😀"#, #"mixAtext"#, #"\uD800x"#, #"\uDC00"#, #"\uD800\uD800"#, "plain text here",
+        #"😀"#, #"mixAtext"#, #"\uD800x"#, #"\uDC00"#, #"\uD800\uD800"#, "plain text here"
     ]
     for body in bodies {
         let decoded = refDecode(body)
@@ -155,11 +155,11 @@ import Testing
 @Test func ecmaNumberToStringMatchesKnownECMAOutputs() {
     let cases: [(Double, String)] = [
         (0, "0"), (-0.0, "0"), (1, "1"), (1.0, "1"), (-1, "-1"), (5.0, "5"),
-        (100, "100"), (1000000, "1000000"), (3.14, "3.14"), (0.1, "0.1"), (0.5, "0.5"),
-        (-0.25, "-0.25"), (1234.5678, "1234.5678"), (123456789, "123456789"),
-        (9007199254740992, "9007199254740992"),  // 2^53
+        (100, "100"), (1_000_000, "1000000"), (3.14, "3.14"), (0.1, "0.1"), (0.5, "0.5"),
+        (-0.25, "-0.25"), (1234.5678, "1234.5678"), (123_456_789, "123456789"),
+        (9_007_199_254_740_992, "9007199254740992"),  // 2^53
         (1e21, "1e+21"), (1e-7, "1e-7"), (1e-6, "0.000001"), (0.000001, "0.000001"),
-        (1.5e300, "1.5e+300"), (-1.5e-300, "-1.5e-300"),
+        (1.5e300, "1.5e+300"), (-1.5e-300, "-1.5e-300")
     ]
     for (value, expected) in cases {
         #expect(JSONOutput.ecmaNumberToString(value) == expected, "ecma(\(value))")
@@ -176,13 +176,13 @@ import Testing
     // The String convenience must agree byte-for-byte with the primitive for every finite value.
     var rng = SystemRandomNumberGenerator()
     func check(_ d: Double) {
-        var bytes = [UInt8]()
+        var bytes: [UInt8] = []
         JSONOutput.appendECMANumber(d, to: &bytes)
         #expect(JSONOutput.ecmaNumberToString(d) == String(decoding: bytes, as: UTF8.self), "\(d)")
     }
     for d in [0.0, -0.0, 1.0, -1.0, 42.0, 3.14159, 1e21, 1e-7, 1e308, 5e-324] { check(d) }
-    for _ in 0..<20_000 {
-        let d = Double(bitPattern: UInt64.random(in: 0...UInt64.max, using: &rng))
+    for _ in 0 ..< 20_000 {
+        let d = Double(bitPattern: UInt64.random(in: 0 ... UInt64.max, using: &rng))
         if d.isFinite { check(d) }
     }
 }
@@ -224,8 +224,8 @@ import Testing
 }
 
 @Test func borrowedParseRejectsEmptyBuffer() {
-    let empty = [UInt8]()
-    empty.withUnsafeBytes { raw in
+    let empty: [UInt8] = []
+    _ = empty.withUnsafeBytes { raw in
         #expect(throws: JSONError.self) { _ = try ADJSON.parse(raw) }
     }
 }
@@ -236,7 +236,7 @@ import Testing
         let doc = try ADJSON.parse(raw, options: .json5)
         #expect(doc.root.a.int == 1)
     }
-    bytes.withUnsafeBytes { raw in
+    _ = bytes.withUnsafeBytes { raw in
         #expect(throws: JSONError.self) { _ = try ADJSON.parse(raw, options: .strict) }
     }
 }
@@ -252,7 +252,7 @@ private struct Row: Decodable, Equatable {
 // read-only concurrent borrow is race-free.
 @Test func borrowedParseSupportsConcurrentDecode() async throws {
     let count = 1000
-    let items = (0..<count).map { #"{"id":\#($0),"name":"row\#($0)"}"# }.joined(separator: ",")
+    let items = (0 ..< count).map { #"{"id":\#($0),"name":"row\#($0)"}"# }.joined(separator: ",")
     let bytes = Array(("[" + items + "]").utf8)
     let raw = UnsafeMutableRawBufferPointer.allocate(byteCount: bytes.count, alignment: 1)
     defer { raw.deallocate() }
@@ -268,13 +268,15 @@ private struct Row: Decodable, Equatable {
 // MARK: isTruthy
 
 @Test func isTruthyFollowsJavaScriptRules() throws {
-    let root = try ADJSON.parse(
-        #"""
-        {"t":true,"f":false,"nul":null,"zero":0,"negzero":-0.0,"one":1,"negone":-1,
-         "fzero":0.0,"pi":3.14,"empty":"","s":"a","strzero":"0","strfalse":"false",
-         "space":" ","arr":[],"arr1":[1],"obj":{},"obj1":{"k":1}}
-        """#
-    ).root
+    let root =
+        try ADJSON.parse(
+            #"""
+            {"t":true,"f":false,"nul":null,"zero":0,"negzero":-0.0,"one":1,"negone":-1,
+             "fzero":0.0,"pi":3.14,"empty":"","s":"a","strzero":"0","strfalse":"false",
+             "space":" ","arr":[],"arr1":[1],"obj":{},"obj1":{"k":1}}
+            """#
+        )
+        .root
     #expect(root.t.isTruthy)
     #expect(!root.f.isTruthy)
     #expect(!root.nul.isTruthy)
@@ -314,9 +316,11 @@ private struct Row: Decodable, Equatable {
 // MARK: jsString
 
 @Test func jsStringCoercesScalars() throws {
-    let root = try ADJSON.parse(
-        #"{"nul":null,"t":true,"f":false,"i":42,"d":3.14,"neg":-0.0,"s":"hello","e":""}"#
-    ).root
+    let root =
+        try ADJSON.parse(
+            #"{"nul":null,"t":true,"f":false,"i":42,"d":3.14,"neg":-0.0,"s":"hello","e":""}"#
+        )
+        .root
     #expect(root.nul.jsString == "")
     #expect(root.t.jsString == "true")
     #expect(root.f.jsString == "false")

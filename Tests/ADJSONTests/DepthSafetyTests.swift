@@ -18,7 +18,7 @@ private struct FastNode: Codable, Sendable {
 // node(0) = {"next":[]}; node(n) wraps node(n-1) one level deeper.
 private func deepFastNodeJSON(_ depth: Int) -> String {
     var s = #"{"next":[]}"#
-    for _ in 0..<depth { s = #"{"next":["# + s + "]}" }
+    for _ in 0 ..< depth { s = #"{"next":["# + s + "]}" }
     return s
 }
 
@@ -76,7 +76,7 @@ struct DepthSafetyTests {
         // crashed ~37k deep). 500 levels is safe to bulk-release on the test thread.
         func deepArray(_ depth: Int, leaf: JSONValue) -> JSONValue {
             var value = leaf
-            for _ in 0..<depth { value = .array([value]) }
+            for _ in 0 ..< depth { value = .array([value]) }
             return value
         }
         #expect(deepArray(500, leaf: .int(1)) == deepArray(500, leaf: .int(1)))
@@ -111,8 +111,8 @@ struct DepthSafetyTests {
         let it = String(repeating: "[", count: dInstance) + String(repeating: "]", count: dInstance)
         let instance = try ADJSON.parse(it, options: JSONParseOptions(maxDepth: dInstance + 1)).root
         let validator = SchemaValidator(nodes: schema.nodes, registry: schema.registry, maxValidationDepth: 8)
-        var path = [String]()
-        var errors = [ValidationError]()
+        var path: [String] = []
+        var errors: [ValidationError] = []
         let ok = validator.validate(schema.rootIndex, instance, &path, &errors)
         #expect(!ok)  // failed closed (recorded an error, did not crash)
         #expect(errors.contains { $0.message.contains("maximum nesting depth") })
@@ -174,7 +174,7 @@ struct DepthSafetyTests {
         // over a matching tree must throw `JSONPatchError.depthExceeded`, not overflow.
         let d = 300
         var target: JSONValue = .int(0)
-        for _ in 0..<d { target = .object(["a": target]) }
+        for _ in 0 ..< d { target = .object(["a": target]) }
         let pointer = JSONPointer(tokens: Array(repeating: "a", count: d))
         let patch = JSONPatch(operations: [.replace(path: pointer, value: .int(1))])
         #expect(throws: JSONPatchError.self) { try patch.apply(to: target) }
@@ -182,7 +182,7 @@ struct DepthSafetyTests {
         // RFC 7396 merge-patch is non-throwing: past the cap it degrades to a replace, so a deep patch
         // completes (no crash) rather than recursing without bound.
         var deepPatch: JSONValue = .int(1)
-        for _ in 0..<d { deepPatch = .object(["a": deepPatch]) }
+        for _ in 0 ..< d { deepPatch = .object(["a": deepPatch]) }
         let merged = JSONMergePatch.apply(deepPatch, to: .object([:]))
         #expect(merged.value(at: JSONPointer(tokens: ["a"])) != nil)
     }

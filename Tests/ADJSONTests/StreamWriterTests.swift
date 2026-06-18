@@ -16,7 +16,7 @@ private func emit(_ build: (inout JSONStreamWriter) -> Void, options: JSONEncodi
     (3.14159, "3.14159"), (1234.5678, "1234.5678"), (1000000.0, "1000000"),
     (1e21, "1e+21"), (1e-7, "1e-7"), (0.0000001, "1e-7"), (1e-6, "0.000001"),
     (1e20, "100000000000000000000"), (1.5e300, "1.5e+300"), (2.5e-8, "2.5e-8"),
-    (9007199254740992.0, "9007199254740992"), (-1.5e-10, "-1.5e-10"),
+    (9007199254740992.0, "9007199254740992"), (-1.5e-10, "-1.5e-10")
 ])
 func ecma262NumberMatchesJSONStringify(_ input: Double, _ expected: String) {
     #expect(emit { $0.number(input) } == expected)

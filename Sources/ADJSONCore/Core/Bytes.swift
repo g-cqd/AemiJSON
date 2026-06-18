@@ -6,20 +6,20 @@ extension JSONDocument {
     @inline(__always)
     func withBytePointer<R>(_ body: (UnsafePointer<UInt8>) throws -> R) rethrows -> R {
         switch backing {
-        case .bytes(let b):
-            return try b.withUnsafeBufferPointer { buffer in
-                guard let base = buffer.baseAddress else {
-                    preconditionFailure("JSONDocument input is never empty")
+            case .bytes(let b):
+                return try b.withUnsafeBufferPointer { buffer in
+                    guard let base = buffer.baseAddress else {
+                        preconditionFailure("JSONDocument input is never empty")
+                    }
+                    return try body(base)
                 }
-                return try body(base)
-            }
-        case .source(let source):
-            return try source.withBytes { raw in
-                guard let base = raw.baseAddress else {
-                    preconditionFailure("JSONDocument input is never empty")
+            case .source(let source):
+                return try source.withBytes { raw in
+                    guard let base = raw.baseAddress else {
+                        preconditionFailure("JSONDocument input is never empty")
+                    }
+                    return try body(base.assumingMemoryBound(to: UInt8.self))
                 }
-                return try body(base.assumingMemoryBound(to: UInt8.self))
-            }
         }
     }
 

@@ -7,10 +7,10 @@ extension JSONDocument {
     func topLevelArrayElementStarts() -> [Int]? {
         guard !tape.isEmpty, Slot.tag(tape[0]) == JSONKind.array.rawValue else { return nil }
         let count = Slot.count(tape[0])
-        var out = [Int]()
+        var out: [Int] = []
         out.reserveCapacity(count)
         var i = 1
-        for _ in 0..<count {
+        for _ in 0 ..< count {
             out.append(i)
             let s = tape[i]
             let t = Slot.tag(s)
@@ -30,9 +30,9 @@ extension JSONDocument {
                 doc: self, bytes: byteBase, byteCount: byteCount,
                 tape: tapeBase, tapeCount: tapeCount, userInfo: [:], strategies: DecodeStrategies(),
                 maxDecodeDepth: maxDecodingDepth)
-            var out = [T]()
+            var out: [T] = []
             out.reserveCapacity(hi - lo)
-            for k in lo..<hi { out.append(try ctx.decodeValue(T.self, at: starts[k])) }
+            for k in lo ..< hi { out.append(try ctx.decodeValue(T.self, at: starts[k])) }
             return out
         }
     }
@@ -95,7 +95,7 @@ extension ADJSON {
             }
             var parts = [[T]?](repeating: nil, count: chunkIndex)
             for try await (i, part) in group { parts[i] = part }
-            var out = [T]()
+            var out: [T] = []
             out.reserveCapacity(n)
             for p in parts { out.append(contentsOf: p ?? []) }
             return out

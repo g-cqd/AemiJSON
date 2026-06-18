@@ -41,18 +41,18 @@ public struct SQLiteJSONPath: Sendable, Equatable {
         var current = root
         for segment in segments {
             switch segment {
-            case .key(let key):
-                current = current.isObject ? current[key] : .missing(current.doc)
-            case .index(let i):
-                current = current.isArray ? current[index: i] : .missing(current.doc)
-            case .fromEnd(let n):
-                if current.isArray, case let i = current.count - n, i >= 0 {
-                    current = current[index: i]
-                } else {
+                case .key(let key):
+                    current = current.isObject ? current[key] : .missing(current.doc)
+                case .index(let i):
+                    current = current.isArray ? current[index: i] : .missing(current.doc)
+                case .fromEnd(let n):
+                    if current.isArray, case let i = current.count - n, i >= 0 {
+                        current = current[index: i]
+                    } else {
+                        current = .missing(current.doc)
+                    }
+                case .append:
                     current = .missing(current.doc)
-                }
-            case .append:
-                current = .missing(current.doc)
             }
             if !current.exists { return current }
         }
@@ -73,14 +73,14 @@ extension SQLiteJSONPath {
             var segments: [Segment] = []
             while i < bytes.count {
                 switch bytes[i] {
-                case 0x2E:  // .
-                    i += 1
-                    segments.append(.key(try key()))
-                case 0x5B:  // [
-                    i += 1
-                    segments.append(try subscriptSegment())
-                default:
-                    throw .invalidSyntax(at: i)
+                    case 0x2E:  // .
+                        i += 1
+                        segments.append(.key(try key()))
+                    case 0x5B:  // [
+                        i += 1
+                        segments.append(try subscriptSegment())
+                    default:
+                        throw .invalidSyntax(at: i)
                 }
             }
             return segments
@@ -92,7 +92,7 @@ extension SQLiteJSONPath {
             let start = i
             while i < bytes.count, bytes[i] != 0x2E, bytes[i] != 0x5B { i += 1 }
             guard i > start else { throw .invalidSyntax(at: start) }  // empty label
-            return String(decoding: bytes[start..<i], as: UTF8.self)
+            return String(decoding: bytes[start ..< i], as: UTF8.self)
         }
 
         mutating func quotedKey() throws(SQLiteJSONPathError) -> String {
@@ -108,19 +108,19 @@ extension SQLiteJSONPath {
                     i += 1
                     guard i < bytes.count else { throw .invalidSyntax(at: i) }
                     switch bytes[i] {
-                    case 0x22: out.append(0x22)
-                    case 0x5C: out.append(0x5C)
-                    case 0x2F: out.append(0x2F)
-                    case 0x62: out.append(0x08)
-                    case 0x66: out.append(0x0C)
-                    case 0x6E: out.append(0x0A)
-                    case 0x72: out.append(0x0D)
-                    case 0x74: out.append(0x09)
-                    case 0x75:  // \uXXXX (+ surrogate pairs)
-                        guard let scalar = unicodeEscape() else { throw .invalidSyntax(at: i) }
-                        out.append(contentsOf: Array(String(scalar).utf8))
-                        continue
-                    default: throw .invalidSyntax(at: i)
+                        case 0x22: out.append(0x22)
+                        case 0x5C: out.append(0x5C)
+                        case 0x2F: out.append(0x2F)
+                        case 0x62: out.append(0x08)
+                        case 0x66: out.append(0x0C)
+                        case 0x6E: out.append(0x0A)
+                        case 0x72: out.append(0x0D)
+                        case 0x74: out.append(0x09)
+                        case 0x75:  // \uXXXX (+ surrogate pairs)
+                            guard let scalar = unicodeEscape() else { throw .invalidSyntax(at: i) }
+                            out.append(contentsOf: Array(String(scalar).utf8))
+                            continue
+                        default: throw .invalidSyntax(at: i)
                     }
                     i += 1
                     continue
@@ -135,14 +135,14 @@ extension SQLiteJSONPath {
             func hex4() -> UInt32? {
                 guard i + 5 <= bytes.count else { return nil }
                 var v: UInt32 = 0
-                for k in 1...4 {
+                for k in 1 ... 4 {
                     let b = bytes[i + k]
                     let digit: UInt32
                     switch b {
-                    case 0x30...0x39: digit = UInt32(b - 0x30)
-                    case 0x41...0x46: digit = UInt32(b - 0x41 + 10)
-                    case 0x61...0x66: digit = UInt32(b - 0x61 + 10)
-                    default: return nil
+                        case 0x30 ... 0x39: digit = UInt32(b - 0x30)
+                        case 0x41 ... 0x46: digit = UInt32(b - 0x41 + 10)
+                        case 0x61 ... 0x66: digit = UInt32(b - 0x61 + 10)
+                        default: return nil
                     }
                     v = v << 4 | digit
                 }
@@ -185,7 +185,7 @@ extension SQLiteJSONPath {
         mutating func integer() throws(SQLiteJSONPathError) -> Int {
             let start = i
             while i < bytes.count, bytes[i] >= 0x30, bytes[i] <= 0x39 { i += 1 }
-            guard i > start, let value = Int(String(decoding: bytes[start..<i], as: UTF8.self)) else {
+            guard i > start, let value = Int(String(decoding: bytes[start ..< i], as: UTF8.self)) else {
                 throw .invalidSyntax(at: start)
             }
             return value

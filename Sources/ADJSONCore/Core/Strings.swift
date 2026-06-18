@@ -4,7 +4,7 @@ public enum JSONString {
     // Decode a JSON string body (between quotes) that contains escape sequences.
     // The no-escape fast path is handled by the caller via `String(decoding:)`.
     public static func unescape(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> String {
-        var out = [UInt8]()
+        var out: [UInt8] = []
         out.reserveCapacity(length)
         var j = offset
         let end = offset + length
@@ -20,32 +20,32 @@ public enum JSONString {
             let e = p[j]
             j += 1
             switch e {
-            case 0x22: out.append(0x22)
-            case 0x5C: out.append(0x5C)
-            case 0x2F: out.append(0x2F)
-            case 0x6E: out.append(0x0A)
-            case 0x74: out.append(0x09)
-            case 0x72: out.append(0x0D)
-            case 0x62: out.append(0x08)
-            case 0x66: out.append(0x0C)
-            case 0x75:
-                let hi = readHex4(p, j, end)
-                j += 4
-                var scalar = UInt32(hi)
-                if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
-                    let lo = readHex4(p, j + 2, end)
-                    if lo >= 0xDC00 && lo <= 0xDFFF {
-                        scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
-                        j += 6
+                case 0x22: out.append(0x22)
+                case 0x5C: out.append(0x5C)
+                case 0x2F: out.append(0x2F)
+                case 0x6E: out.append(0x0A)
+                case 0x74: out.append(0x09)
+                case 0x72: out.append(0x0D)
+                case 0x62: out.append(0x08)
+                case 0x66: out.append(0x0C)
+                case 0x75:
+                    let hi = readHex4(p, j, end)
+                    j += 4
+                    var scalar = UInt32(hi)
+                    if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
+                        let lo = readHex4(p, j + 2, end)
+                        if lo >= 0xDC00 && lo <= 0xDFFF {
+                            scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
+                            j += 6
+                        }
                     }
-                }
-                if let us = Unicode.Scalar(scalar) {
-                    Unicode.UTF8.encode(us) { out.append($0) }
-                } else {
-                    out.append(contentsOf: [0xEF, 0xBF, 0xBD])  // U+FFFD
-                }
-            default:
-                out.append(e)
+                    if let us = Unicode.Scalar(scalar) {
+                        Unicode.UTF8.encode(us) { out.append($0) }
+                    } else {
+                        out.append(contentsOf: [0xEF, 0xBF, 0xBD])  // U+FFFD
+                    }
+                default:
+                    out.append(e)
             }
         }
         return String(decoding: out, as: UTF8.self)
@@ -55,7 +55,7 @@ public enum JSONString {
     // continuations (`\` + LF/CR/CRLF/U+2028/U+2029 → elided), and identity escapes (`\X` → `X`).
     // The scanner has already validated these, so this only re-materializes them.
     public static func unescapeJSON5(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> String {
-        var out = [UInt8]()
+        var out: [UInt8] = []
         out.reserveCapacity(length)
         var j = offset
         let end = offset + length
@@ -71,57 +71,57 @@ public enum JSONString {
             let e = p[j]
             j += 1
             switch e {
-            case 0x22: out.append(0x22)  // \"
-            case 0x27: out.append(0x27)  // \'
-            case 0x5C: out.append(0x5C)  // \\
-            case 0x2F: out.append(0x2F)  // \/
-            case 0x6E: out.append(0x0A)  // \n
-            case 0x74: out.append(0x09)  // \t
-            case 0x72: out.append(0x0D)  // \r
-            case 0x62: out.append(0x08)  // \b
-            case 0x66: out.append(0x0C)  // \f
-            case 0x76: out.append(0x0B)  // \v
-            case 0x30: out.append(0x00)  // \0 (scanner ensured no trailing digit)
-            case 0x78:  // \xHH → U+00HH (value <= 0xFF: the non-failable UInt8 scalar init, no force-unwrap)
-                // The scanner guarantees two hex digits follow, but don't make the in-bounds read
-                // depend on that invariant alone: bail if the buffer is somehow short.
-                guard j + 1 < end else { break unescape }
-                let value = UInt32(Hex.value(p[j]) ?? 0) << 4 | UInt32(Hex.value(p[j + 1]) ?? 0)
-                j += 2
-                Unicode.UTF8.encode(Unicode.Scalar(UInt8(truncatingIfNeeded: value))) { out.append($0) }
-            case 0x75:  // \uHHHH (+ surrogate pair)
-                let hi = readHex4(p, j, end)
-                j += 4
-                var scalar = UInt32(hi)
-                if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
-                    let lo = readHex4(p, j + 2, end)
-                    if lo >= 0xDC00 && lo <= 0xDFFF {
-                        scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
-                        j += 6
-                    }
-                }
-                if let us = Unicode.Scalar(scalar) {
-                    Unicode.UTF8.encode(us) { out.append($0) }
-                } else {
-                    out.append(contentsOf: [0xEF, 0xBF, 0xBD])  // U+FFFD
-                }
-            case 0x0A: break  // \ + LF → line continuation (elided)
-            case 0x0D: if j < end, p[j] == 0x0A { j += 1 }  // \ + CR / CRLF → elided
-            default:
-                if e >= 0x80 {  // identity-escaped multi-byte scalar, or a U+2028/U+2029 continuation
-                    let len = e >= 0xF0 ? 4 : (e >= 0xE0 ? 3 : 2)
-                    if len == 3, e == 0xE2, j + 1 < end, p[j] == 0x80, p[j + 1] == 0xA8 || p[j + 1] == 0xA9 {
-                        j += 2  // elide the U+2028/U+2029 line continuation (lead already consumed)
-                    } else {
-                        out.append(e)
-                        for _ in 1..<len where j < end {
-                            out.append(p[j])
-                            j += 1
+                case 0x22: out.append(0x22)  // \"
+                case 0x27: out.append(0x27)  // \'
+                case 0x5C: out.append(0x5C)  // \\
+                case 0x2F: out.append(0x2F)  // \/
+                case 0x6E: out.append(0x0A)  // \n
+                case 0x74: out.append(0x09)  // \t
+                case 0x72: out.append(0x0D)  // \r
+                case 0x62: out.append(0x08)  // \b
+                case 0x66: out.append(0x0C)  // \f
+                case 0x76: out.append(0x0B)  // \v
+                case 0x30: out.append(0x00)  // \0 (scanner ensured no trailing digit)
+                case 0x78:  // \xHH → U+00HH (value <= 0xFF: the non-failable UInt8 scalar init, no force-unwrap)
+                    // The scanner guarantees two hex digits follow, but don't make the in-bounds read
+                    // depend on that invariant alone: bail if the buffer is somehow short.
+                    guard j + 1 < end else { break unescape }
+                    let value = UInt32(Hex.value(p[j]) ?? 0) << 4 | UInt32(Hex.value(p[j + 1]) ?? 0)
+                    j += 2
+                    Unicode.UTF8.encode(Unicode.Scalar(UInt8(truncatingIfNeeded: value))) { out.append($0) }
+                case 0x75:  // \uHHHH (+ surrogate pair)
+                    let hi = readHex4(p, j, end)
+                    j += 4
+                    var scalar = UInt32(hi)
+                    if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
+                        let lo = readHex4(p, j + 2, end)
+                        if lo >= 0xDC00 && lo <= 0xDFFF {
+                            scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
+                            j += 6
                         }
                     }
-                } else {
-                    out.append(e)  // identity escape \X → X
-                }
+                    if let us = Unicode.Scalar(scalar) {
+                        Unicode.UTF8.encode(us) { out.append($0) }
+                    } else {
+                        out.append(contentsOf: [0xEF, 0xBF, 0xBD])  // U+FFFD
+                    }
+                case 0x0A: break  // \ + LF → line continuation (elided)
+                case 0x0D: if j < end, p[j] == 0x0A { j += 1 }  // \ + CR / CRLF → elided
+                default:
+                    if e >= 0x80 {  // identity-escaped multi-byte scalar, or a U+2028/U+2029 continuation
+                        let len = e >= 0xF0 ? 4 : (e >= 0xE0 ? 3 : 2)
+                        if len == 3, e == 0xE2, j + 1 < end, p[j] == 0x80, p[j + 1] == 0xA8 || p[j + 1] == 0xA9 {
+                            j += 2  // elide the U+2028/U+2029 line continuation (lead already consumed)
+                        } else {
+                            out.append(e)
+                            for _ in 1 ..< len where j < end {
+                                out.append(p[j])
+                                j += 1
+                            }
+                        }
+                    } else {
+                        out.append(e)  // identity escape \X → X
+                    }
             }
         }
         return String(decoding: out, as: UTF8.self)
@@ -155,49 +155,51 @@ public enum JSONString {
             let e = p[j]
             j += 1
             switch e {
-            case 0x22: if !emit(0x22) { return false }
-            case 0x5C: if !emit(0x5C) { return false }
-            case 0x2F: if !emit(0x2F) { return false }
-            case 0x6E: if !emit(0x0A) { return false }
-            case 0x74: if !emit(0x09) { return false }
-            case 0x72: if !emit(0x0D) { return false }
-            case 0x62: if !emit(0x08) { return false }
-            case 0x66: if !emit(0x0C) { return false }
-            case 0x75:
-                let hi = readHex4(p, j, end)
-                j += 4
-                var scalar = UInt32(hi)
-                if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
-                    let lo = readHex4(p, j + 2, end)
-                    if lo >= 0xDC00 && lo <= 0xDFFF {
-                        scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
-                        j += 6
+                case 0x22: if !emit(0x22) { return false }
+                case 0x5C: if !emit(0x5C) { return false }
+                case 0x2F: if !emit(0x2F) { return false }
+                case 0x6E: if !emit(0x0A) { return false }
+                case 0x74: if !emit(0x09) { return false }
+                case 0x72: if !emit(0x0D) { return false }
+                case 0x62: if !emit(0x08) { return false }
+                case 0x66: if !emit(0x0C) { return false }
+                case 0x75:
+                    let hi = readHex4(p, j, end)
+                    j += 4
+                    var scalar = UInt32(hi)
+                    if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
+                        let lo = readHex4(p, j + 2, end)
+                        if lo >= 0xDC00 && lo <= 0xDFFF {
+                            scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
+                            j += 6
+                        }
                     }
-                }
-                // Emit the scalar's UTF-8 (computed directly), or U+FFFD for an unpaired surrogate /
-                // out-of-range value — matching `unescape`.
-                if Unicode.Scalar(scalar) != nil {
-                    if scalar < 0x80 {
-                        if !emit(UInt8(scalar)) { return false }
-                    } else if scalar < 0x800 {
-                        if !emit(UInt8(0xC0 | (scalar >> 6))) || !emit(UInt8(0x80 | (scalar & 0x3F))) { return false }
-                    } else if scalar < 0x10000 {
-                        if !emit(UInt8(0xE0 | (scalar >> 12))) || !emit(UInt8(0x80 | ((scalar >> 6) & 0x3F)))
-                            || !emit(UInt8(0x80 | (scalar & 0x3F)))
-                        {
-                            return false
+                    // Emit the scalar's UTF-8 (computed directly), or U+FFFD for an unpaired surrogate /
+                    // out-of-range value — matching `unescape`.
+                    if Unicode.Scalar(scalar) != nil {
+                        if scalar < 0x80 {
+                            if !emit(UInt8(scalar)) { return false }
+                        } else if scalar < 0x800 {
+                            if !emit(UInt8(0xC0 | (scalar >> 6))) || !emit(UInt8(0x80 | (scalar & 0x3F))) {
+                                return false
+                            }
+                        } else if scalar < 0x10000 {
+                            if !emit(UInt8(0xE0 | (scalar >> 12))) || !emit(UInt8(0x80 | ((scalar >> 6) & 0x3F)))
+                                || !emit(UInt8(0x80 | (scalar & 0x3F)))
+                            {
+                                return false
+                            }
+                        } else {
+                            if !emit(UInt8(0xF0 | (scalar >> 18))) || !emit(UInt8(0x80 | ((scalar >> 12) & 0x3F)))
+                                || !emit(UInt8(0x80 | ((scalar >> 6) & 0x3F))) || !emit(UInt8(0x80 | (scalar & 0x3F)))
+                            {
+                                return false
+                            }
                         }
                     } else {
-                        if !emit(UInt8(0xF0 | (scalar >> 18))) || !emit(UInt8(0x80 | ((scalar >> 12) & 0x3F)))
-                            || !emit(UInt8(0x80 | ((scalar >> 6) & 0x3F))) || !emit(UInt8(0x80 | (scalar & 0x3F)))
-                        {
-                            return false
-                        }
+                        if !emit(0xEF) || !emit(0xBF) || !emit(0xBD) { return false }
                     }
-                } else {
-                    if !emit(0xEF) || !emit(0xBF) || !emit(0xBD) { return false }
-                }
-            default: if !emit(e) { return false }
+                default: if !emit(e) { return false }
             }
         }
         return t == targetLength

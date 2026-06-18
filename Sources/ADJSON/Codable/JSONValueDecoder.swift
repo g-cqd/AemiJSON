@@ -78,17 +78,17 @@ struct JSONValueDecoderImpl: Decoder {
 
     func unboxDouble(_ value: JSONValue, _ codingPath: [any CodingKey]) throws -> Double {
         switch value {
-        case .number(let d): return d
-        case .int(let i): return Double(i)
-        case .string(let s):
-            if case let .convertFromString(pos, neg, nan) = strategies.nonConformingFloat {
-                if s == pos { return .infinity }
-                if s == neg { return -.infinity }
-                if s == nan { return .nan }
-            }
-            throw typeMismatch(Double.self, value, codingPath)
-        default:
-            throw typeMismatch(Double.self, value, codingPath)
+            case .number(let d): return d
+            case .int(let i): return Double(i)
+            case .string(let s):
+                if case .convertFromString(let pos, let neg, let nan) = strategies.nonConformingFloat {
+                    if s == pos { return .infinity }
+                    if s == neg { return -.infinity }
+                    if s == nan { return .nan }
+                }
+                throw typeMismatch(Double.self, value, codingPath)
+            default:
+                throw typeMismatch(Double.self, value, codingPath)
         }
     }
 
@@ -100,48 +100,48 @@ struct JSONValueDecoderImpl: Decoder {
         _ value: JSONValue, _ type: I.Type, _ codingPath: [any CodingKey]
     ) throws -> I {
         switch value {
-        case .int(let i):
-            guard let v = I(exactly: i) else { throw numberDoesNotFit(type, "\(i)", codingPath) }
-            return v
-        case .number(let d):
-            guard let v = I(exactly: d) else { throw numberDoesNotFit(type, "\(d)", codingPath) }
-            return v
-        default:
-            throw typeMismatch(type, value, codingPath)
+            case .int(let i):
+                guard let v = I(exactly: i) else { throw numberDoesNotFit(type, "\(i)", codingPath) }
+                return v
+            case .number(let d):
+                guard let v = I(exactly: d) else { throw numberDoesNotFit(type, "\(d)", codingPath) }
+                return v
+            default:
+                throw typeMismatch(type, value, codingPath)
         }
     }
 
     private func unboxDate(_ value: JSONValue, _ codingPath: [any CodingKey]) throws -> Date {
         switch strategies.date {
-        case .deferredToDate: return try Date(from: child(value, codingPath))
-        case .secondsSince1970: return Date(timeIntervalSince1970: try unboxDouble(value, codingPath))
-        case .millisecondsSince1970: return Date(timeIntervalSince1970: try unboxDouble(value, codingPath) / 1000)
-        case .iso8601:
-            let s = try unboxString(value, codingPath)
-            guard let date = DateDataDecoding.iso8601(s) else {
-                throw dataCorrupted(DateDataDecoding.iso8601Mismatch, codingPath)
-            }
-            return date
-        case .formatted(let formatter):
-            let s = try unboxString(value, codingPath)
-            guard let date = formatter.date(from: s) else {
-                throw dataCorrupted(DateDataDecoding.formattedMismatch, codingPath)
-            }
-            return date
-        case .custom(let body): return try body(child(value, codingPath))
+            case .deferredToDate: return try Date(from: child(value, codingPath))
+            case .secondsSince1970: return Date(timeIntervalSince1970: try unboxDouble(value, codingPath))
+            case .millisecondsSince1970: return Date(timeIntervalSince1970: try unboxDouble(value, codingPath) / 1000)
+            case .iso8601:
+                let s = try unboxString(value, codingPath)
+                guard let date = DateDataDecoding.iso8601(s) else {
+                    throw dataCorrupted(DateDataDecoding.iso8601Mismatch, codingPath)
+                }
+                return date
+            case .formatted(let formatter):
+                let s = try unboxString(value, codingPath)
+                guard let date = formatter.date(from: s) else {
+                    throw dataCorrupted(DateDataDecoding.formattedMismatch, codingPath)
+                }
+                return date
+            case .custom(let body): return try body(child(value, codingPath))
         }
     }
 
     private func unboxData(_ value: JSONValue, _ codingPath: [any CodingKey]) throws -> Data {
         switch strategies.data {
-        case .deferredToData: return try Data(from: child(value, codingPath))
-        case .base64:
-            let s = try unboxString(value, codingPath)
-            guard let data = DateDataDecoding.base64(s) else {
-                throw dataCorrupted(DateDataDecoding.invalidBase64, codingPath)
-            }
-            return data
-        case .custom(let body): return try body(child(value, codingPath))
+            case .deferredToData: return try Data(from: child(value, codingPath))
+            case .base64:
+                let s = try unboxString(value, codingPath)
+                guard let data = DateDataDecoding.base64(s) else {
+                    throw dataCorrupted(DateDataDecoding.invalidBase64, codingPath)
+                }
+                return data
+            case .custom(let body): return try body(child(value, codingPath))
         }
     }
 
@@ -151,20 +151,20 @@ struct JSONValueDecoderImpl: Decoder {
     // lexeme via `decodeDecimal`).
     private func unboxDecimal(_ value: JSONValue, _ codingPath: [any CodingKey]) throws -> Decimal {
         switch value {
-        case .int(let i): return Decimal(i)
-        case .number(let d):
-            guard let decimal = decimalFromDouble(d) else { throw typeMismatch(Decimal.self, value, codingPath) }
-            return decimal
-        default:
-            throw typeMismatch(Decimal.self, value, codingPath)
+            case .int(let i): return Decimal(i)
+            case .number(let d):
+                guard let decimal = decimalFromDouble(d) else { throw typeMismatch(Decimal.self, value, codingPath) }
+                return decimal
+            default:
+                throw typeMismatch(Decimal.self, value, codingPath)
         }
     }
 
     func applyKeyDecoding(_ key: String) -> String {
         switch strategies.key {
-        case .useDefaultKeys: return key
-        case .convertFromSnakeCase: return convertFromSnakeCase(key)
-        case .custom(let transform): return transform(key)
+            case .useDefaultKeys: return key
+            case .convertFromSnakeCase: return convertFromSnakeCase(key)
+            case .custom(let transform): return transform(key)
         }
     }
 
@@ -187,15 +187,18 @@ struct JSONValueDecoderImpl: Decoder {
 extension JSONValue {
     fileprivate var kindLabel: String {
         switch self {
-        case .null: return "null"
-        case .bool: return "a boolean"
-        case .int, .number: return "a number"
-        case .string: return "a string"
-        case .array: return "an array"
-        case .object: return "an object"
+            case .null: return "null"
+            case .bool: return "a boolean"
+            case .int, .number: return "a number"
+            case .string: return "a string"
+            case .array: return "an array"
+            case .object: return "an object"
         }
     }
-    fileprivate var isNull: Bool { if case .null = self { return true } else { return false } }
+    fileprivate var isNull: Bool {
+        guard case .null = self else { return false }
+        return true
+    }
 }
 
 // MARK: - Keyed

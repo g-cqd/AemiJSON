@@ -28,7 +28,7 @@ private let samples: [E] = [
         ints: [], points: [], meta: [:], maybe: nil),
     E(
         id: 2, title: "héllo", note: "set", flag: false, ratio: -0.25, big: 9_000_000_000,
-        ints: [1, 2, 3], points: [Pt(x: 1, y: 2), Pt(x: 3, y: 4)], meta: ["k": 7], maybe: Pt(x: 9, y: 9)),
+        ints: [1, 2, 3], points: [Pt(x: 1, y: 2), Pt(x: 3, y: 4)], meta: ["k": 7], maybe: Pt(x: 9, y: 9))
 ]
 
 @Test func encodeRoundTripsThroughFoundationAndSelf() throws {
@@ -74,7 +74,7 @@ private let samples: [E] = [
     struct F: Codable, Equatable { var v: Float }
     let cases: [(Float, String)] = [
         (0.1, "0.1"), (0.2, "0.2"), (3.14, "3.14"), (-0.25, "-0.25"), (1.5, "1.5"),
-        (0.30000001, "0.3"), (1e20, "1e+20"), (2, "2.0"),
+        (0.30000001, "0.3"), (1e20, "1e+20"), (2, "2.0")
     ]
     let adj = ADJSON.JSONEncoder()
     for (x, s) in cases {
@@ -139,7 +139,7 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
 @Test func htmlSafeEscapingEscapesUnsafeCharacters() throws {
     let samples: [JSONValue] = [
         .string("a<b>c&d"), .string("x" + lineSep + "y" + paraSep + "z"),
-        .object(["a&b": .int(1)]), .array([.string("<x>"), .string("café 😀")]),
+        .object(["a&b": .int(1)]), .array([.string("<x>"), .string("café 😀")])
     ]
     for v in samples {
         let bytes = try v.encodedBytes(options: JSONEncodingOptions(escapeHTMLUnsafe: true))
@@ -160,7 +160,7 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
         #"[1,2.5,3e2,-0.0,1000000,9223372036854775807,99999999999999999999,"s","a/b","<x>",true,false,null]"#,
         #"{"deep":{"a":{"b":{"c":[{"d":1}]}}}}"#,
         "{}", "[]", #"{"only":[]}"#, "3.14", #""x""#,
-        #"{"k":[{"m":1,"a":2},{"z":3}],"a":[]}"#,
+        #"{"k":[{"m":1,"a":2},{"z":3}],"a":[]}"#
     ]
     let optionSets: [JSONEncodingOptions] = [
         .rfc8259,
@@ -169,7 +169,7 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
         JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true),
         JSONEncodingOptions(numberFormat: .ecma262, keyOrder: .sorted, prettyPrinted: true),
         JSONEncodingOptions(escapeSlashes: true, prettyPrinted: true),
-        JSONEncodingOptions(prettyPrinted: true, escapeHTMLUnsafe: true),
+        JSONEncodingOptions(prettyPrinted: true, escapeHTMLUnsafe: true)
     ]
     for doc in docs {
         let root = try ADJSON.parse(doc).root
@@ -223,11 +223,12 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     // objects (≈2× Foundation's hard 512) round-trip through parse → materialize → re-encode.
     let depth = 1000
     var deep = JSONValue.number(1)
-    for _ in 0..<depth { deep = .object(["x": deep]) }
+    for _ in 0 ..< depth { deep = .object(["x": deep]) }
     let bytes = try deep.encodedBytes()
     let reEncoded = try JSONValue(
         try ADJSON.parse(bytes, options: JSONParseOptions(maxDepth: depth + 1)).root
-    ).encodedBytes()
+    )
+    .encodedBytes()
     #expect(bytes == reEncoded)  // byte compare avoids deep traversal in the assertion
 }
 

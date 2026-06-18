@@ -21,11 +21,11 @@ struct BenchComparePlugin: CommandPlugin {
         var iterator = arguments.makeIterator()
         while let arg = iterator.next() {
             switch arg {
-            case "--filter": filter = iterator.next()
-            case "--input": inputFile = iterator.next()
-            case "--bin-path": binPathOverride = iterator.next()
-            case "--config": if let value = iterator.next() { config = value }
-            default: break
+                case "--filter": filter = iterator.next()
+                case "--input": inputFile = iterator.next()
+                case "--bin-path": binPathOverride = iterator.next()
+                case "--config": if let value = iterator.next() { config = value }
+                default: break
             }
         }
 
@@ -129,12 +129,12 @@ enum BenchComparison {
         var baseline: [String: String] = [:]
         for entry in order {
             guard let slash = entry.firstIndex(of: "/") else { continue }
-            let category = String(entry[entry.startIndex..<slash])
+            let category = String(entry[entry.startIndex ..< slash])
             let remainder = String(entry[entry.index(after: slash)...])
             let group: String
             let label: String
             if category == "corpus", let gap = remainder.firstIndex(of: " ") {
-                group = category + "/" + String(remainder[remainder.startIndex..<gap])
+                group = category + "/" + String(remainder[remainder.startIndex ..< gap])
                 label = String(remainder[remainder.index(after: gap)...])
             } else {
                 group = category
@@ -147,7 +147,7 @@ enum BenchComparison {
 
         var lines = [
             "| Workload | Foundation | ADJSON | p50 (F) | p50 (A) | Speedup | Mallocs (F→A) |",
-            "|---|---|---|--:|--:|--:|--:|",
+            "|---|---|---|--:|--:|--:|--:|"
         ]
         var rows = 0
         for entry in order {

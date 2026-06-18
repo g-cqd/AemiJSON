@@ -55,9 +55,9 @@ final class EncodeState {
     /// Convert a `CodingKey` string to its JSON form under the active key-encoding strategy.
     func transformedKey(_ key: String) -> String {
         switch strategies.key {
-        case .useDefaultKeys: return key
-        case .convertToSnakeCase: return convertToSnakeCase(key)
-        case .custom(let transform): return transform(key)
+            case .useDefaultKeys: return key
+            case .convertToSnakeCase: return convertToSnakeCase(key)
+            case .custom(let transform): return transform(key)
         }
     }
 
@@ -92,31 +92,31 @@ final class EncodeState {
 
     func encodeDate(_ date: Date) throws {
         switch strategies.date {
-        case .deferredToDate:
-            try date.encode(to: TapeEncoder(state: self))
-        case .secondsSince1970:
-            try appendDouble(date.timeIntervalSince1970)
-        case .millisecondsSince1970:
-            try appendDouble(date.timeIntervalSince1970 * 1000)
-        case .iso8601:
-            // `Date.ISO8601FormatStyle` (Sendable, allocation-free) replaces the non-Sendable
-            // `ISO8601DateFormatter`; its default output is byte-identical to Foundation's `.iso8601`.
-            w.writeString(date.formatted(.iso8601))
-        case .formatted(let formatter):
-            w.writeString(formatter.string(from: date))
-        case .custom(let body):
-            try body(date, TapeEncoder(state: self))
+            case .deferredToDate:
+                try date.encode(to: TapeEncoder(state: self))
+            case .secondsSince1970:
+                try appendDouble(date.timeIntervalSince1970)
+            case .millisecondsSince1970:
+                try appendDouble(date.timeIntervalSince1970 * 1000)
+            case .iso8601:
+                // `Date.ISO8601FormatStyle` (Sendable, allocation-free) replaces the non-Sendable
+                // `ISO8601DateFormatter`; its default output is byte-identical to Foundation's `.iso8601`.
+                w.writeString(date.formatted(.iso8601))
+            case .formatted(let formatter):
+                w.writeString(formatter.string(from: date))
+            case .custom(let body):
+                try body(date, TapeEncoder(state: self))
         }
     }
 
     func encodeData(_ data: Data) throws {
         switch strategies.data {
-        case .deferredToData:
-            try data.encode(to: TapeEncoder(state: self))
-        case .base64:
-            w.writeString(data.base64EncodedString())
-        case .custom(let body):
-            try body(data, TapeEncoder(state: self))
+            case .deferredToData:
+                try data.encode(to: TapeEncoder(state: self))
+            case .base64:
+                w.writeString(data.base64EncodedString())
+            case .custom(let body):
+                try body(data, TapeEncoder(state: self))
         }
     }
 

@@ -8,9 +8,11 @@ import PackageDescription
 // tighten existentials and import visibility.
 let strictSettings: [SwiftSetting] = [
     .swiftLanguageMode(.v6),
+    .treatAllWarnings(as: .error),
     .enableUpcomingFeature("ExistentialAny"),
+    .enableUpcomingFeature("InferIsolatedConformances"),
     .enableUpcomingFeature("InternalImportsByDefault"),
-    .enableUpcomingFeature("MemberImportVisibility"),
+    .enableUpcomingFeature("MemberImportVisibility")
 ]
 
 // Compile-time type-check timing warnings (flag slow expressions / function bodies). These
@@ -19,7 +21,7 @@ let strictSettings: [SwiftSetting] = [
 let timingWarningFlags: [SwiftSetting] = [
     .unsafeFlags([
         "-Xfrontend", "-warn-long-function-bodies=100",
-        "-Xfrontend", "-warn-long-expression-type-checking=100",
+        "-Xfrontend", "-warn-long-expression-type-checking=100"
     ])
 ]
 
@@ -31,7 +33,7 @@ let timingWarningFlags: [SwiftSetting] = [
 let testTimingWarningFlags: [SwiftSetting] = [
     .unsafeFlags([
         "-Xfrontend", "-warn-long-function-bodies=250",
-        "-Xfrontend", "-warn-long-expression-type-checking=100",
+        "-Xfrontend", "-warn-long-expression-type-checking=100"
     ])
 ]
 
@@ -44,9 +46,9 @@ let testSettings: [SwiftSetting] =
 
 // Dev-only tooling is gated behind `ADJSON_DEV` so packages that depend on ADJSON never resolve it
 // (consumers keep just swift-syntax, which the macro needs). Contributors and CI set `ADJSON_DEV=1`
-// to enable the DocC plugin (`swift package generate-documentation`) and build-time lint
-// enforcement. The `format` / `lint` / `fetch-fixtures` command plugins carry no external
-// dependencies, so they are always available without the flag.
+// to enable the DocC plugin, the shared ADBuildTools `format` / `lint` / `LintBuild` plugins, and the
+// benchmark suite. The local `coverage-check` / `bench-compare` / `fetch-fixtures` command plugins carry
+// no external dependencies, so they stay available without the flag.
 let isDev = Context.environment["ADJSON_DEV"] != nil
 
 // The libFuzzer target is gated behind `ADJSON_FUZZ` so the default `swift build` is never asked to
@@ -77,9 +79,17 @@ var packageDependencies: [Package.Dependency] = [
     // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
     // with zero transitive package dependencies (measured), so the core stays portable; together with
     // `ADFCore` it is one of the two shipped dependencies of `ADJSONCore` beyond the standard library.
-    .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"),
+    .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0")
 ]
 if isDev {
+    // Shared lint/format tooling (Format/Lint/LintBuild plugins + canonical `.swift-format`). Dev-only,
+    // resolved from a local checkout via `ADBUILDTOOLS_PATH`, otherwise the published `main` branch.
+    if let path = Context.environment["ADBUILDTOOLS_PATH"], !path.isEmpty {
+        packageDependencies.append(.package(path: path))
+    } else {
+        packageDependencies.append(
+            .package(url: "https://github.com/g-cqd/ADBuildTools.git", branch: "main"))
+    }
     packageDependencies.append(
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.0.0"))
     // ordo-one's statistically-rigorous benchmark framework (p-percentile latencies, malloc /
@@ -102,7 +112,8 @@ let adfCore: Target.Dependency = .product(name: "ADFCore", package: "ADFoundatio
 
 // Build-time formatting enforcement attaches to the library only in dev/CI. A build-tool plugin on
 // a library target would otherwise run for everyone who depends on ADJSON, so it stays gated.
-let adjsonBuildPlugins: [Target.PluginUsage] = isDev ? ["LintBuild"] : []
+let adjsonBuildPlugins: [Target.PluginUsage] =
+    isDev ? [.plugin(name: "LintBuild", package: "ADBuildTools")] : []
 
 let package = Package(
     name: "ADJSON",
@@ -118,7 +129,7 @@ let package = Package(
         .iOS(.v18),
         .tvOS(.v18),
         .watchOS(.v11),
-        .visionOS(.v2),
+        .visionOS(.v2)
     ],
     products: [
         // The full library: the engine plus Foundation interop, Codable, Schema, and the macros.
@@ -126,7 +137,7 @@ let package = Package(
         // The engine on its own — Foundation-free and swift-syntax-free (its dependencies,
         // OrderedCollections and ADFCore, are themselves Foundation-free with no transitive deps):
         // tape parsing, lazy navigation, JSONValue, and JSONPath/Pointer/Patch. For a lean core.
-        .library(name: "ADJSONCore", targets: ["ADJSONCore"]),
+        .library(name: "ADJSONCore", targets: ["ADJSONCore"])
     ],
     dependencies: packageDependencies,
     targets: [
@@ -136,7 +147,7 @@ let package = Package(
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
-                .product(name: "ADFMacroSupport", package: "ADFoundation"),
+                .product(name: "ADFMacroSupport", package: "ADFoundation")
             ],
             swiftSettings: strictSettings
         ),
@@ -155,23 +166,14 @@ let package = Package(
             name: "ADJSONTests",
             dependencies: [
                 "ADJSON",
-                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax")
             ],
             resources: [.copy("Resources")],
             swiftSettings: testSettings
         ),
 
-        // Developer tooling. Command plugins are dependency-free (they drive the toolchain's
-        // bundled `swift format`), so they impose nothing on packages that depend on ADJSON.
-        .plugin(
-            name: "Format",
-            capability: .command(
-                intent: .custom(verb: "format", description: "Format Swift sources with swift-format"),
-                permissions: [.writeToPackageDirectory(reason: "Format Swift sources with swift-format")])),
-        .plugin(
-            name: "Lint",
-            capability: .command(
-                intent: .custom(verb: "lint", description: "Check formatting and shipped-library discipline"))),
+        // Format / lint / LintBuild come from the shared ADBuildTools dev dependency. The ADJSON-specific
+        // command plugins below (coverage-check, bench-compare, fetch-fixtures) stay local.
         .plugin(
             name: "CoverageCheck",
             capability: .command(
@@ -188,9 +190,8 @@ let package = Package(
                     verb: "fetch-fixtures", description: "Download conformance and benchmark corpora"),
                 permissions: [
                     .allowNetworkConnections(scope: .all(), reason: "Download third-party JSON corpora"),
-                    .writeToPackageDirectory(reason: "Write fixtures into Tests and Benchmarks"),
-                ])),
-        .plugin(name: "LintBuild", capability: .buildTool()),
+                    .writeToPackageDirectory(reason: "Write fixtures into Tests and Benchmarks")
+                ]))
     ]
 )
 
@@ -223,11 +224,22 @@ if isDev {
             name: "ADJSONSuite",
             dependencies: [
                 "ADJSON", orderedCollections,
-                .product(name: "Benchmark", package: "benchmark"),
+                .product(name: "Benchmark", package: "benchmark")
             ],
             path: "Benchmarks/ADJSONSuite",
             swiftSettings: strictSettings,
             plugins: [.plugin(name: "BenchmarkPlugin", package: "benchmark")]
+        ))
+    // ADJSONProbe (ADJSON_DEV-gated): a per-phase resource probe built on `ADFMetrics.ProcessProbe`.
+    // The ordo-one suite reports per-benchmark percentiles; this attributes CPU, retired instructions,
+    // and held footprint to each lifecycle phase (parse → materialize → query → encode), which the
+    // suite can't break out. Run: `ADJSON_DEV=1 swift run -c release ADJSONProbe`.
+    package.targets.append(
+        .executableTarget(
+            name: "ADJSONProbe",
+            dependencies: ["ADJSON", .product(name: "ADFMetrics", package: "ADFoundation")],
+            path: "Benchmarks/ADJSONProbe",
+            swiftSettings: strictSettings
         ))
 }
 

@@ -31,23 +31,23 @@ extension JSONValue {
         var stack: [(JSONValue, JSONValue)] = [(lhs, rhs)]
         while let (a, b) = stack.popLast() {
             switch (a, b) {
-            case (.null, .null): continue
-            case let (.bool(x), .bool(y)): if x != y { return false }
-            case let (.int(x), .int(y)): if x != y { return false }
-            case let (.number(x), .number(y)): if x != y { return false }
-            case let (.int(x), .number(y)): if Double(x) != y { return false }
-            case let (.number(x), .int(y)): if x != Double(y) { return false }
-            case let (.string(x), .string(y)): if x != y { return false }
-            case let (.array(x), .array(y)):
-                if x.count != y.count { return false }
-                for i in 0..<x.count { stack.append((x[i], y[i])) }
-            case let (.object(x), .object(y)):
-                if x.count != y.count { return false }
-                for (key, value) in x {
-                    guard let other = y[key] else { return false }
-                    stack.append((value, other))
-                }
-            default: return false
+                case (.null, .null): continue
+                case (.bool(let x), .bool(let y)): if x != y { return false }
+                case (.int(let x), .int(let y)): if x != y { return false }
+                case (.number(let x), .number(let y)): if x != y { return false }
+                case (.int(let x), .number(let y)): if Double(x) != y { return false }
+                case (.number(let x), .int(let y)): if x != Double(y) { return false }
+                case (.string(let x), .string(let y)): if x != y { return false }
+                case (.array(let x), .array(let y)):
+                    if x.count != y.count { return false }
+                    for i in 0 ..< x.count { stack.append((x[i], y[i])) }
+                case (.object(let x), .object(let y)):
+                    if x.count != y.count { return false }
+                    for (key, value) in x {
+                        guard let other = y[key] else { return false }
+                        stack.append((value, other))
+                    }
+                default: return false
             }
         }
         return true
@@ -74,7 +74,7 @@ extension JSONValue {
         if let scalar = scalarValue(json) { return scalar }
         if depth >= maxFastDepth { return buildIteratively(json) }
         if json.isArray {
-            var elements = [JSONValue]()
+            var elements: [JSONValue] = []
             elements.reserveCapacity(json.count)
             json.forEachElement { elements.append(materialize($0, depth: depth + 1)) }
             return .array(elements)
@@ -96,13 +96,13 @@ extension JSONValue {
                 stack[top].fold(child)
             }
             switch stack[top].advance() {
-            case .scalarAdded:
-                continue
-            case .descend(let node):
-                stack.append(BuildFrame(node))
-            case .done:
-                completed = stack[top].finished
-                stack.removeLast()
+                case .scalarAdded:
+                    continue
+                case .descend(let node):
+                    stack.append(BuildFrame(node))
+                case .done:
+                    completed = stack[top].finished
+                    stack.removeLast()
             }
         }
         return completed ?? .null
@@ -125,7 +125,11 @@ extension JSONValue {
     /// order via a forward cursor (`next`); `openKey` holds the object key whose (container) value
     /// is currently being built one frame deeper.
     private struct BuildFrame {
-        enum Step { case scalarAdded, descend(JSON), done }
+        enum Step {
+            case scalarAdded
+            case descend(JSON)
+            case done
+        }
 
         let isObject: Bool
         let nodes: [JSON]
@@ -216,7 +220,7 @@ extension JSONValue {
     /// throws if the tree nests beyond `maxEncodingDepth`. The umbrella `ADJSON` module adds a
     /// `Data`-returning `encoded()` overload for Foundation interop.
     public func encodedBytes(options: JSONEncodingOptions = .rfc8259) throws -> [UInt8] {
-        var bytes = [UInt8]()
+        var bytes: [UInt8] = []
         bytes.reserveCapacity(256)
         try write(into: &bytes, depth: 0, options: options)
         return bytes
@@ -252,38 +256,39 @@ extension JSONValue {
         _ value: JSONValue, into bytes: inout [UInt8], depth: Int, options: JSONEncodingOptions
     ) throws {
         switch value {
-        case .null:
-            JSONOutput.appendNull(to: &bytes)
-        case .bool(let b):
-            JSONOutput.appendBool(b, to: &bytes)
-        case .int(let i):
-            JSONOutput.appendInteger(i, to: &bytes)
-        case .number(let d):
-            try Self.writeNumber(d, into: &bytes, options: options)
-        case .string(let s):
-            JSONOutput.appendString(
-                s, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
-        case .array(let elements):
-            bytes.append(0x5B)
-            var first = true
-            for element in elements {
-                if !first { bytes.append(0x2C) }
-                first = false
-                try writeCompactChild(element, into: &bytes, depth: depth + 1, options: options)
-            }
-            bytes.append(0x5D)
-        case .object(let members):
-            bytes.append(0x7B)
-            var first = true
-            for (key, member) in members {
-                if !first { bytes.append(0x2C) }
-                first = false
+            case .null:
+                JSONOutput.appendNull(to: &bytes)
+            case .bool(let b):
+                JSONOutput.appendBool(b, to: &bytes)
+            case .int(let i):
+                JSONOutput.appendInteger(i, to: &bytes)
+            case .number(let d):
+                try Self.writeNumber(d, into: &bytes, options: options)
+            case .string(let s):
                 JSONOutput.appendString(
-                    key, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
-                bytes.append(0x3A)
-                try writeCompactChild(member, into: &bytes, depth: depth + 1, options: options)
-            }
-            bytes.append(0x7D)
+                    s, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+            case .array(let elements):
+                bytes.append(0x5B)
+                var first = true
+                for element in elements {
+                    if !first { bytes.append(0x2C) }
+                    first = false
+                    try writeCompactChild(element, into: &bytes, depth: depth + 1, options: options)
+                }
+                bytes.append(0x5D)
+            case .object(let members):
+                bytes.append(0x7B)
+                var first = true
+                for (key, member) in members {
+                    if !first { bytes.append(0x2C) }
+                    first = false
+                    JSONOutput.appendString(
+                        key, to: &bytes, escapeSlashes: options.escapeSlashes,
+                        escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+                    bytes.append(0x3A)
+                    try writeCompactChild(member, into: &bytes, depth: depth + 1, options: options)
+                }
+                bytes.append(0x7D)
         }
     }
 
@@ -308,77 +313,79 @@ extension JSONValue {
         var stack: [WriteOp] = [.value(self, depth: depth)]
         while let op = stack.popLast() {
             switch op {
-            case .byte(let b):
-                bytes.append(b)
-            case .key(let k, let pretty):
-                JSONOutput.appendString(k, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
-                if pretty {
-                    bytes.append(0x20)
-                    bytes.append(0x3A)
-                    bytes.append(0x20)  // `"k" : ` — space-colon-space
-                } else {
-                    bytes.append(0x3A)
-                }
-            case .indent(let level, let comma):
-                if comma { bytes.append(0x2C) }
-                bytes.append(0x0A)
-                for _ in 0..<(level * 2) { bytes.append(0x20) }
-            case .value(let value, let depth):
-                guard depth <= Self.maxEncodingDepth else {
-                    throw EncodingError.invalidValue(
-                        value, .init(codingPath: [], debugDescription: "Nesting exceeds \(Self.maxEncodingDepth)"))
-                }
-                switch value {
-                case .null:
-                    JSONOutput.appendNull(to: &bytes)
-                case .bool(let b):
-                    JSONOutput.appendBool(b, to: &bytes)
-                case .int(let i):
-                    JSONOutput.appendInteger(i, to: &bytes)
-                case .number(let d):
-                    try Self.writeNumber(d, into: &bytes, options: options)
-                case .string(let s):
+                case .byte(let b):
+                    bytes.append(b)
+                case .key(let k, let pretty):
                     JSONOutput.appendString(
-                        s, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
-                case .array(let elements):
-                    bytes.append(0x5B)
-                    if elements.isEmpty {
-                        bytes.append(0x5D)
+                        k, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
+                    if pretty {
+                        bytes.append(0x20)
+                        bytes.append(0x3A)
+                        bytes.append(0x20)  // `"k" : ` — space-colon-space
                     } else {
-                        stack.append(.byte(0x5D))
-                        if pretty { stack.append(.indent(level: depth, comma: false)) }
-                        var i = elements.count - 1
-                        while i >= 0 {
-                            stack.append(.value(elements[i], depth: depth + 1))
-                            if pretty {
-                                stack.append(.indent(level: depth + 1, comma: i > 0))
-                            } else if i > 0 {
-                                stack.append(.byte(0x2C))
-                            }
-                            i -= 1
-                        }
+                        bytes.append(0x3A)
                     }
-                case .object(let members):
-                    bytes.append(0x7B)
-                    let pairs = options.keyOrder == .sorted ? members.sorted { $0.key < $1.key } : Array(members)
-                    if pairs.isEmpty {
-                        bytes.append(0x7D)
-                    } else {
-                        stack.append(.byte(0x7D))
-                        if pretty { stack.append(.indent(level: depth, comma: false)) }
-                        var i = pairs.count - 1
-                        while i >= 0 {
-                            stack.append(.value(pairs[i].value, depth: depth + 1))
-                            stack.append(.key(pairs[i].key, pretty: pretty))
-                            if pretty {
-                                stack.append(.indent(level: depth + 1, comma: i > 0))
-                            } else if i > 0 {
-                                stack.append(.byte(0x2C))
-                            }
-                            i -= 1
-                        }
+                case .indent(let level, let comma):
+                    if comma { bytes.append(0x2C) }
+                    bytes.append(0x0A)
+                    for _ in 0 ..< (level * 2) { bytes.append(0x20) }
+                case .value(let value, let depth):
+                    guard depth <= Self.maxEncodingDepth else {
+                        throw EncodingError.invalidValue(
+                            value, .init(codingPath: [], debugDescription: "Nesting exceeds \(Self.maxEncodingDepth)"))
                     }
-                }
+                    switch value {
+                        case .null:
+                            JSONOutput.appendNull(to: &bytes)
+                        case .bool(let b):
+                            JSONOutput.appendBool(b, to: &bytes)
+                        case .int(let i):
+                            JSONOutput.appendInteger(i, to: &bytes)
+                        case .number(let d):
+                            try Self.writeNumber(d, into: &bytes, options: options)
+                        case .string(let s):
+                            JSONOutput.appendString(
+                                s, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
+                        case .array(let elements):
+                            bytes.append(0x5B)
+                            if elements.isEmpty {
+                                bytes.append(0x5D)
+                            } else {
+                                stack.append(.byte(0x5D))
+                                if pretty { stack.append(.indent(level: depth, comma: false)) }
+                                var i = elements.count - 1
+                                while i >= 0 {
+                                    stack.append(.value(elements[i], depth: depth + 1))
+                                    if pretty {
+                                        stack.append(.indent(level: depth + 1, comma: i > 0))
+                                    } else if i > 0 {
+                                        stack.append(.byte(0x2C))
+                                    }
+                                    i -= 1
+                                }
+                            }
+                        case .object(let members):
+                            bytes.append(0x7B)
+                            let pairs =
+                                options.keyOrder == .sorted ? members.sorted { $0.key < $1.key } : Array(members)
+                            if pairs.isEmpty {
+                                bytes.append(0x7D)
+                            } else {
+                                stack.append(.byte(0x7D))
+                                if pretty { stack.append(.indent(level: depth, comma: false)) }
+                                var i = pairs.count - 1
+                                while i >= 0 {
+                                    stack.append(.value(pairs[i].value, depth: depth + 1))
+                                    stack.append(.key(pairs[i].key, pretty: pretty))
+                                    if pretty {
+                                        stack.append(.indent(level: depth + 1, comma: i > 0))
+                                    } else if i > 0 {
+                                        stack.append(.byte(0x2C))
+                                    }
+                                    i -= 1
+                                }
+                            }
+                    }
             }
         }
     }

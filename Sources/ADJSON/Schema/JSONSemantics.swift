@@ -9,15 +9,15 @@ public enum SchemaType: String, Sendable, CaseIterable {
 extension JSON {
     func matchesSchemaType(_ t: SchemaType) -> Bool {
         switch t {
-        case .null: return isNull
-        case .boolean: return isBoolKind
-        case .string: return isStringKind
-        case .object: return isObject
-        case .array: return isArray
-        case .number: return isNumberKind
-        case .integer:
-            guard isNumberKind, let d = double, d.isFinite else { return false }
-            return d.rounded() == d
+            case .null: return isNull
+            case .boolean: return isBoolKind
+            case .string: return isStringKind
+            case .object: return isObject
+            case .array: return isArray
+            case .number: return isNumberKind
+            case .integer:
+                guard isNumberKind, let d = double, d.isFinite else { return false }
+                return d.rounded() == d
         }
     }
 }

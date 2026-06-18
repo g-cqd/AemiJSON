@@ -69,12 +69,12 @@ final class SchemaCompiler {
         if let r = schema["required"].array { node.required = r.compactMap(\.string) }
 
         if let props = schema["properties"].object {
-            var d = [String: Int]()
+            var d: [String: Int] = [:]
             for (k, v) in props { d[k] = reserve(v, at: path + "/properties/" + jsonPointerEscape(k)) }
             node.properties = d
         }
         if let pp = schema["patternProperties"].object {
-            var list = [(SchemaPattern, Int)]()
+            var list: [(SchemaPattern, Int)] = []
             for (k, v) in pp {
                 if let re = SchemaPattern(k) {
                     list.append((re, reserve(v, at: path + "/patternProperties/" + jsonPointerEscape(k))))
@@ -108,12 +108,12 @@ final class SchemaCompiler {
         if schema["else"].exists { node.elseSchema = reserve(schema["else"], at: path + "/else") }
 
         if let dr = schema["dependentRequired"].object {
-            var d = [String: [String]]()
+            var d: [String: [String]] = [:]
             for (k, v) in dr { d[k] = (v.array ?? []).compactMap(\.string) }
             node.dependentRequired = d
         }
         if let ds = schema["dependentSchemas"].object {
-            var d = [String: Int]()
+            var d: [String: Int] = [:]
             for (k, v) in ds { d[k] = reserve(v, at: path + "/dependentSchemas/" + jsonPointerEscape(k)) }
             node.dependentSchemas = d
         }

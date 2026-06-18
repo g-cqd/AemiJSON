@@ -62,50 +62,50 @@ func parseSchemaDecorators(_ varDecl: VariableDeclSyntax) -> SchemaDecorators {
         else { continue }
         let args = a.arguments?.as(LabeledExprListSyntax.self).map(Array.init) ?? []
         switch name {
-        case "SchemaInfo":
-            for x in args {
-                switch x.label?.text {
-                case "description": d.description = stringLiteralValue(x.expression)
-                case "title": d.title = stringLiteralValue(x.expression)
-                default: break
+            case "SchemaInfo":
+                for x in args {
+                    switch x.label?.text {
+                        case "description": d.description = stringLiteralValue(x.expression)
+                        case "title": d.title = stringLiteralValue(x.expression)
+                        default: break
+                    }
                 }
-            }
-        case "SchemaNumber":
-            for x in args {
-                guard let label = x.label?.text else {
-                    // Positional argument: a range literal (`1...100`, `1..<100`, `1...`, `...100`, `..<100`).
-                    let r = parseRangeBounds(x.expression)
-                    if let v = r.minimum { d.minimum = v }
-                    if let v = r.maximum { d.maximum = v }
-                    if let v = r.exclusiveMaximum { d.exclusiveMaximum = v }
-                    continue
+            case "SchemaNumber":
+                for x in args {
+                    guard let label = x.label?.text else {
+                        // Positional argument: a range literal (`1...100`, `1..<100`, `1...`, `...100`, `..<100`).
+                        let r = parseRangeBounds(x.expression)
+                        if let v = r.minimum { d.minimum = v }
+                        if let v = r.maximum { d.maximum = v }
+                        if let v = r.exclusiveMaximum { d.exclusiveMaximum = v }
+                        continue
+                    }
+                    switch label {
+                        case "minimum": d.minimum = numericLiteralText(x.expression)
+                        case "maximum": d.maximum = numericLiteralText(x.expression)
+                        case "exclusiveMinimum": d.exclusiveMinimum = numericLiteralText(x.expression)
+                        case "exclusiveMaximum": d.exclusiveMaximum = numericLiteralText(x.expression)
+                        case "multipleOf": d.multipleOf = numericLiteralText(x.expression)
+                        case "type": d.numberType = memberAccessName(x.expression)
+                        default: break
+                    }
                 }
-                switch label {
-                case "minimum": d.minimum = numericLiteralText(x.expression)
-                case "maximum": d.maximum = numericLiteralText(x.expression)
-                case "exclusiveMinimum": d.exclusiveMinimum = numericLiteralText(x.expression)
-                case "exclusiveMaximum": d.exclusiveMaximum = numericLiteralText(x.expression)
-                case "multipleOf": d.multipleOf = numericLiteralText(x.expression)
-                case "type": d.numberType = memberAccessName(x.expression)
-                default: break
+            case "SchemaString":
+                for x in args {
+                    switch x.label?.text {
+                        case "minLength": d.minLength = numericLiteralText(x.expression)
+                        case "maxLength": d.maxLength = numericLiteralText(x.expression)
+                        case "pattern": d.pattern = stringLiteralValue(x.expression)
+                        case "format": d.format = stringLiteralValue(x.expression)
+                        default: break
+                    }
                 }
-            }
-        case "SchemaString":
-            for x in args {
-                switch x.label?.text {
-                case "minLength": d.minLength = numericLiteralText(x.expression)
-                case "maxLength": d.maxLength = numericLiteralText(x.expression)
-                case "pattern": d.pattern = stringLiteralValue(x.expression)
-                case "format": d.format = stringLiteralValue(x.expression)
-                default: break
+            case "SchemaEnum":
+                if let arr = args.first?.expression.as(ArrayExprSyntax.self) {
+                    d.enumValues = arr.elements.compactMap { stringLiteralValue($0.expression) }
                 }
-            }
-        case "SchemaEnum":
-            if let arr = args.first?.expression.as(ArrayExprSyntax.self) {
-                d.enumValues = arr.elements.compactMap { stringLiteralValue($0.expression) }
-            }
-        default:
-            break
+            default:
+                break
         }
     }
     return d

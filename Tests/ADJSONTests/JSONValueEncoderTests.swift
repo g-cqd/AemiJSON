@@ -43,7 +43,7 @@ struct JSONValueEncoderTests {
                 == .object([
                     "name": .string("p"),
                     "point": .object(["x": .int(3), "y": .int(4)]),
-                    "tags": .array([.string("a"), .string("b")]),
+                    "tags": .array([.string("a"), .string("b")])
                 ]))
     }
 

@@ -28,7 +28,7 @@ private let macroSamples: [MUser] = [
         profile: MProfile(bio: "hi", city: nil, followers: 9_000_000_000)),
     MUser(
         id: 2, name: "b\"q", nick: "nick", score: -0.25, active: false, tags: [], meta: [:],
-        profile: MProfile(bio: "yo", city: "NYC", followers: 0)),
+        profile: MProfile(bio: "yo", city: "NYC", followers: 0))
 ]
 
 @Test func macroGeneratedRoundTripsThroughFoundation() throws {

@@ -29,10 +29,14 @@ extension JSONNumber {
     /// Scan a number lexeme beginning at `start` within `p[start..<count]`.
     ///
     /// - Parameters:
+    ///   - p: The byte buffer being scanned.
+    ///   - start: The index of the lexeme's first byte.
+    ///   - count: The end of the valid bytes in `p` (exclusive).
     ///   - strict: RFC 8259 grammar (optional leading `-`, no `+`, no leading zeros, a digit required
     ///     before/after `.`); when `false`, the lenient grammar (leading `+`, bare `.5` / `5.`).
     ///   - complete: pass `true` when no more bytes will arrive (the non-streaming readers): a lexeme
     ///     that runs to `count` is then validated rather than reported `.incomplete`.
+    /// - Returns: The scan outcome — the validated lexeme's extent, or `.incomplete` / a failure.
     static func scanLexeme(
         _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, strict: Bool, complete: Bool
     ) -> ScanOutcome {
@@ -40,11 +44,10 @@ extension JSONNumber {
         var j = start
         while j < count {
             let b = p[j]
-            if (b >= 0x30 && b <= 0x39) || b == 0x2D || b == 0x2B || b == 0x2E || b == 0x65 || b == 0x45 {
-                j += 1
-            } else {
+            guard (b >= 0x30 && b <= 0x39) || b == 0x2D || b == 0x2B || b == 0x2E || b == 0x65 || b == 0x45 else {
                 break
             }
+            j += 1
         }
         // A lexeme that touches the end might continue once more bytes arrive.
         if j >= count && !complete { return .incomplete }
@@ -259,23 +262,23 @@ extension JSONString {
                 guard j + 1 < count else { return .incomplete }
                 if strict {
                     switch p[j + 1] {
-                    case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
-                        j += 2
-                    case 0x75:  // \uXXXX, possibly a surrogate pair
-                        guard j + 6 <= count else { return .incomplete }
-                        guard let high = hex4(p, j + 2) else { return .invalid }
-                        if high >= 0xD800 && high <= 0xDBFF {
-                            guard j + 12 <= count else { return .incomplete }
-                            guard p[j + 6] == 0x5C, p[j + 7] == 0x75 else { return .invalid }
-                            guard let low = hex4(p, j + 8), low >= 0xDC00 && low <= 0xDFFF else { return .invalid }
-                            j += 12
-                        } else if high >= 0xDC00 && high <= 0xDFFF {
-                            return .invalid  // lone low surrogate
-                        } else {
-                            j += 6
-                        }
-                    default:
-                        return .invalid
+                        case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
+                            j += 2
+                        case 0x75:  // \uXXXX, possibly a surrogate pair
+                            guard j + 6 <= count else { return .incomplete }
+                            guard let high = hex4(p, j + 2) else { return .invalid }
+                            if high >= 0xD800 && high <= 0xDBFF {
+                                guard j + 12 <= count else { return .incomplete }
+                                guard p[j + 6] == 0x5C, p[j + 7] == 0x75 else { return .invalid }
+                                guard let low = hex4(p, j + 8), low >= 0xDC00 && low <= 0xDFFF else { return .invalid }
+                                j += 12
+                            } else if high >= 0xDC00 && high <= 0xDFFF {
+                                return .invalid  // lone low surrogate
+                            } else {
+                                j += 6
+                            }
+                        default:
+                            return .invalid
                     }
                 } else {
                     j += 2
@@ -298,7 +301,7 @@ extension JSONString {
     /// hex digit. Uses the shared `Hex.value` table, like the tape scanner's `hex4`.
     static func hex4(_ p: UnsafePointer<UInt8>, _ at: Int) -> UInt16? {
         var value: UInt16 = 0
-        for k in 0..<4 {
+        for k in 0 ..< 4 {
             guard let digit = Hex.value(p[at + k]) else { return nil }
             value = (value << 4) | UInt16(digit)
         }
@@ -323,9 +326,9 @@ extension JSONString {
                 hasEscape = true
                 guard j + 1 < count else { return .incomplete }
                 switch escapeStepJSON5(p, j, count) {
-                case .step(let next): j = next
-                case .needMore: return .incomplete
-                case .bad: return .invalid
+                    case .step(let next): j = next
+                    case .needMore: return .incomplete
+                    case .bad: return .invalid
                 }
                 continue
             }
@@ -341,48 +344,51 @@ extension JSONString {
         }
     }
 
-    private enum EscapeStep { case step(Int), needMore, bad }
+    private enum EscapeStep {
+        case step(Int)
+        case needMore, bad
+    }
 
     // `p[j]` is a backslash (`j + 1 < count` guaranteed). Validate one JSON5 escape, returning the
     // index past it. Mirrors the tape scanner's `validateEscapeJSON5`.
     private static func escapeStepJSON5(_ p: UnsafePointer<UInt8>, _ j: Int, _ count: Int) -> EscapeStep {
         let e = p[j + 1]
         switch e {
-        case 0x22, 0x27, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74, 0x76:  // " ' \ / b f n r t v
-            return .step(j + 2)
-        case 0x30:  // \0 — only when not followed by a decimal digit
-            if j + 2 < count, p[j + 2] >= 0x30 && p[j + 2] <= 0x39 { return .bad }
-            return .step(j + 2)
-        case 0x31...0x39:  // \1 … \9 invalid
-            return .bad
-        case 0x78:  // \xHH
-            guard j + 3 < count else { return .needMore }
-            guard isHexDigit(p[j + 2]), isHexDigit(p[j + 3]) else { return .bad }
-            return .step(j + 4)
-        case 0x75:  // \uHHHH (with surrogate pairing)
-            guard j + 6 <= count else { return .needMore }
-            guard let high = hex4(p, j + 2) else { return .bad }
-            if high >= 0xD800 && high <= 0xDBFF {
-                guard j + 12 <= count else { return .needMore }
-                guard p[j + 6] == 0x5C, p[j + 7] == 0x75 else { return .bad }
-                guard let low = hex4(p, j + 8), low >= 0xDC00 && low <= 0xDFFF else { return .bad }
-                return .step(j + 12)
-            } else if high >= 0xDC00 && high <= 0xDFFF {
+            case 0x22, 0x27, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74, 0x76:  // " ' \ / b f n r t v
+                return .step(j + 2)
+            case 0x30:  // \0 — only when not followed by a decimal digit
+                if j + 2 < count, p[j + 2] >= 0x30 && p[j + 2] <= 0x39 { return .bad }
+                return .step(j + 2)
+            case 0x31 ... 0x39:  // \1 … \9 invalid
                 return .bad
-            }
-            return .step(j + 6)
-        case 0x0A:  // line continuation \ + LF
-            return .step(j + 2)
-        case 0x0D:  // line continuation \ + CR (or CRLF)
-            return .step((j + 2 < count && p[j + 2] == 0x0A) ? j + 3 : j + 2)
-        default:
-            if e >= 0x80 {  // identity escape of a multi-byte scalar (incl. U+2028/U+2029)
-                guard let length = JSONUTF8.leadLength(e) else { return .bad }
-                guard j + 1 + length <= count else { return .needMore }
-                guard (try? JSONUTF8.sequenceLength(p, j + 1, count)) != nil else { return .bad }
-                return .step(j + 1 + length)
-            }
-            return .step(j + 2)  // identity escape \X → X
+            case 0x78:  // \xHH
+                guard j + 3 < count else { return .needMore }
+                guard isHexDigit(p[j + 2]), isHexDigit(p[j + 3]) else { return .bad }
+                return .step(j + 4)
+            case 0x75:  // \uHHHH (with surrogate pairing)
+                guard j + 6 <= count else { return .needMore }
+                guard let high = hex4(p, j + 2) else { return .bad }
+                if high >= 0xD800 && high <= 0xDBFF {
+                    guard j + 12 <= count else { return .needMore }
+                    guard p[j + 6] == 0x5C, p[j + 7] == 0x75 else { return .bad }
+                    guard let low = hex4(p, j + 8), low >= 0xDC00 && low <= 0xDFFF else { return .bad }
+                    return .step(j + 12)
+                } else if high >= 0xDC00 && high <= 0xDFFF {
+                    return .bad
+                }
+                return .step(j + 6)
+            case 0x0A:  // line continuation \ + LF
+                return .step(j + 2)
+            case 0x0D:  // line continuation \ + CR (or CRLF)
+                return .step((j + 2 < count && p[j + 2] == 0x0A) ? j + 3 : j + 2)
+            default:
+                if e >= 0x80 {  // identity escape of a multi-byte scalar (incl. U+2028/U+2029)
+                    guard let length = JSONUTF8.leadLength(e) else { return .bad }
+                    guard j + 1 + length <= count else { return .needMore }
+                    guard (try? JSONUTF8.sequenceLength(p, j + 1, count)) != nil else { return .bad }
+                    return .step(j + 1 + length)
+                }
+                return .step(j + 2)  // identity escape \X → X
         }
     }
 

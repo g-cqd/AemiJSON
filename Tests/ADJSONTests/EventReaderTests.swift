@@ -19,7 +19,7 @@ struct JSONEventReaderTests {
                 .key("a"), .number(1),
                 .key("b"), .beginArray, .bool(true), .null, .string("x"), .endArray,
                 .key("c"), .beginObject, .endObject,
-                .endObject,
+                .endObject
             ])
     }
 
@@ -93,7 +93,7 @@ private func streamEvents(_ bytes: [UInt8], chunkSize: Int) throws -> [JSONEvent
     var idx = 0
     while idx < bytes.count {
         let end = min(idx + chunkSize, bytes.count)
-        out += try reader.feed(Array(bytes[idx..<end]))
+        out += try reader.feed(Array(bytes[idx ..< end]))
         idx = end
     }
     out += try reader.finish()
@@ -110,7 +110,7 @@ struct JSONEventStreamReaderTests {
         #""日本語のテキスト""#,
         "[]",
         "{}",
-        #"{"nested":{"deep":{"value":[1,2,{"x":true}]}}}"#,
+        #"{"nested":{"deep":{"value":[1,2,{"x":true}]}}}"#
     ]
 
     @Test func chunkBoundaryInvarianceAcrossEveryChunkSize() throws {
@@ -118,7 +118,7 @@ struct JSONEventStreamReaderTests {
             let bytes = Array(document.utf8)
             let reference = try saxEvents(bytes)
             // Feed the document in every fixed chunk size from 1 byte up to the whole document.
-            for chunk in 1...bytes.count {
+            for chunk in 1 ... bytes.count {
                 #expect(try streamEvents(bytes, chunkSize: chunk) == reference, "chunk=\(chunk) doc=\(document)")
             }
         }
@@ -127,10 +127,10 @@ struct JSONEventStreamReaderTests {
     @Test func splitAtEveryOffsetIntoTwoChunks() throws {
         let bytes = Array(#"{"name":"a\tbé","vals":[1.5e-3,42,-7],"ok":true}"#.utf8)
         let reference = try saxEvents(bytes)
-        for split in 0...bytes.count {
+        for split in 0 ... bytes.count {
             var reader = JSONEventStreamReader()
-            var out = try reader.feed(Array(bytes[0..<split]))
-            out += try reader.feed(Array(bytes[split..<bytes.count]))
+            var out = try reader.feed(Array(bytes[0 ..< split]))
+            out += try reader.feed(Array(bytes[split ..< bytes.count]))
             out += try reader.finish()
             #expect(out == reference, "split at \(split)")
         }

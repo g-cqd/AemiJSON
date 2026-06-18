@@ -12,10 +12,11 @@ extension DecodeContext {
         let c = Slot.count(slot(obj))
         var i = obj + 1
         var found: Int? = nil
-        for _ in 0..<c {
+        for _ in 0 ..< c {
             let ks = slot(i)
             let valIdx = i + 1
-            let koff = Slot.low(ks), klen = Slot.length(ks)
+            let koff = Slot.low(ks)
+            let klen = Slot.length(ks)
             assertBytes(koff, klen)
             if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, lit) {
                 found = valIdx
@@ -107,7 +108,7 @@ extension _FastDecodeCursor {
             throw DecodingError.typeMismatch([U].self, .init(codingPath: [], debugDescription: "Expected array"))
         }
         let count = ctx.count(index)
-        var out = [U]()
+        var out: [U] = []
         out.reserveCapacity(count)
         var i = index + 1
         // Count this container against the decode-depth budget: elements are decoded by calling
@@ -115,7 +116,7 @@ extension _FastDecodeCursor {
         // containers (`[[[Int]]]`, recursive `@JSONCodable` types) would recurse unguarded.
         try ctx.pushDepth()
         defer { ctx.popDepth() }
-        for _ in 0..<count {
+        for _ in 0 ..< count {
             out.append(try U.__adjsonDecode(_FastDecodeCursor(ctx: ctx, index: i)))
             i = ctx.nextIndex(after: i)
         }
@@ -153,7 +154,7 @@ extension _FastDecodeCursor {
         // be counted against the decode-depth budget to bound a nest of fast containers.
         try ctx.pushDepth()
         defer { ctx.popDepth() }
-        for _ in 0..<count {
+        for _ in 0 ..< count {
             let key = ctx.keyString(i)
             out[key] = try V.__adjsonDecode(_FastDecodeCursor(ctx: ctx, index: i + 1))
             i = ctx.nextIndex(after: i + 1)
@@ -197,7 +198,7 @@ extension _FastDecodeCursor {
         guard ctx.tag(index) == JSONKind.object.rawValue else { return }
         let c = ctx.count(index)
         var i = index + 1
-        for _ in 0..<c {
+        for _ in 0 ..< c {
             let ks = ctx.slot(i)
             let key = _FastKey(
                 ctx: ctx, off: Slot.low(ks), len: Slot.length(ks), escaped: Slot.flags(ks) & 1 == 1)

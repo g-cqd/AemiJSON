@@ -44,7 +44,7 @@ package final class JSONWriter {
     // indent width can't drift between them.
     @inline(__always) package func newlineIndent(_ level: Int) {
         bytes.append(0x0A)
-        for _ in 0..<(level * 2) { bytes.append(0x20) }
+        for _ in 0 ..< (level * 2) { bytes.append(0x20) }
     }
 
     // A pretty object key: `"key" : ` (the space-colon-space form used in indented output).

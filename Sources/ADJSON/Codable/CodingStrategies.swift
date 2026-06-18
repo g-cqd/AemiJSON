@@ -115,10 +115,10 @@ func convertToSnakeCase(_ key: String) -> String {
     guard !key.isEmpty else { return key }
     var words: [Range<String.Index>] = []
     var wordStart = key.startIndex
-    var searchRange = key.index(after: wordStart)..<key.endIndex
+    var searchRange = key.index(after: wordStart) ..< key.endIndex
     while let upper = key.rangeOfCharacter(from: .uppercaseLetters, options: [], range: searchRange) {
-        words.append(wordStart..<upper.lowerBound)
-        searchRange = upper.lowerBound..<searchRange.upperBound
+        words.append(wordStart ..< upper.lowerBound)
+        searchRange = upper.lowerBound ..< searchRange.upperBound
         guard let lower = key.rangeOfCharacter(from: .lowercaseLetters, options: [], range: searchRange) else {
             wordStart = searchRange.lowerBound
             break
@@ -128,12 +128,12 @@ func convertToSnakeCase(_ key: String) -> String {
             wordStart = upper.lowerBound
         } else {
             let beforeLower = key.index(before: lower.lowerBound)
-            words.append(upper.lowerBound..<beforeLower)
+            words.append(upper.lowerBound ..< beforeLower)
             wordStart = beforeLower
         }
-        searchRange = lower.upperBound..<searchRange.upperBound
+        searchRange = lower.upperBound ..< searchRange.upperBound
     }
-    words.append(wordStart..<searchRange.upperBound)
+    words.append(wordStart ..< searchRange.upperBound)
     return words.map { key[$0].lowercased() }.joined(separator: "_")
 }
 
@@ -145,9 +145,9 @@ func convertFromSnakeCase(_ key: String) -> String {
     while lastNonUnderscore > firstNonUnderscore, key[lastNonUnderscore] == "_" {
         lastNonUnderscore = key.index(before: lastNonUnderscore)
     }
-    let keyRange = firstNonUnderscore...lastNonUnderscore
-    let leading = key.startIndex..<firstNonUnderscore
-    let trailing = key.index(after: lastNonUnderscore)..<key.endIndex
+    let keyRange = firstNonUnderscore ... lastNonUnderscore
+    let leading = key.startIndex ..< firstNonUnderscore
+    let trailing = key.index(after: lastNonUnderscore) ..< key.endIndex
     let components = key[keyRange].split(separator: "_")
     let joined: String
     if components.count == 1 {
@@ -182,7 +182,7 @@ extension DecodeContext {
     /// etc.) decodes to ±Infinity / NaN. The choke point for every generic `Double`/`Float` decode.
     func decodeFloatingPoint(_ index: Int) -> Double? {
         if let d = double(index) { return d }
-        guard case let .convertFromString(pos, neg, nan) = strategies.nonConformingFloat,
+        guard case .convertFromString(let pos, let neg, let nan) = strategies.nonConformingFloat,
             let s = string(index)
         else { return nil }
         if s == pos { return .infinity }
@@ -193,47 +193,47 @@ extension DecodeContext {
 
     func decodeDate(at index: Int) throws -> Date {
         switch strategies.date {
-        case .deferredToDate:
-            return try Date(from: TapeDecoder(ctx: self, index: index, codingPath: []))
-        case .secondsSince1970:
-            guard let d = double(index) else { throw dateMismatch() }
-            return Date(timeIntervalSince1970: d)
-        case .millisecondsSince1970:
-            guard let d = double(index) else { throw dateMismatch() }
-            return Date(timeIntervalSince1970: d / 1000)
-        case .iso8601:
-            guard let s = string(index) else { throw dateMismatch() }
-            guard let date = DateDataDecoding.iso8601(s) else {
-                throw dateCorrupted(DateDataDecoding.iso8601Mismatch)
-            }
-            return date
-        case .formatted(let formatter):
-            guard let s = string(index) else { throw dateMismatch() }
-            guard let date = formatter.date(from: s) else {
-                throw dateCorrupted(DateDataDecoding.formattedMismatch)
-            }
-            return date
-        case .custom(let body):
-            return try body(TapeDecoder(ctx: self, index: index, codingPath: []))
+            case .deferredToDate:
+                return try Date(from: TapeDecoder(ctx: self, index: index, codingPath: []))
+            case .secondsSince1970:
+                guard let d = double(index) else { throw dateMismatch() }
+                return Date(timeIntervalSince1970: d)
+            case .millisecondsSince1970:
+                guard let d = double(index) else { throw dateMismatch() }
+                return Date(timeIntervalSince1970: d / 1000)
+            case .iso8601:
+                guard let s = string(index) else { throw dateMismatch() }
+                guard let date = DateDataDecoding.iso8601(s) else {
+                    throw dateCorrupted(DateDataDecoding.iso8601Mismatch)
+                }
+                return date
+            case .formatted(let formatter):
+                guard let s = string(index) else { throw dateMismatch() }
+                guard let date = formatter.date(from: s) else {
+                    throw dateCorrupted(DateDataDecoding.formattedMismatch)
+                }
+                return date
+            case .custom(let body):
+                return try body(TapeDecoder(ctx: self, index: index, codingPath: []))
         }
     }
 
     func decodeData(at index: Int) throws -> Data {
         switch strategies.data {
-        case .deferredToData:
-            return try Data(from: TapeDecoder(ctx: self, index: index, codingPath: []))
-        case .base64:
-            guard let s = string(index) else {
-                throw DecodingError.typeMismatch(
-                    Data.self, .init(codingPath: [], debugDescription: "Expected a Base64 string"))
-            }
-            guard let data = DateDataDecoding.base64(s) else {
-                throw DecodingError.dataCorrupted(
-                    .init(codingPath: [], debugDescription: DateDataDecoding.invalidBase64))
-            }
-            return data
-        case .custom(let body):
-            return try body(TapeDecoder(ctx: self, index: index, codingPath: []))
+            case .deferredToData:
+                return try Data(from: TapeDecoder(ctx: self, index: index, codingPath: []))
+            case .base64:
+                guard let s = string(index) else {
+                    throw DecodingError.typeMismatch(
+                        Data.self, .init(codingPath: [], debugDescription: "Expected a Base64 string"))
+                }
+                guard let data = DateDataDecoding.base64(s) else {
+                    throw DecodingError.dataCorrupted(
+                        .init(codingPath: [], debugDescription: DateDataDecoding.invalidBase64))
+                }
+                return data
+            case .custom(let body):
+                return try body(TapeDecoder(ctx: self, index: index, codingPath: []))
         }
     }
 
@@ -247,7 +247,8 @@ extension DecodeContext {
             throw DecodingError.typeMismatch(
                 Decimal.self, .init(codingPath: [], debugDescription: "Expected a number for Decimal"))
         }
-        let off = Slot.low(raw), len = Slot.length(raw)
+        let off = Slot.low(raw)
+        let len = Slot.length(raw)
         assertBytes(off, len)
         let buffer = UnsafeBufferPointer(start: bytes + off, count: len)
         // Fast byte path — no `String`, no Foundation locale scanner. Falls back to `Decimal(string:)`
@@ -271,9 +272,9 @@ extension DecodeContext {
     /// Convert a JSON key to its `CodingKey` form under the active key-decoding strategy.
     func applyKeyDecoding(_ key: String) -> String {
         switch strategies.key {
-        case .useDefaultKeys: return key
-        case .convertFromSnakeCase: return convertFromSnakeCase(key)
-        case .custom(let transform): return transform(key)
+            case .useDefaultKeys: return key
+            case .convertFromSnakeCase: return convertFromSnakeCase(key)
+            case .custom(let transform): return transform(key)
         }
     }
 

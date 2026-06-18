@@ -70,8 +70,8 @@ struct RelQuery: Sendable {
         segments.allSatisfy { seg in
             guard case .child(let sels) = seg, sels.count == 1 else { return false }
             switch sels[0] {
-            case .name, .index: return true
-            default: return false
+                case .name, .index: return true
+                default: return false
             }
         }
     }
@@ -83,8 +83,8 @@ extension Comparand {
     /// and may only appear as `count`/`value` arguments or as a bare existence test.
     var isValueType: Bool {
         switch self {
-        case .literal, .length, .count, .value: return true
-        case .query(let q): return q.isSingular
+            case .literal, .length, .count, .value: return true
+            case .query(let q): return q.isSingular
         }
     }
 }

@@ -7,8 +7,9 @@ import Testing
     let samples = [
         #"{"id":1,"name":"a"}"#,
         #"{"id":2,"tag":"x"}"#,
-        #"{"id":3,"name":"b"}"#,
-    ].map { try! ADJSON.parse($0).root }
+        #"{"id":3,"name":"b"}"#
+    ]
+    .map { try! ADJSON.parse($0).root }
 
     let text = JSONSchema.infer(from: samples)
     let s = try ADJSON.parse(text).root

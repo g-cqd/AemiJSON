@@ -251,16 +251,16 @@ struct JSONPathParser {
                 guard let e = peek() else { throw err("unterminated escape") }
                 i += 1
                 switch e {
-                case 0x62: out.append(0x08)  // \b
-                case 0x66: out.append(0x0C)  // \f
-                case 0x6E: out.append(0x0A)  // \n
-                case 0x72: out.append(0x0D)  // \r
-                case 0x74: out.append(0x09)  // \t
-                case 0x2F: out.append(0x2F)  // \/
-                case 0x5C: out.append(0x5C)  // \\
-                case quote: out.append(quote)  // \" only in "…", \' only in '…'
-                case 0x75: out.append(contentsOf: Array(String(try parseUnicodeEscape()).utf8))  // \uXXXX
-                default: throw err("invalid escape '\\\(describe(e))'")
+                    case 0x62: out.append(0x08)  // \b
+                    case 0x66: out.append(0x0C)  // \f
+                    case 0x6E: out.append(0x0A)  // \n
+                    case 0x72: out.append(0x0D)  // \r
+                    case 0x74: out.append(0x09)  // \t
+                    case 0x2F: out.append(0x2F)  // \/
+                    case 0x5C: out.append(0x5C)  // \\
+                    case quote: out.append(quote)  // \" only in "…", \' only in '…'
+                    case 0x75: out.append(contentsOf: Array(String(try parseUnicodeEscape()).utf8))  // \uXXXX
+                    default: throw err("invalid escape '\\\(describe(e))'")
                 }
                 continue
             }
@@ -275,23 +275,23 @@ struct JSONPathParser {
     // rejected. The leading `u` has already been consumed.
     mutating func parseUnicodeEscape() throws(JSONPathError) -> Unicode.Scalar {
         let hi = try hex4()
-        if (0xD800...0xDBFF).contains(hi) {
+        if (0xD800 ... 0xDBFF).contains(hi) {
             guard peek() == 0x5C, peek2() == 0x75 else { throw err("lone high surrogate") }  // '\' 'u'
             i += 2
             let lo = try hex4()
-            guard (0xDC00...0xDFFF).contains(lo) else { throw err("invalid low surrogate") }
+            guard (0xDC00 ... 0xDFFF).contains(lo) else { throw err("invalid low surrogate") }
             let combined = 0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00)
             guard let us = Unicode.Scalar(combined) else { throw err("invalid code point") }
             return us
         }
-        if (0xDC00...0xDFFF).contains(hi) { throw err("lone low surrogate") }
+        if (0xDC00 ... 0xDFFF).contains(hi) { throw err("lone low surrogate") }
         guard let us = Unicode.Scalar(hi) else { throw err("invalid code point") }
         return us
     }
 
     mutating func hex4() throws(JSONPathError) -> UInt32 {
         var v: UInt32 = 0
-        for _ in 0..<4 {
+        for _ in 0 ..< 4 {
             guard let c = peek(), let d = Hex.value(c) else { throw err("invalid \\u escape") }
             v = (v << 4) | UInt32(d)
             i += 1
@@ -313,12 +313,11 @@ struct JSONPathParser {
         var terms = [try parseAnd()]
         while true {
             skipWS()
-            if peek() == 0x7C, peek2() == 0x7C {  // '||'
-                i += 2
-                terms.append(try parseAnd())
-            } else {
+            guard peek() == 0x7C, peek2() == 0x7C else {
                 break
             }
+            i += 2
+            terms.append(try parseAnd())
         }
         return terms.count == 1 ? terms[0] : .or(terms)
     }
@@ -327,12 +326,11 @@ struct JSONPathParser {
         var terms = [try parseNot()]
         while true {
             skipWS()
-            if peek() == 0x26, peek2() == 0x26 {  // '&&'
-                i += 2
-                terms.append(try parseNot())
-            } else {
+            guard peek() == 0x26, peek2() == 0x26 else {
                 break
             }
+            i += 2
+            terms.append(try parseNot())
         }
         return terms.count == 1 ? terms[0] : .and(terms)
     }
@@ -380,7 +378,7 @@ struct JSONPathParser {
             }
             return .comparison(left, op, right)
         }
-        if case let .query(q) = left { return .existence(q) }
+        if case .query(let q) = left { return .existence(q) }
         throw err("expected comparison or existence test")
     }
 
@@ -389,7 +387,7 @@ struct JSONPathParser {
     // recompile per filtered node. A non-literal pattern (a query/function result) is untrusted
     // until evaluation, so it is deferred and re-checked per node there.
     mutating func compileRegexOperand(_ b: Comparand) throws(JSONPathError) -> RegexOperand {
-        guard case let .literal(.string(pat)) = b else { return .dynamic(b) }
+        guard case .literal(.string(let pat)) = b else { return .dynamic(b) }
         if let reason = JSONPathEvaluator.iRegexpRejectionReason(pat) { throw err(reason) }
         guard let re = try? Regex(JSONPathEvaluator.iRegexpToSwift(pat)) else {
             throw err("invalid regular expression in match()/search()")
@@ -404,7 +402,7 @@ struct JSONPathParser {
         while j < bytes.count, bytes[j] == 0x20 { j += 1 }  // ' '
         let start = j
         while j < bytes.count, isAlpha(bytes[j]) { j += 1 }
-        return j > start ? String(decoding: bytes[start..<j], as: UTF8.self) : nil
+        return j > start ? String(decoding: bytes[start ..< j], as: UTF8.self) : nil
     }
 
     mutating func consumeIdentifier(_ s: String) {
@@ -480,16 +478,16 @@ struct JSONPathParser {
         if c == 0x2D || isDigit(c) { return .literal(.number(try parseNumber())) }  // '-' or DIGIT
         if let id = peekIdentifier() {
             switch id {
-            case "true":
-                consumeIdentifier(id)
-                return .literal(.bool(true))
-            case "false":
-                consumeIdentifier(id)
-                return .literal(.bool(false))
-            case "null":
-                consumeIdentifier(id)
-                return .literal(.null)
-            default: break
+                case "true":
+                    consumeIdentifier(id)
+                    return .literal(.bool(true))
+                case "false":
+                    consumeIdentifier(id)
+                    return .literal(.bool(false))
+                case "null":
+                    consumeIdentifier(id)
+                    return .literal(.null)
+                default: break
             }
         }
         throw err("invalid comparand")

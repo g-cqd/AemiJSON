@@ -44,7 +44,7 @@ struct StringEscapeParityTests {
         let alphabet: [Character] = ["a", "\\", "\"", "/", "n", "u", "0", "x", "\u{01}"]
         var bodies: [String] = []
         var current: [String] = [""]
-        for _ in 1...3 {
+        for _ in 1 ... 3 {
             var next: [String] = []
             next.reserveCapacity(current.count * alphabet.count)
             for prefix in current { for c in alphabet { next.append(prefix + String(c)) } }
@@ -62,7 +62,7 @@ struct StringEscapeParityTests {
     // hex/identity/line-continuation escapes. Agreement (not a hardcoded verdict) is the assertion.
     @Test(arguments: [
         #""é""#, #""😀""#, #""\uD800""#, #""\uDC00""#, #""\uD83D""#,
-        #""\t\r\n\b\f\/\\\"""#, #""\u12""#, #""\q""#, #""\x41""#, #""\v""#, #""\0""#,
+        #""\t\r\n\b\f\/\\\"""#, #""\u12""#, #""\q""#, #""\x41""#, #""\v""#, #""\0""#
     ])
     func tapeAndSaxAgreeOnCuratedEscapes(_ doc: String) {
         assertAgree(doc, "strict", .strict)

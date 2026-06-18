@@ -62,7 +62,7 @@ struct SchemaValidator {
             errors.append(ValidationError(instanceLocation: location(path), message: message))
         }
         func passes(_ subIndex: Int, _ value: JSON) -> Bool {
-            var ignored = [ValidationError]()
+            var ignored: [ValidationError] = []
             return validate(subIndex, value, &path, &ignored, activeRefs, depth + 1)
         }
 
@@ -131,7 +131,7 @@ struct SchemaValidator {
                 // random-seeded (`Hasher`), so a flood of collisions can't be precomputed.
                 var seen: [Int: [Int]] = [:]
                 var unique = true
-                outer: for i in 0..<elems.count {
+                outer: for i in 0 ..< elems.count {
                     let h = semanticHash(elems[i])
                     if let bucket = seen[h] {
                         for j in bucket where jsonSemanticEqual(elems[i], elems[j]) {
@@ -146,14 +146,14 @@ struct SchemaValidator {
             var prefixCount = 0
             if let pi = node.prefixItems {
                 prefixCount = Swift.min(pi.count, elems.count)
-                for i in 0..<prefixCount {
+                for i in 0 ..< prefixCount {
                     path.append(String(i))
                     if !validate(pi[i], elems[i], &path, &errors, activeRefs, depth + 1) { ok = false }
                     path.removeLast()
                 }
             }
             if let it = node.items {
-                for i in prefixCount..<elems.count {
+                for i in prefixCount ..< elems.count {
                     path.append(String(i))
                     if !validate(it, elems[i], &path, &errors, activeRefs, depth + 1) { ok = false }
                     path.removeLast()

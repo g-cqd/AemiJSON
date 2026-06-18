@@ -71,7 +71,7 @@ public struct JSONEventAsyncSequence<Source: AsyncSequence>: AsyncSequence where
                     finished = true
                     continue
                 }
-                var chunk = [UInt8]()
+                var chunk: [UInt8] = []
                 chunk.reserveCapacity(chunkSize)
                 while chunk.count < chunkSize, let byte = try await sourceIterator.next() {
                     chunk.append(byte)

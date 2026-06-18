@@ -25,7 +25,7 @@ package func jsonSemanticEqual(_ a: JSON, _ b: JSON) -> Bool {
             if y.string != xs { return false }
         } else if x.isArray {
             guard y.isArray, x.count == y.count, let xe = x.array, let ye = y.array else { return false }
-            for i in 0..<xe.count { stack.append((xe[i], ye[i])) }
+            for i in 0 ..< xe.count { stack.append((xe[i], ye[i])) }
         } else if x.isObject {
             guard y.isObject, let xo = x.object, let yo = y.object, xo.count == yo.count else { return false }
             for (k, v) in xo {

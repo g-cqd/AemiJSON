@@ -57,7 +57,7 @@ public func __adjsonInsertingFirstMember(_ object: String, _ member: String) -> 
 // byte-emission source so runtime escaping matches the encoder and the macro-side
 // escaper exactly.
 public func __adjsonJSONString(_ s: String) -> String {
-    var bytes = [UInt8]()
+    var bytes: [UInt8] = []
     JSONOutput.appendString(s, to: &bytes)
     return String(decoding: bytes, as: UTF8.self)
 }

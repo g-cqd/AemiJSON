@@ -66,12 +66,12 @@ private struct DeclOrder: Decodable {
 
 @Schemable
 private struct RangeBounds: Decodable {
-    @SchemaNumber(1...100) var closed: Int?
-    @SchemaNumber(1..<100) var halfOpen: Int?
+    @SchemaNumber(1 ... 100) var closed: Int?
+    @SchemaNumber(1 ..< 100) var halfOpen: Int?
     @SchemaNumber(1...) var fromOnly: Int?
     @SchemaNumber(...100) var throughOnly: Int?
     @SchemaNumber(..<100) var upToOnly: Int?
-    @SchemaNumber(0...10, multipleOf: 5) var comboMultiple: Int?
+    @SchemaNumber(0 ... 10, multipleOf: 5) var comboMultiple: Int?
     @SchemaNumber(0..., type: .number) var comboType: Int?
 }
 

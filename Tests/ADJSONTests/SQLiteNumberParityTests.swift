@@ -13,9 +13,9 @@ import Testing
 struct SQLiteNumberParityTests {
     private func kind(_ s: String) throws -> String {
         switch JSONValue(try ADJSON.parse(s).root) {
-        case .int: return "int"
-        case .number: return "real"
-        default: return "other"
+            case .int: return "int"
+            case .number: return "real"
+            default: return "other"
         }
     }
 

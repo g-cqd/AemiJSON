@@ -26,35 +26,35 @@ private struct SplitMix64: RandomNumberGenerator {
 // String content drawn from a pool that exercises escaping (quote, backslash, slash, control chars,
 // multi-byte UTF-8) so the encode-escape / parse-unescape round-trip is covered too.
 private let stringPool: [Character] = [
-    "a", "Z", "9", " ", "\"", "\\", "/", "\n", "\t", "\u{01}", "\u{7F}", "é", "😀", "λ",
+    "a", "Z", "9", " ", "\"", "\\", "/", "\n", "\t", "\u{01}", "\u{7F}", "é", "😀", "λ"
 ]
 
 private func makeString(_ rng: inout SplitMix64) -> String {
-    let len = Int.random(in: 0...8, using: &rng)
+    let len = Int.random(in: 0 ... 8, using: &rng)
     var s = ""
-    for _ in 0..<len { s.append(stringPool[Int.random(in: 0..<stringPool.count, using: &rng)]) }
+    for _ in 0 ..< len { s.append(stringPool[Int.random(in: 0 ..< stringPool.count, using: &rng)]) }
     return s
 }
 
 private func makeLeaf(_ rng: inout SplitMix64) -> JSONValue {
-    switch Int.random(in: 0...5, using: &rng) {
-    case 0: return .null
-    case 1: return .bool(.random(using: &rng))
-    case 2: return .int(Int64.random(in: -1_000_000_000...1_000_000_000, using: &rng))
-    case 3: return .number(Double.random(in: -1_000_000...1_000_000, using: &rng))
-    case 4: return .number(Double(Int.random(in: -1000...1000, using: &rng)))  // integral double → "N"
-    default: return .string(makeString(&rng))
+    switch Int.random(in: 0 ... 5, using: &rng) {
+        case 0: return .null
+        case 1: return .bool(.random(using: &rng))
+        case 2: return .int(Int64.random(in: -1_000_000_000 ... 1_000_000_000, using: &rng))
+        case 3: return .number(Double.random(in: -1_000_000 ... 1_000_000, using: &rng))
+        case 4: return .number(Double(Int.random(in: -1000 ... 1000, using: &rng)))  // integral double → "N"
+        default: return .string(makeString(&rng))
     }
 }
 
 private func makeValue(maxDepth: Int, maxBranch: Int, rng: inout SplitMix64) -> JSONValue {
-    if maxDepth <= 0 || Int.random(in: 0...2, using: &rng) == 0 { return makeLeaf(&rng) }
-    let branch = Int.random(in: 0...maxBranch, using: &rng)
+    if maxDepth <= 0 || Int.random(in: 0 ... 2, using: &rng) == 0 { return makeLeaf(&rng) }
+    let branch = Int.random(in: 0 ... maxBranch, using: &rng)
     if Bool.random(using: &rng) {
-        return .array((0..<branch).map { _ in makeValue(maxDepth: maxDepth - 1, maxBranch: maxBranch, rng: &rng) })
+        return .array((0 ..< branch).map { _ in makeValue(maxDepth: maxDepth - 1, maxBranch: maxBranch, rng: &rng) })
     }
     var pairs: [(String, JSONValue)] = []
-    for i in 0..<branch {
+    for i in 0 ..< branch {
         // Index prefix guarantees unique keys even when the random suffix collides.
         pairs.append(("k\(i)\(makeString(&rng))", makeValue(maxDepth: maxDepth - 1, maxBranch: maxBranch, rng: &rng)))
     }
@@ -65,7 +65,7 @@ private func makeValue(maxDepth: Int, maxBranch: Int, rng: inout SplitMix64) -> 
 // past the fast-depth, while staying within the test thread's value-tree dealloc headroom.
 private func makeChain(depth: Int, rng: inout SplitMix64) -> JSONValue {
     var v = makeLeaf(&rng)
-    for k in 0..<depth { v = k.isMultiple(of: 2) ? .array([v]) : .object(["n": v]) }
+    for k in 0 ..< depth { v = k.isMultiple(of: 2) ? .array([v]) : .object(["n": v]) }
     return v
 }
 
@@ -88,8 +88,8 @@ struct ParityTests {
 
     @Test func shallowWideValuesRoundTripAcrossPaths() throws {
         var rng = SplitMix64(seed: 0x5EED_0001)
-        for _ in 0..<400 {
-            let v = makeValue(maxDepth: Int.random(in: 0...6, using: &rng), maxBranch: 4, rng: &rng)
+        for _ in 0 ..< 400 {
+            let v = makeValue(maxDepth: Int.random(in: 0 ... 6, using: &rng), maxBranch: 4, rng: &rng)
             try expectRoundTrips(v)
         }
     }

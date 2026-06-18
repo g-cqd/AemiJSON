@@ -25,9 +25,9 @@ struct RobustnessTests {
 
     @Test func parsingNeverTrapsOnRandomBytes() {
         var rng = SystemRandomNumberGenerator()
-        for _ in 0..<4000 {
-            let count = Int.random(in: 0...80, using: &rng)
-            exercise(parse: (0..<count).map { _ in UInt8.random(in: 0...255, using: &rng) })
+        for _ in 0 ..< 4000 {
+            let count = Int.random(in: 0 ... 80, using: &rng)
+            exercise(parse: (0 ..< count).map { _ in UInt8.random(in: 0 ... 255, using: &rng) })
         }
     }
 
@@ -36,20 +36,22 @@ struct RobustnessTests {
         let seeds = [
             #"{"a":1,"b":[1,2,3,true,null],"c":{"d":"eé"}}"#,
             "[[[[[[[]]]]]]]", #"{"k":"v","k":"v2"}"#, "-0.0e-99", #""😀""#,
-            "1.7976931348623157e308", "[1,2,", #"{"a":"#, "\u{feff}{}",
+            "1.7976931348623157e308", "[1,2,", #"{"a":"#, "\u{feff}{}"
         ]
         for seed in seeds {
             let base = Array(seed.utf8)
             guard !base.isEmpty else { continue }
-            for _ in 0..<3000 {
+            for _ in 0 ..< 3000 {
                 var bytes = base
-                switch Int.random(in: 0...3, using: &rng) {
-                case 0: bytes[Int.random(in: 0..<bytes.count, using: &rng)] = UInt8.random(in: 0...255, using: &rng)
-                case 1:
-                    bytes.insert(
-                        UInt8.random(in: 0...255, using: &rng), at: Int.random(in: 0...bytes.count, using: &rng))
-                case 2: bytes.remove(at: Int.random(in: 0..<bytes.count, using: &rng))
-                default: bytes += base  // duplicate to deepen / lengthen
+                switch Int.random(in: 0 ... 3, using: &rng) {
+                    case 0:
+                        bytes[Int.random(in: 0 ..< bytes.count, using: &rng)] = UInt8.random(in: 0 ... 255, using: &rng)
+                    case 1:
+                        bytes.insert(
+                            UInt8.random(in: 0 ... 255, using: &rng), at: Int.random(in: 0 ... bytes.count, using: &rng)
+                        )
+                    case 2: bytes.remove(at: Int.random(in: 0 ..< bytes.count, using: &rng))
+                    default: bytes += base  // duplicate to deepen / lengthen
                 }
                 exercise(parse: bytes)
             }
@@ -60,9 +62,9 @@ struct RobustnessTests {
         var rng = SystemRandomNumberGenerator()
         // Bias the alphabet toward path metacharacters so the grammar is actually stressed.
         let alphabet = Array(#"$.[]()?@*:,'"!=<>&|-_0123 \uabZ#"#.utf8)
-        for _ in 0..<8000 {
-            let count = Int.random(in: 0...40, using: &rng)
-            let bytes = (0..<count).map { _ in alphabet.randomElement(using: &rng)! }
+        for _ in 0 ..< 8000 {
+            let count = Int.random(in: 0 ... 40, using: &rng)
+            let bytes = (0 ..< count).map { _ in alphabet.randomElement(using: &rng)! }
             let string = String(decoding: bytes, as: UTF8.self)
             _ = try? JSONPath(string)
             _ = try? SQLiteJSONPath(string)

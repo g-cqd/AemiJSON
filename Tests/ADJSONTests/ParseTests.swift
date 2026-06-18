@@ -22,20 +22,20 @@ import Testing
         "9007199254740992", "9007199254740993", "9007199254740994",  // 2^53, 2^53+1, +2
         "1e22", "1e23", "1e-22", "1e-23", "1.7976931348623157e308", "5e-324", "2.2250738585072014e-308",
         "123456789012345", "1234567890123456", "12345678901234567", "100000000000000000000",
-        "1E5", "1.0e+1", "9.999999999999999e22", "0.0000001", "-0.0",
+        "1E5", "1.0e+1", "9.999999999999999e22", "0.0000001", "-0.0"
     ] { check(s) }
 
     var rng = SystemRandomNumberGenerator()
     // Fast-path-targeted: significand ≤ 2^53 with an exponent in ±22 must be correctly rounded.
-    for _ in 0..<50_000 {
-        let sig = UInt64.random(in: 0...(1 << 53), using: &rng)
-        let e = Int.random(in: -22...22, using: &rng)
+    for _ in 0 ..< 50_000 {
+        let sig = UInt64.random(in: 0 ... (1 << 53), using: &rng)
+        let e = Int.random(in: -22 ... 22, using: &rng)
         check("\(sig)e\(e)")
         check(e >= 0 ? "\(sig)" : insertPoint("\(sig)", fromEnd: -e))
     }
     // Full-precision doubles exercise the slow-path fallback (which is `Double(_:)` itself).
-    for _ in 0..<20_000 {
-        let d = Double(bitPattern: UInt64.random(in: 0...UInt64.max, using: &rng))
+    for _ in 0 ..< 20_000 {
+        let d = Double(bitPattern: UInt64.random(in: 0 ... UInt64.max, using: &rng))
         if d.isFinite { check(d.description) }
     }
 }
@@ -85,13 +85,14 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
 @Test func keyBytesEqualWordCompareHandlesAllLengthsAndNearMisses() {
     // The word-at-a-time compare must agree with a byte reference across the 8-byte boundary,
     // including near-misses at the first/middle/last byte where tail bugs would hide.
-    for len in 1...40 {
+    for len in 1 ... 40 {
         // Fully typed steps: the untyped integer literals + overflow operators inside `UInt8(…)`
         // otherwise make this one expression ~230ms to type-check.
-        let a: [UInt8] = (0..<len).map { (i: Int) -> UInt8 in
-            let mixed: Int = i &* 31 &+ 7
-            return UInt8(mixed & 0xFF)
-        }
+        let a: [UInt8] = (0 ..< len)
+            .map { (i: Int) -> UInt8 in
+                let mixed: Int = i &* 31 &+ 7
+                return UInt8(mixed & 0xFF)
+            }
         let aCopy = a
         a.withUnsafeBufferPointer { pa in
             guard let ba = pa.baseAddress else { return }
@@ -109,13 +110,14 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
     }
     // String overload: equal, length mismatch, last-byte near-miss, and empty.
     let key = "user_name_field_01234567"  // 24 bytes = three whole words
-    Array(key.utf8).withUnsafeBufferPointer { bp in
-        guard let b = bp.baseAddress else { return }
-        #expect(JSONKey.bytesEqual(key, b, bp.count))
-        #expect(!JSONKey.bytesEqual(key + "x", b, bp.count))
-        #expect(!JSONKey.bytesEqual(String(key.dropLast()) + "Z", b, bp.count))
-        #expect(JSONKey.bytesEqual("", b, 0))
-    }
+    Array(key.utf8)
+        .withUnsafeBufferPointer { bp in
+            guard let b = bp.baseAddress else { return }
+            #expect(JSONKey.bytesEqual(key, b, bp.count))
+            #expect(!JSONKey.bytesEqual(key + "x", b, bp.count))
+            #expect(!JSONKey.bytesEqual(String(key.dropLast()) + "Z", b, bp.count))
+            #expect(JSONKey.bytesEqual("", b, 0))
+        }
 }
 
 @Test func deeplyNestedParsesWithoutStackOverflow() throws {
@@ -299,7 +301,7 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
     let samples = [
         #"{"id":1,"name":"héllo","ok":true,"x":null}"#,
         #"[1,2,3,[4,[5,6]],{"a":{"b":[7,8]}}]"#,
-        #"{"unicode":"éA","tab":"a\tb"}"#,
+        #"{"unicode":"éA","tab":"a\tb"}"#
     ]
     for s in samples {
         let mine = try ADJSON.parse(s).root
@@ -310,27 +312,27 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
 
 private func assertEqual(_ json: JSON, _ any: Any, sourceLocation: SourceLocation = #_sourceLocation) {
     switch any {
-    case let dict as [String: Any]:
-        let obj = json.object
-        #expect(obj?.count == dict.count, sourceLocation: sourceLocation)
-        for (k, v) in dict { assertEqual(json[k], v, sourceLocation: sourceLocation) }
-    case let arr as [Any]:
-        #expect(json.count == arr.count, sourceLocation: sourceLocation)
-        for (i, v) in arr.enumerated() { assertEqual(json[index: i], v, sourceLocation: sourceLocation) }
-    case is NSNull:
-        #expect(json.isNull, sourceLocation: sourceLocation)
-    case let s as String:
-        #expect(json.string == s, sourceLocation: sourceLocation)
-    case let n as NSNumber:
-        // Decide by our own parsed kind to avoid NSNumber bool/int ambiguity.
-        if let b = json.bool {
-            #expect(b == n.boolValue, sourceLocation: sourceLocation)
-        } else if let iv = json.int {
-            #expect(iv == n.intValue, sourceLocation: sourceLocation)
-        } else {
-            #expect(json.double == n.doubleValue, sourceLocation: sourceLocation)
-        }
-    default:
-        break
+        case let dict as [String: Any]:
+            let obj = json.object
+            #expect(obj?.count == dict.count, sourceLocation: sourceLocation)
+            for (k, v) in dict { assertEqual(json[k], v, sourceLocation: sourceLocation) }
+        case let arr as [Any]:
+            #expect(json.count == arr.count, sourceLocation: sourceLocation)
+            for (i, v) in arr.enumerated() { assertEqual(json[index: i], v, sourceLocation: sourceLocation) }
+        case is NSNull:
+            #expect(json.isNull, sourceLocation: sourceLocation)
+        case let s as String:
+            #expect(json.string == s, sourceLocation: sourceLocation)
+        case let n as NSNumber:
+            // Decide by our own parsed kind to avoid NSNumber bool/int ambiguity.
+            if let b = json.bool {
+                #expect(b == n.boolValue, sourceLocation: sourceLocation)
+            } else if let iv = json.int {
+                #expect(iv == n.intValue, sourceLocation: sourceLocation)
+            } else {
+                #expect(json.double == n.doubleValue, sourceLocation: sourceLocation)
+            }
+        default:
+            break
     }
 }

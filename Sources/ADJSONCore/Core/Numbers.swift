@@ -7,7 +7,7 @@ public enum JSONNumber {
     // exponent bound below.
     static let pow10: [Double] = [
         1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11,
-        1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
+        1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22
     ]
 
     // Parse a (scanner-validated) JSON number. The Clinger fast path handles the common case without
@@ -45,17 +45,17 @@ public enum JSONNumber {
         }
         guard idx < end else { return nil }
         switch p[idx] {
-        case 0x49: return sign * .infinity  // 'I' Infinity
-        case 0x4E: return .nan  // 'N' NaN
-        case 0x30 where idx + 1 < end && (p[idx + 1] == 0x78 || p[idx + 1] == 0x58):  // 0x / 0X
-            var value = 0.0
-            var k = idx + 2
-            while k < end, let d = Hex.value(p[k]) {
-                value = value * 16 + Double(d)
-                k += 1
-            }
-            return k > idx + 2 ? sign * value : nil
-        default: return nil
+            case 0x49: return sign * .infinity  // 'I' Infinity
+            case 0x4E: return .nan  // 'N' NaN
+            case 0x30 where idx + 1 < end && (p[idx + 1] == 0x78 || p[idx + 1] == 0x58):  // 0x / 0X
+                var value = 0.0
+                var k = idx + 2
+                while k < end, let d = Hex.value(p[k]) {
+                    value = value * 16 + Double(d)
+                    k += 1
+                }
+                return k > idx + 2 ? sign * value : nil
+            default: return nil
         }
     }
 

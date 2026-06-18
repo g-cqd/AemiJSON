@@ -22,14 +22,14 @@ extension JSONValue {
         var current = self
         for token in pointer.tokens {
             switch current {
-            case .object(let members):
-                guard let next = members[token] else { return nil }
-                current = next
-            case .array(let elements):
-                guard let i = JSONPointer.arrayIndex(token), i < elements.count else { return nil }
-                current = elements[i]
-            default:
-                return nil
+                case .object(let members):
+                    guard let next = members[token] else { return nil }
+                    current = next
+                case .array(let elements):
+                    guard let i = JSONPointer.arrayIndex(token), i < elements.count else { return nil }
+                    current = elements[i]
+                default:
+                    return nil
             }
         }
         return current
@@ -41,33 +41,33 @@ extension JSONValue {
         guard let first = tokens.first else { return value }  // empty path replaces the root
         let rest = tokens.dropFirst()
         switch self {
-        case .object(var members):
-            if rest.isEmpty {
-                members[first] = value
-            } else {
-                guard let child = members[first] else { throw JSONPatchError.pathNotFound }
-                members[first] = try child.adding(rest, value, depth + 1)
-            }
-            return .object(members)
-        case .array(var elements):
-            if rest.isEmpty {
-                if first == "-" {
-                    elements.append(value)
+            case .object(var members):
+                if rest.isEmpty {
+                    members[first] = value
                 } else {
-                    guard let i = JSONPointer.arrayIndex(first), i <= elements.count else {
+                    guard let child = members[first] else { throw JSONPatchError.pathNotFound }
+                    members[first] = try child.adding(rest, value, depth + 1)
+                }
+                return .object(members)
+            case .array(var elements):
+                if rest.isEmpty {
+                    if first == "-" {
+                        elements.append(value)
+                    } else {
+                        guard let i = JSONPointer.arrayIndex(first), i <= elements.count else {
+                            throw JSONPatchError.pathNotFound
+                        }
+                        elements.insert(value, at: i)
+                    }
+                } else {
+                    guard let i = JSONPointer.arrayIndex(first), i < elements.count else {
                         throw JSONPatchError.pathNotFound
                     }
-                    elements.insert(value, at: i)
+                    elements[i] = try elements[i].adding(rest, value, depth + 1)
                 }
-            } else {
-                guard let i = JSONPointer.arrayIndex(first), i < elements.count else {
-                    throw JSONPatchError.pathNotFound
-                }
-                elements[i] = try elements[i].adding(rest, value, depth + 1)
-            }
-            return .array(elements)
-        default:
-            throw JSONPatchError.pathNotFound
+                return .array(elements)
+            default:
+                throw JSONPatchError.pathNotFound
         }
     }
 
@@ -76,24 +76,26 @@ extension JSONValue {
         guard let first = tokens.first else { throw JSONPatchError.pathNotFound }
         let rest = tokens.dropFirst()
         switch self {
-        case .object(var members):
-            guard let existing = members[first] else { throw JSONPatchError.pathNotFound }
-            if rest.isEmpty {
-                members[first] = nil
-            } else {
-                members[first] = try existing.removing(rest, depth + 1)
-            }
-            return .object(members)
-        case .array(var elements):
-            guard let i = JSONPointer.arrayIndex(first), i < elements.count else { throw JSONPatchError.pathNotFound }
-            if rest.isEmpty {
-                elements.remove(at: i)
-            } else {
-                elements[i] = try elements[i].removing(rest, depth + 1)
-            }
-            return .array(elements)
-        default:
-            throw JSONPatchError.pathNotFound
+            case .object(var members):
+                guard let existing = members[first] else { throw JSONPatchError.pathNotFound }
+                if rest.isEmpty {
+                    members[first] = nil
+                } else {
+                    members[first] = try existing.removing(rest, depth + 1)
+                }
+                return .object(members)
+            case .array(var elements):
+                guard let i = JSONPointer.arrayIndex(first), i < elements.count else {
+                    throw JSONPatchError.pathNotFound
+                }
+                if rest.isEmpty {
+                    elements.remove(at: i)
+                } else {
+                    elements[i] = try elements[i].removing(rest, depth + 1)
+                }
+                return .array(elements)
+            default:
+                throw JSONPatchError.pathNotFound
         }
     }
 
@@ -106,16 +108,18 @@ extension JSONValue {
         guard let first = tokens.first else { return value }
         let rest = tokens.dropFirst()
         switch self {
-        case .object(var members):
-            guard let existing = members[first] else { throw JSONPatchError.pathNotFound }
-            members[first] = rest.isEmpty ? value : try existing.replacing(rest, value, depth + 1)
-            return .object(members)
-        case .array(var elements):
-            guard let i = JSONPointer.arrayIndex(first), i < elements.count else { throw JSONPatchError.pathNotFound }
-            elements[i] = rest.isEmpty ? value : try elements[i].replacing(rest, value, depth + 1)
-            return .array(elements)
-        default:
-            throw JSONPatchError.pathNotFound
+            case .object(var members):
+                guard let existing = members[first] else { throw JSONPatchError.pathNotFound }
+                members[first] = rest.isEmpty ? value : try existing.replacing(rest, value, depth + 1)
+                return .object(members)
+            case .array(var elements):
+                guard let i = JSONPointer.arrayIndex(first), i < elements.count else {
+                    throw JSONPatchError.pathNotFound
+                }
+                elements[i] = rest.isEmpty ? value : try elements[i].replacing(rest, value, depth + 1)
+                return .array(elements)
+            default:
+                throw JSONPatchError.pathNotFound
         }
     }
 }

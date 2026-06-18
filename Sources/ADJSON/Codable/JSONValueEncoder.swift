@@ -36,9 +36,9 @@ private final class Slot {
 
     func resolve() -> JSONValue {
         switch kind {
-        case .value(let v): return v
-        case .object(let o): return .object(o.resolve())
-        case .array(let a): return .array(a.resolve())
+            case .value(let v): return v
+            case .object(let o): return .object(o.resolve())
+            case .array(let a): return .array(a.resolve())
         }
     }
 }

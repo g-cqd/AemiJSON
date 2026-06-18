@@ -21,7 +21,7 @@ struct FetchFixturesPlugin: CommandPlugin {
         func download(_ urlString: String, to relativePath: String) async throws {
             guard let url = URL(string: urlString) else { return }
             let (data, response) = try await session.data(from: url)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
                 Diagnostics.error("download failed (HTTP \(http.statusCode)): \(urlString)")
                 return
             }

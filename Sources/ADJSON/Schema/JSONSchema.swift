@@ -45,8 +45,8 @@ public struct JSONSchema: Sendable {
     }
 
     public func validate(_ instance: JSON) -> ValidationResult {
-        var errors = [ValidationError]()
-        var path = [String]()
+        var errors: [ValidationError] = []
+        var path: [String] = []
         let validator = SchemaValidator(nodes: nodes, registry: registry)
         _ = validator.validate(rootIndex, instance, &path, &errors)
         return ValidationResult(isValid: errors.isEmpty, errors: errors)

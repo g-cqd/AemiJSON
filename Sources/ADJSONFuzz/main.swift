@@ -108,7 +108,7 @@ public func LLVMFuzzerTestOneInput(_ start: UnsafePointer<UInt8>?, _ count: Int)
     let chunk = 7
     while offset < bytes.count {
         let end = Swift.min(offset + chunk, bytes.count)
-        guard (try? stream.feed(Array(bytes[offset..<end]))) != nil else { break }
+        guard (try? stream.feed(Array(bytes[offset ..< end]))) != nil else { break }
         offset = end
     }
     _ = try? stream.finish()

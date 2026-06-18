@@ -34,23 +34,23 @@ enum JSONShortest {
                 if n <= 0 {
                     bytes.append(0x30)
                     bytes.append(0x2E)
-                    for _ in 0..<(-n) { bytes.append(0x30) }
-                    for x in 0..<k { bytes.append(digits[x]) }
+                    for _ in 0 ..< (-n) { bytes.append(0x30) }
+                    for x in 0 ..< k { bytes.append(digits[x]) }
                 } else if n >= k {
-                    for x in 0..<k { bytes.append(digits[x]) }
-                    for _ in 0..<(n - k) { bytes.append(0x30) }
+                    for x in 0 ..< k { bytes.append(digits[x]) }
+                    for _ in 0 ..< (n - k) { bytes.append(0x30) }
                     bytes.append(0x2E)
                     bytes.append(0x30)
                 } else {
-                    for x in 0..<n { bytes.append(digits[x]) }
+                    for x in 0 ..< n { bytes.append(digits[x]) }
                     bytes.append(0x2E)
-                    for x in n..<k { bytes.append(digits[x]) }
+                    for x in n ..< k { bytes.append(digits[x]) }
                 }
             } else {
                 bytes.append(digits[0])
                 if k > 1 {
                     bytes.append(0x2E)
-                    for x in 1..<k { bytes.append(digits[x]) }
+                    for x in 1 ..< k { bytes.append(digits[x]) }
                 }
                 bytes.append(0x65)  // 'e'
                 bytes.append(exponent >= 0 ? 0x2B : 0x2D)

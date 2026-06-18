@@ -9,25 +9,25 @@ extension JSON {
     /// non-empty string, and *every* array or object (including `[]` and `{}`) is truthy.
     public var isTruthy: Bool {
         switch tag {
-        case JSONKind.boolTrue.rawValue:
-            return true
-        case JSONKind.boolFalse.rawValue, JSONKind.null.rawValue:
-            return false
-        case JSONKind.number.rawValue:
-            guard let d = double else { return false }
-            return d != 0 && !d.isNaN
-        case JSONKind.string.rawValue:
-            let len = Slot.length(slot)
-            if len == 0 { return false }  // ""
-            // Non-empty raw bytes decode to a non-empty string in every mode except JSON5, whose
-            // line-continuation escapes (`\` + newline) elide to nothing; decode only that rare case
-            // to stay exact (strict/lenient never reach it, so their fast path stays alloc-free).
-            if doc.isJSON5 && Slot.flags(slot) & 1 == 1 { return !(string ?? "").isEmpty }
-            return true
-        case JSONKind.array.rawValue, JSONKind.object.rawValue:
-            return true
-        default:  // missing sentinel → `undefined` → falsy
-            return false
+            case JSONKind.boolTrue.rawValue:
+                return true
+            case JSONKind.boolFalse.rawValue, JSONKind.null.rawValue:
+                return false
+            case JSONKind.number.rawValue:
+                guard let d = double else { return false }
+                return d != 0 && !d.isNaN
+            case JSONKind.string.rawValue:
+                let len = Slot.length(slot)
+                if len == 0 { return false }  // ""
+                // Non-empty raw bytes decode to a non-empty string in every mode except JSON5, whose
+                // line-continuation escapes (`\` + newline) elide to nothing; decode only that rare case
+                // to stay exact (strict/lenient never reach it, so their fast path stays alloc-free).
+                if doc.isJSON5 && Slot.flags(slot) & 1 == 1 { return !(string ?? "").isEmpty }
+                return true
+            case JSONKind.array.rawValue, JSONKind.object.rawValue:
+                return true
+            default:  // missing sentinel → `undefined` → falsy
+                return false
         }
     }
 
@@ -50,24 +50,24 @@ extension JSON {
         var stack: [Item] = [.node(self)]
         while let item = stack.popLast() {
             switch item {
-            case .separator:
-                out.append(",")
-            case .node(let node):
-                if node.tag == JSONKind.array.rawValue {
-                    let elements = node.arrayValue
-                    guard let last = elements.last else { continue }  // [] contributes nothing
-                    // Push so elements pop front-to-back with a separator between each: last element
-                    // first (no trailing separator), then `, element` for each earlier one.
-                    stack.append(.node(last))
-                    var i = elements.count - 2
-                    while i >= 0 {
-                        stack.append(.separator)
-                        stack.append(.node(elements[i]))
-                        i -= 1
+                case .separator:
+                    out.append(",")
+                case .node(let node):
+                    if node.tag == JSONKind.array.rawValue {
+                        let elements = node.arrayValue
+                        guard let last = elements.last else { continue }  // [] contributes nothing
+                        // Push so elements pop front-to-back with a separator between each: last element
+                        // first (no trailing separator), then `, element` for each earlier one.
+                        stack.append(.node(last))
+                        var i = elements.count - 2
+                        while i >= 0 {
+                            stack.append(.separator)
+                            stack.append(.node(elements[i]))
+                            i -= 1
+                        }
+                    } else {
+                        out.append(node.jsStringScalar)
                     }
-                } else {
-                    out.append(node.jsStringScalar)
-                }
             }
         }
         return out
@@ -76,13 +76,13 @@ extension JSON {
     // ECMAScript `ToString` for every node kind except array (handled iteratively by `jsString`).
     private var jsStringScalar: String {
         switch tag {
-        case JSONKind.null.rawValue: return ""
-        case JSONKind.boolTrue.rawValue: return "true"
-        case JSONKind.boolFalse.rawValue: return "false"
-        case JSONKind.number.rawValue: return jsNumberString ?? ""
-        case JSONKind.string.rawValue: return string ?? ""
-        case JSONKind.object.rawValue: return "[object Object]"
-        default: return ""  // missing sentinel → `undefined` → ""
+            case JSONKind.null.rawValue: return ""
+            case JSONKind.boolTrue.rawValue: return "true"
+            case JSONKind.boolFalse.rawValue: return "false"
+            case JSONKind.number.rawValue: return jsNumberString ?? ""
+            case JSONKind.string.rawValue: return string ?? ""
+            case JSONKind.object.rawValue: return "[object Object]"
+            default: return ""  // missing sentinel → `undefined` → ""
         }
     }
 

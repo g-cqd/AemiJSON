@@ -268,9 +268,9 @@ private func annotationPrefix(desc: String?, title: String?) -> String {
 
 private func forcedNumberType(_ d: SchemaDecorators) -> String? {
     switch d.numberType {
-    case "integer": return "integer"
-    case "number": return "number"
-    default: return nil
+        case "integer": return "integer"
+        case "number": return "number"
+        default: return nil
     }
 }
 
@@ -297,9 +297,9 @@ private func dialectSchemaURL(_ node: AttributeSyntax) -> String? {
     guard let args = node.arguments?.as(LabeledExprListSyntax.self) else { return nil }
     for arg in args where arg.label?.text == "dialect" {
         switch memberAccessName(arg.expression) {
-        case "draft7": return "http://json-schema.org/draft-07/schema#"
-        case "draft2020_12": return "https://json-schema.org/draft/2020-12/schema"
-        default: return nil
+            case "draft7": return "http://json-schema.org/draft-07/schema#"
+            case "draft2020_12": return "https://json-schema.org/draft/2020-12/schema"
+            default: return nil
         }
     }
     return nil
@@ -338,12 +338,12 @@ private func merge(_ segs: [Seg]) -> [Seg] {
 private func emit(_ segs: [Seg]) -> String {
     let pieces = segs.map { seg -> String in
         switch seg {
-        case .lit(let s):
-            return rawJSONLiteral(s)
-        case .refCall(let type, let desc, let title):
-            let d = desc.map(swiftStringLiteral) ?? "nil"
-            let t = title.map(swiftStringLiteral) ?? "nil"
-            return "__adjsonSchemaFragment(for: \(type).self, description: \(d), title: \(t))"
+            case .lit(let s):
+                return rawJSONLiteral(s)
+            case .refCall(let type, let desc, let title):
+                let d = desc.map(swiftStringLiteral) ?? "nil"
+                let t = title.map(swiftStringLiteral) ?? "nil"
+                return "__adjsonSchemaFragment(for: \(type).self, description: \(d), title: \(t))"
         }
     }
     return pieces.isEmpty ? "#\"\"#" : pieces.joined(separator: " + ")

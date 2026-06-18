@@ -8,7 +8,7 @@ import SwiftSyntax
 // Integer scalar type names. Mapped to the fast integer path (`@JSONCodable`) and to JSON
 // `"integer"` (`@Schemable`).
 let integerTypes: Set<String> = [
-    "Int", "Int8", "Int16", "Int32", "Int64", "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
+    "Int", "Int8", "Int16", "Int32", "Int64", "UInt", "UInt8", "UInt16", "UInt32", "UInt64"
 ]
 
 // True when the struct declares a custom `CodingKeys` enum. Both macros skip such types: a custom
@@ -23,10 +23,10 @@ func declaresCodingKeys(_ decl: StructDeclSyntax) -> Bool {
 func isComputed(_ accessor: AccessorBlockSyntax?) -> Bool {
     guard let accessor else { return false }
     switch accessor.accessors {
-    case .getter:
-        return true
-    case .accessors(let list):
-        return list.contains { $0.accessorSpecifier.tokenKind == .keyword(.get) }
+        case .getter:
+            return true
+        case .accessors(let list):
+            return list.contains { $0.accessorSpecifier.tokenKind == .keyword(.get) }
     }
 }
 
@@ -53,21 +53,21 @@ func jsonEscaped(_ s: String) -> String {
     out.reserveCapacity(s.unicodeScalars.count + 2)
     for scalar in s.unicodeScalars {
         switch scalar {
-        case "\"": out += #"\""#
-        case "\\": out += #"\\"#
-        case "\n": out += #"\n"#
-        case "\r": out += #"\r"#
-        case "\t": out += #"\t"#
-        case "\u{08}": out += #"\b"#
-        case "\u{0C}": out += #"\f"#
-        default:
-            if scalar.value < 0x20 {
-                out += "\\u00"
-                out.append(hexDigit(scalar.value >> 4))
-                out.append(hexDigit(scalar.value & 0xF))
-            } else {
-                out.unicodeScalars.append(scalar)
-            }
+            case "\"": out += #"\""#
+            case "\\": out += #"\\"#
+            case "\n": out += #"\n"#
+            case "\r": out += #"\r"#
+            case "\t": out += #"\t"#
+            case "\u{08}": out += #"\b"#
+            case "\u{0C}": out += #"\f"#
+            default:
+                if scalar.value < 0x20 {
+                    out += "\\u00"
+                    out.append(hexDigit(scalar.value >> 4))
+                    out.append(hexDigit(scalar.value & 0xF))
+                } else {
+                    out.unicodeScalars.append(scalar)
+                }
         }
     }
     return out
@@ -108,7 +108,7 @@ private func trimWhitespace(_ s: String) -> String {
     var end = scalars.count
     while start < end, isWS(scalars[start]) { start += 1 }
     while end > start, isWS(scalars[end - 1]) { end -= 1 }
-    return String(String.UnicodeScalarView(scalars[start..<end]))
+    return String(String.UnicodeScalarView(scalars[start ..< end]))
 }
 
 // The `///` (or `/** */`) doc comment immediately preceding a property, as plain text. Multiple
@@ -117,21 +117,21 @@ func docComment(_ decl: VariableDeclSyntax) -> String? {
     var lines: [String] = []
     for piece in decl.leadingTrivia {
         switch piece {
-        case .docLineComment(let text):
-            var t = Substring(text)
-            if t.hasPrefix("///") { t = t.dropFirst(3) }
-            lines.append(trimWhitespace(String(t)))
-        case .docBlockComment(let text):
-            var t = Substring(text)
-            if t.hasPrefix("/**") { t = t.dropFirst(3) }
-            if t.hasSuffix("*/") { t = t.dropLast(2) }
-            for line in t.split(separator: "\n", omittingEmptySubsequences: false) {
-                var l = trimWhitespace(String(line))
-                if l.hasPrefix("*") { l = trimWhitespace(String(l.dropFirst())) }
-                if !l.isEmpty { lines.append(l) }
-            }
-        default:
-            continue
+            case .docLineComment(let text):
+                var t = Substring(text)
+                if t.hasPrefix("///") { t = t.dropFirst(3) }
+                lines.append(trimWhitespace(String(t)))
+            case .docBlockComment(let text):
+                var t = Substring(text)
+                if t.hasPrefix("/**") { t = t.dropFirst(3) }
+                if t.hasSuffix("*/") { t = t.dropLast(2) }
+                for line in t.split(separator: "\n", omittingEmptySubsequences: false) {
+                    var l = trimWhitespace(String(line))
+                    if l.hasPrefix("*") { l = trimWhitespace(String(l.dropFirst())) }
+                    if !l.isEmpty { lines.append(l) }
+                }
+            default:
+                continue
         }
     }
     let joined = trimWhitespace(lines.joined(separator: "\n"))
@@ -172,7 +172,7 @@ private func jsonIntegerLiteral(_ raw: String) -> String? {
     if lower.hasPrefix("0x") { return UInt64(t.dropFirst(2), radix: 16).map(String.init) }
     if lower.hasPrefix("0o") { return UInt64(t.dropFirst(2), radix: 8).map(String.init) }
     if lower.hasPrefix("0b") { return UInt64(t.dropFirst(2), radix: 2).map(String.init) }
-    return !t.isEmpty && t.allSatisfy { ("0"..."9").contains($0) } ? t : nil
+    return !t.isEmpty && t.allSatisfy { ("0" ... "9").contains($0) } ? t : nil
 }
 
 private func jsonFloatLiteral(_ raw: String) -> String? {

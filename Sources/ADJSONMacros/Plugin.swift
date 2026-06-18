@@ -8,7 +8,7 @@ import SwiftSyntaxMacros
 struct ADJSONMacrosPlugin: CompilerPlugin {
     let providingMacros: [any Macro.Type] = [
         JSONCodableMacro.self, JSONDecodableMacro.self, JSONEncodableMacro.self, SchemableMacro.self,
-        SchemaNumberMacro.self, SchemaStringMacro.self, SchemaEnumMacro.self, SchemaInfoMacro.self,
+        SchemaNumberMacro.self, SchemaStringMacro.self, SchemaEnumMacro.self, SchemaInfoMacro.self
     ]
 }
 
@@ -167,9 +167,11 @@ private func makeDecodeBody(_ props: [Property]) -> String {
     let ctorArgs = props.map { "\($0.name): \($0.name)" }.joined(separator: ", ")
     if props.isEmpty { return "return Self(\(ctorArgs))" }
     var lines = props.map { "var __vi_\($0.name) = -1" }
-    let dispatch = props.enumerated().map { index, p in
-        "\(index == 0 ? "if" : "else if") __k.matches(\"\(p.name)\") { __vi_\(p.name) = __v }"
-    }.joined(separator: " ")
+    let dispatch = props.enumerated()
+        .map { index, p in
+            "\(index == 0 ? "if" : "else if") __k.matches(\"\(p.name)\") { __vi_\(p.name) = __v }"
+        }
+        .joined(separator: " ")
     lines.append("c.forEachMember { __k, __v in \(dispatch) }")
     lines.append(contentsOf: props.map { "let \($0.name) = \(decodeAtExpr($0))" })
     lines.append("return Self(\(ctorArgs))")
@@ -182,18 +184,18 @@ private func decodeAtExpr(_ p: Property) -> String {
     if p.isOptional {
         if integerTypes.contains(p.wrapped) { return "c.integerIfPresentAt(\(vi), \(p.wrapped).self)" }
         switch p.wrapped {
-        case "String": return "c.stringIfPresentAt(\(vi))"
-        case "Bool": return "c.boolIfPresentAt(\(vi))"
-        case "Double": return "c.doubleIfPresentAt(\(vi))"
-        default: return "try c.decodeIfPresentAt(\(p.wrapped).self, \(vi))"
+            case "String": return "c.stringIfPresentAt(\(vi))"
+            case "Bool": return "c.boolIfPresentAt(\(vi))"
+            case "Double": return "c.doubleIfPresentAt(\(vi))"
+            default: return "try c.decodeIfPresentAt(\(p.wrapped).self, \(vi))"
         }
     }
     if integerTypes.contains(p.wrapped) { return "try c.integerAt(\(vi), \(key), \(p.wrapped).self)" }
     switch p.wrapped {
-    case "String": return "try c.stringAt(\(vi), \(key))"
-    case "Bool": return "try c.boolAt(\(vi), \(key))"
-    case "Double": return "try c.doubleAt(\(vi), \(key))"
-    default: return "try c.decodeAt(\(p.type).self, \(vi), \(key))"
+        case "String": return "try c.stringAt(\(vi), \(key))"
+        case "Bool": return "try c.boolAt(\(vi), \(key))"
+        case "Double": return "try c.doubleAt(\(vi), \(key))"
+        default: return "try c.decodeAt(\(p.type).self, \(vi), \(key))"
     }
 }
 
@@ -236,9 +238,9 @@ private func makeEncodeBody(_ props: [Property]) -> String {
 private func writeValue(_ expr: String, _ wrapped: String) -> String {
     if integerTypes.contains(wrapped) { return "w.integer(\(expr))" }
     switch wrapped {
-    case "String": return "w.string(\(expr))"
-    case "Bool": return "w.bool(\(expr))"
-    case "Double": return "try w.double(\(expr))"
-    default: return "try w.encode(\(expr))"
+        case "String": return "w.string(\(expr))"
+        case "Bool": return "w.bool(\(expr))"
+        case "Double": return "try w.double(\(expr))"
+        default: return "try w.encode(\(expr))"
     }
 }

@@ -43,15 +43,18 @@ extension JSONValue {
 
     /// Where a segment lands in an array of `count` elements: an existing element, the append position
     /// (one past the end — from `[#]`, `[#-0]`, or an index equal to `count`), or out of range.
-    private enum ArraySlot: Equatable { case existing(Int), append, outOfRange }
+    private enum ArraySlot: Equatable {
+        case existing(Int)
+        case append, outOfRange
+    }
 
     private static func arraySlot(_ segment: SQLiteJSONPath.Segment, count: Int) -> ArraySlot {
         let index: Int
         switch segment {
-        case .index(let i): index = i
-        case .fromEnd(let n): index = count - n
-        case .append: index = count
-        case .key: return .outOfRange  // a key never resolves against an array
+            case .index(let i): index = i
+            case .fromEnd(let n): index = count - n
+            case .append: index = count
+            case .key: return .outOfRange  // a key never resolves against an array
         }
         if index == count { return .append }
         if index >= 0 && index < count { return .existing(index) }
@@ -69,53 +72,53 @@ extension JSONValue {
         let rest = segments.dropFirst()
         let next = rest.first  // the following segment, or nil when `segment` is the final one
         switch segment {
-        case .key(let key):
-            guard case .object(var members) = self else { return self }  // wrong-type ⇒ no-op
-            if let next {  // descend
-                if let child = members[key] {
-                    members[key] = child.sqliteSet(rest, value, mode, depth + 1)
-                } else if mode != .replace {
-                    let created = Self.emptyContainer(for: next)
-                    let result = created.sqliteSet(rest, value, mode, depth + 1)
-                    if result != created { members[key] = result }  // materialize only if a value was placed
-                }
-            } else {  // final segment
-                let exists = members[key] != nil
-                switch mode {
-                case .set: members[key] = value
-                case .insert: if !exists { members[key] = value }
-                case .replace: if exists { members[key] = value }
-                }
-            }
-            return .object(members)
-
-        case .index, .fromEnd, .append:
-            guard case .array(var elements) = self else { return self }  // wrong-type ⇒ no-op
-            let slot = Self.arraySlot(segment, count: elements.count)
-            if let next {  // descend
-                switch slot {
-                case .existing(let i):
-                    elements[i] = elements[i].sqliteSet(rest, value, mode, depth + 1)
-                case .append:
-                    if mode != .replace {
+            case .key(let key):
+                guard case .object(var members) = self else { return self }  // wrong-type ⇒ no-op
+                if let next {  // descend
+                    if let child = members[key] {
+                        members[key] = child.sqliteSet(rest, value, mode, depth + 1)
+                    } else if mode != .replace {
                         let created = Self.emptyContainer(for: next)
                         let result = created.sqliteSet(rest, value, mode, depth + 1)
-                        if result != created { elements.append(result) }
+                        if result != created { members[key] = result }  // materialize only if a value was placed
                     }
-                case .outOfRange:
-                    break
+                } else {  // final segment
+                    let exists = members[key] != nil
+                    switch mode {
+                        case .set: members[key] = value
+                        case .insert: if !exists { members[key] = value }
+                        case .replace: if exists { members[key] = value }
+                    }
                 }
-            } else {  // final segment
-                switch slot {
-                case .existing(let i):
-                    if mode != .insert { elements[i] = value }  // set/replace overwrite; insert no-ops
-                case .append:
-                    if mode != .replace { elements.append(value) }  // set/insert append; replace no-ops
-                case .outOfRange:
-                    break
+                return .object(members)
+
+            case .index, .fromEnd, .append:
+                guard case .array(var elements) = self else { return self }  // wrong-type ⇒ no-op
+                let slot = Self.arraySlot(segment, count: elements.count)
+                if let next {  // descend
+                    switch slot {
+                        case .existing(let i):
+                            elements[i] = elements[i].sqliteSet(rest, value, mode, depth + 1)
+                        case .append:
+                            if mode != .replace {
+                                let created = Self.emptyContainer(for: next)
+                                let result = created.sqliteSet(rest, value, mode, depth + 1)
+                                if result != created { elements.append(result) }
+                            }
+                        case .outOfRange:
+                            break
+                    }
+                } else {  // final segment
+                    switch slot {
+                        case .existing(let i):
+                            if mode != .insert { elements[i] = value }  // set/replace overwrite; insert no-ops
+                        case .append:
+                            if mode != .replace { elements.append(value) }  // set/insert append; replace no-ops
+                        case .outOfRange:
+                            break
+                    }
                 }
-            }
-            return .array(elements)
+                return .array(elements)
         }
     }
 
@@ -124,26 +127,26 @@ extension JSONValue {
         guard let segment = segments.first else { return self }
         let rest = segments.dropFirst()
         switch segment {
-        case .key(let key):
-            guard case .object(var members) = self else { return self }
-            if rest.isEmpty {
-                members[key] = nil  // remove if present, no-op if missing
-            } else if let child = members[key] {
-                members[key] = child.sqliteRemove(rest, depth + 1)
-            }
-            return .object(members)
+            case .key(let key):
+                guard case .object(var members) = self else { return self }
+                if rest.isEmpty {
+                    members[key] = nil  // remove if present, no-op if missing
+                } else if let child = members[key] {
+                    members[key] = child.sqliteRemove(rest, depth + 1)
+                }
+                return .object(members)
 
-        case .index, .fromEnd, .append:
-            guard case .array(var elements) = self else { return self }
-            guard case .existing(let i) = Self.arraySlot(segment, count: elements.count) else {
-                return self  // append / out of range ⇒ nothing to remove
-            }
-            if rest.isEmpty {
-                elements.remove(at: i)
-            } else {
-                elements[i] = elements[i].sqliteRemove(rest, depth + 1)
-            }
-            return .array(elements)
+            case .index, .fromEnd, .append:
+                guard case .array(var elements) = self else { return self }
+                guard case .existing(let i) = Self.arraySlot(segment, count: elements.count) else {
+                    return self  // append / out of range ⇒ nothing to remove
+                }
+                if rest.isEmpty {
+                    elements.remove(at: i)
+                } else {
+                    elements[i] = elements[i].sqliteRemove(rest, depth + 1)
+                }
+                return .array(elements)
         }
     }
 }

@@ -76,7 +76,7 @@
         let texts = [
             "null", "true", "false", "0", "1", "3.14", "1e21", #""hi""#, #""""#,
             "[]", "[1,2,3]", "[null,1,null]", "[[],1]", "[1,[2,3],4]", "[[1,2],[3,4]]",
-            "[[1,[2]],3]", "{}", #"{"a":1}"#, #"[{"a":1},2]"#,
+            "[[1,[2]],3]", "{}", #"{"a":1}"#, #"[{"a":1},2]"#
         ]
         for text in texts {
             let root = try ADJSON.parse(text).root
@@ -88,18 +88,18 @@
     @Test func ecmaNumberToStringMatchesJavaScriptCore() {
         let oracle = JSOracle()
         let known: [Double] = [
-            0, -0.0, 1, -1, 5, 100, 1000000, 3.14, 0.1, 0.5, -0.25, 1234.5678, 123456789,
-            9007199254740992, 1e21, 1e-7, 1e-6, 0.000001, 1.5e300, -1.5e-300,
-            1.7976931348623157e308, 5e-324, 2.2250738585072014e-308, 123456789012345680,
-            .nan, .infinity, -.infinity,
+            0, -0.0, 1, -1, 5, 100, 1_000_000, 3.14, 0.1, 0.5, -0.25, 1234.5678, 123_456_789,
+            9_007_199_254_740_992, 1e21, 1e-7, 1e-6, 0.000001, 1.5e300, -1.5e-300,
+            1.7976931348623157e308, 5e-324, 2.2250738585072014e-308, 123_456_789_012_345_680,
+            .nan, .infinity, -.infinity
         ]
         for d in known {
             #expect(JSONOutput.ecmaNumberToString(d) == oracle.numberString(d), "ecma(\(d))")
         }
         // Randomized fuzz against the engine: every finite double must format identically to V8/JSC.
         var rng = SystemRandomNumberGenerator()
-        for _ in 0..<5_000 {
-            let d = Double(bitPattern: UInt64.random(in: 0...UInt64.max, using: &rng))
+        for _ in 0 ..< 5_000 {
+            let d = Double(bitPattern: UInt64.random(in: 0 ... UInt64.max, using: &rng))
             guard d.isFinite else { continue }
             #expect(JSONOutput.ecmaNumberToString(d) == oracle.numberString(d), "ecma(\(d))")
         }

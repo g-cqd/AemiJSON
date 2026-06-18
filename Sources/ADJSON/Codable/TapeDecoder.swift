@@ -73,9 +73,9 @@ final class DecodeContext {
 
     @inline(__always) @inlinable func bool(_ i: Int) -> Bool? {
         switch Slot.tag(slot(i)) {
-        case JSONKind.boolTrue.rawValue: return true
-        case JSONKind.boolFalse.rawValue: return false
-        default: return nil
+            case JSONKind.boolTrue.rawValue: return true
+            case JSONKind.boolFalse.rawValue: return false
+            default: return nil
         }
     }
 
@@ -89,7 +89,8 @@ final class DecodeContext {
     @inline(__always) @inlinable func integer<T: FixedWidthInteger>(_ i: Int, _ type: T.Type) -> T? {
         let s = slot(i)
         guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
-        let off = Slot.low(s), len = Slot.length(s)
+        let off = Slot.low(s)
+        let len = Slot.length(s)
         assertBytes(off, len)
         if let v = JSONNumber.parseInteger(bytes, off, len, type) { return v }
         // Foundation parity: a Codable integer decode accepts an integral-valued number written in
@@ -104,7 +105,8 @@ final class DecodeContext {
     @inline(__always) @inlinable func numberLexeme(_ i: Int) -> String? {
         let s = slot(i)
         guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
-        let off = Slot.low(s), len = Slot.length(s)
+        let off = Slot.low(s)
+        let len = Slot.length(s)
         assertBytes(off, len)
         return String(decoding: UnsafeBufferPointer(start: bytes + off, count: len), as: UTF8.self)
     }
@@ -118,7 +120,8 @@ final class DecodeContext {
     @inlinable func keyString(_ i: Int) -> String { decodeString(slot(i)) }
 
     @inline(__always) @usableFromInline func decodeString(_ s: UInt64) -> String {
-        let off = Slot.low(s), len = Slot.length(s)
+        let off = Slot.low(s)
+        let len = Slot.length(s)
         assertBytes(off, len)
         if Slot.flags(s) & 1 == 0 {
             return String(decoding: UnsafeBufferPointer(start: bytes + off, count: len), as: UTF8.self)
@@ -137,14 +140,15 @@ final class DecodeContext {
         let convert = keyConversionActive
         var i = obj + 1
         var found: Int? = nil
-        for _ in 0..<c {
+        for _ in 0 ..< c {
             let ks = slot(i)
             let valIdx = i + 1
             let isMatch: Bool
             if convert {
                 isMatch = applyKeyDecoding(keyString(i)) == key
             } else {
-                let koff = Slot.low(ks), klen = Slot.length(ks)
+                let koff = Slot.low(ks)
+                let klen = Slot.length(ks)
                 assertBytes(koff, klen)
                 isMatch = JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, key)
             }
@@ -197,7 +201,7 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
         let c = ctx.count(index)
         out.reserveCapacity(c)
         var i = index + 1
-        for _ in 0..<c {
+        for _ in 0 ..< c {
             if let k = Key(stringValue: ctx.applyKeyDecoding(ctx.keyString(i))) { out.append(k) }
             i = ctx.nextIndex(after: i + 1)
         }

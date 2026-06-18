@@ -76,7 +76,7 @@ struct CrossPathNumberParityTests {
     @Test func encodeValueAndCursorAreByteIdentical() throws {
         let value: JSONValue = .object([
             "i": .int(42), "d": .number(3.5), "big": .int(9_007_199_254_740_993),
-            "neg": .number(-0.25), "arr": .array([.int(1), .number(2.5), .int(-3)]),
+            "neg": .number(-0.25), "arr": .array([.int(1), .number(2.5), .int(-3)])
         ])
         let prettySorted = JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true)
         for options in [JSONEncodingOptions.rfc8259, .javaScript, prettySorted] {
@@ -126,7 +126,7 @@ struct CrossPathNumberParityTests {
 
     @Test func integerScratchBufferHandlesWidestMagnitudes() {
         func encode<T: FixedWidthInteger>(_ v: T) -> String {
-            var bytes = [UInt8]()
+            var bytes: [UInt8] = []
             JSONOutput.appendInteger(v, to: &bytes)
             return String(decoding: bytes, as: UTF8.self)
         }
@@ -140,7 +140,7 @@ struct CrossPathNumberParityTests {
     @Test func doubleScratchBufferHandlesExtremes() throws {
         let extremes: [Double] = [
             .greatestFiniteMagnitude, -.greatestFiniteMagnitude, .leastNonzeroMagnitude, .leastNormalMagnitude,
-            .pi, 0, -0.0,
+            .pi, 0, -0.0
         ]
         for d in extremes {
             let s = String(decoding: try JSONValue.number(d).encodedBytes(), as: UTF8.self)

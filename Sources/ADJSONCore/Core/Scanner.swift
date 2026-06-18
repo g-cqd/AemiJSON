@@ -62,7 +62,8 @@ struct TapeBuilder {
         }
         while i < n {
             let c = p[i]
-            if c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 { i += 1 } else { break }
+            guard c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 else { break }
+            i += 1
         }
     }
 
@@ -101,56 +102,56 @@ struct TapeBuilder {
             let c = p[i]
             var completed: Bool
             switch c {
-            case 0x7B:  // '{'
-                if stack.count >= maxDepth { throw JSONError.depthExceeded(at: i) }
-                let openIdx = slots.count
-                slots.append(0)  // placeholder, patched at close
-                i += 1
-                skipWS()
-                if i < n && p[i] == 0x7D {
+                case 0x7B:  // '{'
+                    if stack.count >= maxDepth { throw JSONError.depthExceeded(at: i) }
+                    let openIdx = slots.count
+                    slots.append(0)  // placeholder, patched at close
                     i += 1
-                    try closeContainer(openIdx, count: 0, isObject: true)
-                    completed = true
-                } else {
-                    stack.append(Frame(openIndex: openIdx, count: 0, isObject: true, seenKeys: [:]))
-                    try readKeyColon()
-                    completed = false
-                }
-            case 0x5B:  // '['
-                if stack.count >= maxDepth { throw JSONError.depthExceeded(at: i) }
-                let openIdx = slots.count
-                slots.append(0)
-                i += 1
-                skipWS()
-                if i < n && p[i] == 0x5D {
+                    skipWS()
+                    if i < n && p[i] == 0x7D {
+                        i += 1
+                        try closeContainer(openIdx, count: 0, isObject: true)
+                        completed = true
+                    } else {
+                        stack.append(Frame(openIndex: openIdx, count: 0, isObject: true, seenKeys: [:]))
+                        try readKeyColon()
+                        completed = false
+                    }
+                case 0x5B:  // '['
+                    if stack.count >= maxDepth { throw JSONError.depthExceeded(at: i) }
+                    let openIdx = slots.count
+                    slots.append(0)
                     i += 1
-                    try closeContainer(openIdx, count: 0, isObject: false)
-                    completed = true
-                } else {
-                    stack.append(Frame(openIndex: openIdx, count: 0, isObject: false, seenKeys: [:]))
-                    completed = false
-                }
-            case 0x22:
-                try scanString()
-                completed = true
-            case 0x74, 0x66, 0x6E:
-                try scanLiteral()
-                completed = true
-            case 0x2D, 0x30...0x39:
-                try scanNumber()
-                completed = true
-            default:
-                // JSON5 value starts: single-quoted string, leading `+`/`.`, and the `Infinity` /
-                // `NaN` literals. Kept out of the strict/lenient dispatch above so it is unchanged.
-                if json5, c == 0x27 {
+                    skipWS()
+                    if i < n && p[i] == 0x5D {
+                        i += 1
+                        try closeContainer(openIdx, count: 0, isObject: false)
+                        completed = true
+                    } else {
+                        stack.append(Frame(openIndex: openIdx, count: 0, isObject: false, seenKeys: [:]))
+                        completed = false
+                    }
+                case 0x22:
                     try scanString()
                     completed = true
-                } else if json5, c == 0x2B || c == 0x2E || c == 0x49 || c == 0x4E {  // + . I(nfinity) N(aN)
+                case 0x74, 0x66, 0x6E:
+                    try scanLiteral()
+                    completed = true
+                case 0x2D, 0x30 ... 0x39:
                     try scanNumber()
                     completed = true
-                } else {
-                    throw JSONError.unexpectedCharacter(c, at: i)
-                }
+                default:
+                    // JSON5 value starts: single-quoted string, leading `+`/`.`, and the `Infinity` /
+                    // `NaN` literals. Kept out of the strict/lenient dispatch above so it is unchanged.
+                    if json5, c == 0x27 {
+                        try scanString()
+                        completed = true
+                    } else if json5, c == 0x2B || c == 0x2E || c == 0x49 || c == 0x4E {  // + . I(nfinity) N(aN)
+                        try scanNumber()
+                        completed = true
+                    } else {
+                        throw JSONError.unexpectedCharacter(c, at: i)
+                    }
             }
 
             // A value is complete: fold it into its parent, closing each container the input ends.
@@ -343,22 +344,22 @@ struct TapeBuilder {
     mutating func validateEscape(_ j: inout Int) throws(JSONError) {
         guard j + 1 < n else { throw JSONError.invalidString(at: j) }
         switch p[j + 1] {
-        case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
-            j += 2
-        case 0x75:  // \uXXXX
-            let high = try hex4(j + 2)
-            if high >= 0xD800 && high <= 0xDBFF {
-                guard j + 7 < n, p[j + 6] == 0x5C, p[j + 7] == 0x75 else { throw JSONError.invalidString(at: j) }
-                let low = try hex4(j + 8)
-                guard low >= 0xDC00 && low <= 0xDFFF else { throw JSONError.invalidString(at: j) }
-                j += 12
-            } else if high >= 0xDC00 && high <= 0xDFFF {
-                throw JSONError.invalidString(at: j)  // lone low surrogate
-            } else {
-                j += 6
-            }
-        default:
-            throw JSONError.invalidString(at: j)  // invalid escape character
+            case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
+                j += 2
+            case 0x75:  // \uXXXX
+                let high = try hex4(j + 2)
+                if high >= 0xD800 && high <= 0xDBFF {
+                    guard j + 7 < n, p[j + 6] == 0x5C, p[j + 7] == 0x75 else { throw JSONError.invalidString(at: j) }
+                    let low = try hex4(j + 8)
+                    guard low >= 0xDC00 && low <= 0xDFFF else { throw JSONError.invalidString(at: j) }
+                    j += 12
+                } else if high >= 0xDC00 && high <= 0xDFFF {
+                    throw JSONError.invalidString(at: j)  // lone low surrogate
+                } else {
+                    j += 6
+                }
+            default:
+                throw JSONError.invalidString(at: j)  // invalid escape character
         }
     }
 
@@ -457,15 +458,15 @@ struct TapeBuilder {
     mutating func scanLiteral() throws(JSONError) {
         let start = i
         switch p[i] {
-        case 0x74:
-            try expectLiteral("true")
-            slots.append(Slot.scalar(JSONKind.boolTrue.rawValue, offset: start, length: 4, flags: 0))
-        case 0x66:
-            try expectLiteral("false")
-            slots.append(Slot.scalar(JSONKind.boolFalse.rawValue, offset: start, length: 5, flags: 0))
-        default:
-            try expectLiteral("null")
-            slots.append(Slot.scalar(JSONKind.null.rawValue, offset: start, length: 4, flags: 0))
+            case 0x74:
+                try expectLiteral("true")
+                slots.append(Slot.scalar(JSONKind.boolTrue.rawValue, offset: start, length: 4, flags: 0))
+            case 0x66:
+                try expectLiteral("false")
+                slots.append(Slot.scalar(JSONKind.boolFalse.rawValue, offset: start, length: 5, flags: 0))
+            default:
+                try expectLiteral("null")
+                slots.append(Slot.scalar(JSONKind.null.rawValue, offset: start, length: 4, flags: 0))
         }
     }
 
@@ -515,43 +516,43 @@ struct TapeBuilder {
         guard j + 1 < n else { throw JSONError.invalidString(at: j) }
         let e = p[j + 1]
         switch e {
-        case 0x22, 0x27, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74, 0x76:  // " ' \ / b f n r t v
-            j += 2
-        case 0x30:  // \0 — NUL, only when not followed by a decimal digit
-            if j + 2 < n, isDigit(p[j + 2]) { throw JSONError.invalidString(at: j) }
-            j += 2
-        case 0x31...0x39:  // \1 … \9 are not valid JSON5 escapes
-            throw JSONError.invalidString(at: j)
-        case 0x78:  // \xHH
-            guard j + 3 < n, Hex.value(p[j + 2]) != nil, Hex.value(p[j + 3]) != nil else {
-                throw JSONError.invalidString(at: j)
-            }
-            j += 4
-        case 0x75:  // \uHHHH (with surrogate pairing), same shape as strict
-            let high = try hex4(j + 2)
-            if high >= 0xD800 && high <= 0xDBFF {
-                guard j + 7 < n, p[j + 6] == 0x5C, p[j + 7] == 0x75 else { throw JSONError.invalidString(at: j) }
-                let low = try hex4(j + 8)
-                guard low >= 0xDC00 && low <= 0xDFFF else { throw JSONError.invalidString(at: j) }
-                j += 12
-            } else if high >= 0xDC00 && high <= 0xDFFF {
-                throw JSONError.invalidString(at: j)
-            } else {
-                j += 6
-            }
-        case 0x0A:  // line continuation: \ + LF
-            j += 2
-        case 0x0D:  // line continuation: \ + CR (or CRLF)
-            j += (j + 2 < n && p[j + 2] == 0x0A) ? 3 : 2
-        default:
-            // Identity escape (`\X` → `X`). The escaped scalar may be multi-byte (incl. the
-            // U+2028/U+2029 line continuations), so validate and advance a full UTF-8 sequence.
-            if e >= 0x80 {
-                j += 1
-                j += try JSONUTF8.sequenceLength(p, j, n)
-            } else {
+            case 0x22, 0x27, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74, 0x76:  // " ' \ / b f n r t v
                 j += 2
-            }
+            case 0x30:  // \0 — NUL, only when not followed by a decimal digit
+                if j + 2 < n, isDigit(p[j + 2]) { throw JSONError.invalidString(at: j) }
+                j += 2
+            case 0x31 ... 0x39:  // \1 … \9 are not valid JSON5 escapes
+                throw JSONError.invalidString(at: j)
+            case 0x78:  // \xHH
+                guard j + 3 < n, Hex.value(p[j + 2]) != nil, Hex.value(p[j + 3]) != nil else {
+                    throw JSONError.invalidString(at: j)
+                }
+                j += 4
+            case 0x75:  // \uHHHH (with surrogate pairing), same shape as strict
+                let high = try hex4(j + 2)
+                if high >= 0xD800 && high <= 0xDBFF {
+                    guard j + 7 < n, p[j + 6] == 0x5C, p[j + 7] == 0x75 else { throw JSONError.invalidString(at: j) }
+                    let low = try hex4(j + 8)
+                    guard low >= 0xDC00 && low <= 0xDFFF else { throw JSONError.invalidString(at: j) }
+                    j += 12
+                } else if high >= 0xDC00 && high <= 0xDFFF {
+                    throw JSONError.invalidString(at: j)
+                } else {
+                    j += 6
+                }
+            case 0x0A:  // line continuation: \ + LF
+                j += 2
+            case 0x0D:  // line continuation: \ + CR (or CRLF)
+                j += (j + 2 < n && p[j + 2] == 0x0A) ? 3 : 2
+            default:
+                // Identity escape (`\X` → `X`). The escaped scalar may be multi-byte (incl. the
+                // U+2028/U+2029 line continuations), so validate and advance a full UTF-8 sequence.
+                if e >= 0x80 {
+                    j += 1
+                    j += try JSONUTF8.sequenceLength(p, j, n)
+                } else {
+                    j += 2
+                }
         }
     }
 

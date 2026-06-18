@@ -164,7 +164,7 @@ private func valid(_ schema: JSONSchema, _ json: String) -> Bool { schema.isVali
 @Test func compiledSchemaValidatesConcurrently() async {
     let s = schema(#"{"type":"integer","minimum":0}"#)
     await withTaskGroup(of: Bool.self) { group in
-        for i in 0..<16 { group.addTask { s.isValid(try! ADJSON.parse("\(i)").root) } }
+        for i in 0 ..< 16 { group.addTask { s.isValid(try! ADJSON.parse("\(i)").root) } }
         for await r in group { #expect(r) }
     }
 }

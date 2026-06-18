@@ -6,7 +6,6 @@ import Testing
 /// inference paths must fail closed on pathological depth instead of overflowing the native stack.
 @Suite("Encoder safety")
 struct EncoderSafetyTests {
-
     // MARK: superEncoder emits a "super" key
 
     private struct UsesSuper: Encodable {
@@ -55,7 +54,7 @@ struct EncoderSafetyTests {
     // without overflowing the small test-thread stack; the clamp bounds the accumulator it builds.
     @Test func inferenceBoundsDepthOnDeepInput() throws {
         var nested = "1"
-        for _ in 0..<4000 { nested = #"{"a":"# + nested + "}" }
+        for _ in 0 ..< 4000 { nested = #"{"a":"# + nested + "}" }
         var options = JSONParseOptions.strict
         options.maxDepth = 5000  // the iterative parser is safe at any depth
         let root = try ADJSON.parse(nested, options: options).root

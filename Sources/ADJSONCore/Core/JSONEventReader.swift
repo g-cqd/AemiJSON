@@ -63,64 +63,64 @@ public struct JSONEventReader {
     public mutating func next() throws(JSONError) -> JSONEvent? {
         lastNumberRange = nil  // a non-number event leaves `currentNumberLexeme` nil
         switch expect {
-        case .rootDone:
-            skipWS()
-            guard i >= n else { throw JSONError.trailingData(at: i) }
-            return nil
-        case .rootValue:
-            return try emitValue(afterScalar: .rootDone)
-        case .objectKeyOrClose:
-            skipWS()
-            guard i < n else { throw JSONError.unexpectedEndOfInput }
-            if bytes[i] == 0x7D {  // '}'
-                i += 1
-                return closeContainer()
-            }
-            return try readKeyEvent()
-        case .objectValue:
-            return try emitValue(afterScalar: .objectCommaOrClose)
-        case .objectCommaOrClose:
-            skipWS()
-            guard i < n else { throw JSONError.unexpectedEndOfInput }
-            if bytes[i] == 0x7D {  // '}'
-                i += 1
-                return closeContainer()
-            }
-            guard bytes[i] == 0x2C else { throw JSONError.unexpectedCharacter(bytes[i], at: i) }  // ','
-            i += 1
-            if isJSON5 {  // JSON5 trailing comma: `,` directly before `}` closes the object
+            case .rootDone:
                 skipWS()
-                if i < n, bytes[i] == 0x7D {
+                guard i >= n else { throw JSONError.trailingData(at: i) }
+                return nil
+            case .rootValue:
+                return try emitValue(afterScalar: .rootDone)
+            case .objectKeyOrClose:
+                skipWS()
+                guard i < n else { throw JSONError.unexpectedEndOfInput }
+                if bytes[i] == 0x7D {  // '}'
                     i += 1
                     return closeContainer()
                 }
-            }
-            return try readKeyEvent()
-        case .arrayValueOrClose:
-            skipWS()
-            guard i < n else { throw JSONError.unexpectedEndOfInput }
-            if bytes[i] == 0x5D {  // ']'
-                i += 1
-                return closeContainer()
-            }
-            return try emitValue(afterScalar: .arrayCommaOrClose)
-        case .arrayCommaOrClose:
-            skipWS()
-            guard i < n else { throw JSONError.unexpectedEndOfInput }
-            if bytes[i] == 0x5D {  // ']'
-                i += 1
-                return closeContainer()
-            }
-            guard bytes[i] == 0x2C else { throw JSONError.unexpectedCharacter(bytes[i], at: i) }  // ','
-            i += 1
-            if isJSON5 {  // JSON5 trailing comma: `,` directly before `]` closes the array
+                return try readKeyEvent()
+            case .objectValue:
+                return try emitValue(afterScalar: .objectCommaOrClose)
+            case .objectCommaOrClose:
                 skipWS()
-                if i < n, bytes[i] == 0x5D {
+                guard i < n else { throw JSONError.unexpectedEndOfInput }
+                if bytes[i] == 0x7D {  // '}'
                     i += 1
                     return closeContainer()
                 }
-            }
-            return try emitValue(afterScalar: .arrayCommaOrClose)
+                guard bytes[i] == 0x2C else { throw JSONError.unexpectedCharacter(bytes[i], at: i) }  // ','
+                i += 1
+                if isJSON5 {  // JSON5 trailing comma: `,` directly before `}` closes the object
+                    skipWS()
+                    if i < n, bytes[i] == 0x7D {
+                        i += 1
+                        return closeContainer()
+                    }
+                }
+                return try readKeyEvent()
+            case .arrayValueOrClose:
+                skipWS()
+                guard i < n else { throw JSONError.unexpectedEndOfInput }
+                if bytes[i] == 0x5D {  // ']'
+                    i += 1
+                    return closeContainer()
+                }
+                return try emitValue(afterScalar: .arrayCommaOrClose)
+            case .arrayCommaOrClose:
+                skipWS()
+                guard i < n else { throw JSONError.unexpectedEndOfInput }
+                if bytes[i] == 0x5D {  // ']'
+                    i += 1
+                    return closeContainer()
+                }
+                guard bytes[i] == 0x2C else { throw JSONError.unexpectedCharacter(bytes[i], at: i) }  // ','
+                i += 1
+                if isJSON5 {  // JSON5 trailing comma: `,` directly before `]` closes the array
+                    skipWS()
+                    if i < n, bytes[i] == 0x5D {
+                        i += 1
+                        return closeContainer()
+                    }
+                }
+                return try emitValue(afterScalar: .arrayCommaOrClose)
         }
     }
 
@@ -131,43 +131,43 @@ public struct JSONEventReader {
         guard i < n else { throw JSONError.unexpectedEndOfInput }
         let c = bytes[i]
         switch c {
-        case 0x7B:  // '{'
-            guard stack.count < maxDepth else { throw JSONError.depthExceeded(at: i) }
-            i += 1
-            stack.append(true)
-            expect = .objectKeyOrClose
-            return .beginObject
-        case 0x5B:  // '['
-            guard stack.count < maxDepth else { throw JSONError.depthExceeded(at: i) }
-            i += 1
-            stack.append(false)
-            expect = .arrayValueOrClose
-            return .beginArray
-        case 0x22:  // '"'
-            let s = try readString()
-            expect = afterScalar
-            return .string(s)
-        case 0x74, 0x66, 0x6E:  // t / f / n
-            let event = try readLiteral()
-            expect = afterScalar
-            return event
-        case 0x2D, 0x30...0x39:  // '-' / digit
-            let value = try readNumber()
-            expect = afterScalar
-            return .number(value)
-        default:
-            // JSON5 value starts: single-quoted string, leading `+`/`.`, and `Infinity` / `NaN`.
-            if isJSON5, c == 0x27 {
+            case 0x7B:  // '{'
+                guard stack.count < maxDepth else { throw JSONError.depthExceeded(at: i) }
+                i += 1
+                stack.append(true)
+                expect = .objectKeyOrClose
+                return .beginObject
+            case 0x5B:  // '['
+                guard stack.count < maxDepth else { throw JSONError.depthExceeded(at: i) }
+                i += 1
+                stack.append(false)
+                expect = .arrayValueOrClose
+                return .beginArray
+            case 0x22:  // '"'
                 let s = try readString()
                 expect = afterScalar
                 return .string(s)
-            }
-            if isJSON5, c == 0x2B || c == 0x2E || c == 0x49 || c == 0x4E {  // + . I(nfinity) N(aN)
+            case 0x74, 0x66, 0x6E:  // t / f / n
+                let event = try readLiteral()
+                expect = afterScalar
+                return event
+            case 0x2D, 0x30 ... 0x39:  // '-' / digit
                 let value = try readNumber()
                 expect = afterScalar
                 return .number(value)
-            }
-            throw JSONError.unexpectedCharacter(c, at: i)
+            default:
+                // JSON5 value starts: single-quoted string, leading `+`/`.`, and `Infinity` / `NaN`.
+                if isJSON5, c == 0x27 {
+                    let s = try readString()
+                    expect = afterScalar
+                    return .string(s)
+                }
+                if isJSON5, c == 0x2B || c == 0x2E || c == 0x49 || c == 0x4E {  // + . I(nfinity) N(aN)
+                    let value = try readNumber()
+                    expect = afterScalar
+                    return .number(value)
+                }
+                throw JSONError.unexpectedCharacter(c, at: i)
         }
     }
 
@@ -239,21 +239,21 @@ public struct JSONEventReader {
             return isJSON5 ? JSONString.scanJSON5Lexeme(p, open, n) : JSONString.scanLexeme(p, open, n, strict: strict)
         }
         switch outcome {
-        case .incomplete:
-            throw JSONError.unexpectedEndOfInput
-        case .invalid:
-            throw JSONError.invalidString(at: open)
-        case .ok(let end, let hasEscape):
-            let start = open + 1
-            let length = end - 1 - start
-            i = end
-            return bytes.withUnsafeBufferPointer { buf in
-                guard let p = buf.baseAddress else { return "" }
-                if !hasEscape {
-                    return String(decoding: UnsafeBufferPointer(start: p + start, count: length), as: UTF8.self)
+            case .incomplete:
+                throw JSONError.unexpectedEndOfInput
+            case .invalid:
+                throw JSONError.invalidString(at: open)
+            case .ok(let end, let hasEscape):
+                let start = open + 1
+                let length = end - 1 - start
+                i = end
+                return bytes.withUnsafeBufferPointer { buf in
+                    guard let p = buf.baseAddress else { return "" }
+                    if !hasEscape {
+                        return String(decoding: UnsafeBufferPointer(start: p + start, count: length), as: UTF8.self)
+                    }
+                    return isJSON5 ? JSONString.unescapeJSON5(p, start, length) : JSONString.unescape(p, start, length)
                 }
-                return isJSON5 ? JSONString.unescapeJSON5(p, start, length) : JSONString.unescape(p, start, length)
-            }
         }
     }
 
@@ -269,7 +269,7 @@ public struct JSONEventReader {
         }
         guard case .ok(let end) = outcome else { throw JSONError.invalidNumber(at: start) }
         i = end
-        lastNumberRange = start..<end
+        lastNumberRange = start ..< end
         return bytes.withUnsafeBufferPointer { buf in
             guard let p = buf.baseAddress else { return .nan }
             return JSONNumber.parseDouble(p, start, end - start)
@@ -291,15 +291,15 @@ public struct JSONEventReader {
 
     private mutating func readLiteral() throws(JSONError) -> JSONEvent {
         switch bytes[i] {
-        case 0x74:
-            try expectLiteral("true")
-            return .bool(true)
-        case 0x66:
-            try expectLiteral("false")
-            return .bool(false)
-        default:
-            try expectLiteral("null")
-            return .null
+            case 0x74:
+                try expectLiteral("true")
+                return .bool(true)
+            case 0x66:
+                try expectLiteral("false")
+                return .bool(false)
+            default:
+                try expectLiteral("null")
+                return .null
         }
     }
 
@@ -309,7 +309,7 @@ public struct JSONEventReader {
         let start = i
         var matched = true
         literal.withUTF8Buffer { lit in
-            for k in 0..<length where bytes[start + k] != lit[k] { matched = false }
+            for k in 0 ..< length where bytes[start + k] != lit[k] { matched = false }
         }
         guard matched else { throw JSONError.unexpectedCharacter(bytes[i], at: i) }
         i += length
@@ -366,15 +366,18 @@ public struct JSONEventStreamReader {
         return events
     }
 
-    private enum Step { case event(JSONEvent), progress, needMore, end }
+    private enum Step {
+        case event(JSONEvent)
+        case progress, needMore, end
+    }
 
     private mutating func drain() throws(JSONError) -> [JSONEvent] {
         var out: [JSONEvent] = []
         loop: while true {
             switch try step() {
-            case .event(let event): out.append(event)
-            case .progress: continue
-            case .needMore, .end: break loop
+                case .event(let event): out.append(event)
+                case .progress: continue
+                case .needMore, .end: break loop
             }
         }
         if i > 0 {  // drop consumed bytes so memory tracks the largest in-flight token, not the stream
@@ -388,58 +391,58 @@ public struct JSONEventStreamReader {
 
     private mutating func step() throws(JSONError) -> Step {
         switch expect {
-        case .rootDone:
-            if skipWS() { return .needMore }
-            if i < count { throw JSONError.trailingData(at: i) }
-            return .end
-        case .rootValue:
-            return try readValue(afterScalar: .rootDone)
-        case .objectStart:
-            if skipWS() { return .needMore }
-            if i >= count { return .needMore }
-            if buffer[i] == 0x7D {
+            case .rootDone:
+                if skipWS() { return .needMore }
+                if i < count { throw JSONError.trailingData(at: i) }
+                return .end
+            case .rootValue:
+                return try readValue(afterScalar: .rootDone)
+            case .objectStart:
+                if skipWS() { return .needMore }
+                if i >= count { return .needMore }
+                if buffer[i] == 0x7D {
+                    i += 1
+                    return .event(close())
+                }
+                return try readKey()
+            case .objectKey:
+                return try readKey()
+            case .objectValue:
+                return try readValue(afterScalar: .objectCommaOrClose)
+            case .objectCommaOrClose:
+                if skipWS() { return .needMore }
+                if i >= count { return .needMore }
+                if buffer[i] == 0x7D {
+                    i += 1
+                    return .event(close())
+                }
+                guard buffer[i] == 0x2C else { throw JSONError.unexpectedCharacter(buffer[i], at: i) }
                 i += 1
-                return .event(close())
-            }
-            return try readKey()
-        case .objectKey:
-            return try readKey()
-        case .objectValue:
-            return try readValue(afterScalar: .objectCommaOrClose)
-        case .objectCommaOrClose:
-            if skipWS() { return .needMore }
-            if i >= count { return .needMore }
-            if buffer[i] == 0x7D {
+                // JSON5 allows a trailing comma: route to `.objectStart`, which also accepts a closing `}`.
+                expect = isJSON5 ? .objectStart : .objectKey
+                return .progress
+            case .arrayStart:
+                if skipWS() { return .needMore }
+                if i >= count { return .needMore }
+                if buffer[i] == 0x5D {
+                    i += 1
+                    return .event(close())
+                }
+                return try readValue(afterScalar: .arrayCommaOrClose)
+            case .arrayValue:
+                return try readValue(afterScalar: .arrayCommaOrClose)
+            case .arrayCommaOrClose:
+                if skipWS() { return .needMore }
+                if i >= count { return .needMore }
+                if buffer[i] == 0x5D {
+                    i += 1
+                    return .event(close())
+                }
+                guard buffer[i] == 0x2C else { throw JSONError.unexpectedCharacter(buffer[i], at: i) }
                 i += 1
-                return .event(close())
-            }
-            guard buffer[i] == 0x2C else { throw JSONError.unexpectedCharacter(buffer[i], at: i) }
-            i += 1
-            // JSON5 allows a trailing comma: route to `.objectStart`, which also accepts a closing `}`.
-            expect = isJSON5 ? .objectStart : .objectKey
-            return .progress
-        case .arrayStart:
-            if skipWS() { return .needMore }
-            if i >= count { return .needMore }
-            if buffer[i] == 0x5D {
-                i += 1
-                return .event(close())
-            }
-            return try readValue(afterScalar: .arrayCommaOrClose)
-        case .arrayValue:
-            return try readValue(afterScalar: .arrayCommaOrClose)
-        case .arrayCommaOrClose:
-            if skipWS() { return .needMore }
-            if i >= count { return .needMore }
-            if buffer[i] == 0x5D {
-                i += 1
-                return .event(close())
-            }
-            guard buffer[i] == 0x2C else { throw JSONError.unexpectedCharacter(buffer[i], at: i) }
-            i += 1
-            // JSON5 allows a trailing comma: route to `.arrayStart`, which also accepts a closing `]`.
-            expect = isJSON5 ? .arrayStart : .arrayValue
-            return .progress
+                // JSON5 allows a trailing comma: route to `.arrayStart`, which also accepts a closing `]`.
+                expect = isJSON5 ? .arrayStart : .arrayValue
+                return .progress
         }
     }
 
@@ -464,22 +467,22 @@ public struct JSONEventStreamReader {
                 return JSONString.scanIdentifier(p, open, count, complete: finished)
             }
             switch outcome {
-            case .incomplete: return .needMore
-            case .invalid: throw JSONError.unexpectedCharacter(c, at: i)
-            case .ok(let end, _):
-                keyEnd = end
-                key = buffer.withUnsafeBufferPointer { buf in
-                    guard let p = buf.baseAddress else { return "" }
-                    return String(decoding: UnsafeBufferPointer(start: p + open, count: end - open), as: UTF8.self)
-                }
+                case .incomplete: return .needMore
+                case .invalid: throw JSONError.unexpectedCharacter(c, at: i)
+                case .ok(let end, _):
+                    keyEnd = end
+                    key = buffer.withUnsafeBufferPointer { buf in
+                        guard let p = buf.baseAddress else { return "" }
+                        return String(decoding: UnsafeBufferPointer(start: p + open, count: end - open), as: UTF8.self)
+                    }
             }
         } else {
             guard c == 0x22 || (isJSON5 && c == 0x27) else { throw JSONError.unexpectedCharacter(c, at: i) }
             switch try scanStringEnd(open) {
-            case .incomplete: return .needMore
-            case .ok(let end, let hasEscape):
-                keyEnd = end
-                key = decodeString(open, end, hasEscape: hasEscape)
+                case .incomplete: return .needMore
+                case .ok(let end, let hasEscape):
+                    keyEnd = end
+                    key = decodeString(open, end, hasEscape: hasEscape)
             }
         }
         // The mandatory `:` (JSON5 permits whitespace/comments between the key and the colon).
@@ -501,78 +504,84 @@ public struct JSONEventStreamReader {
         if i >= count { return .needMore }
         let c = buffer[i]
         switch c {
-        case 0x7B:  // '{'
-            guard stack.count < maxDepth else { throw JSONError.depthExceeded(at: i) }
-            i += 1
-            stack.append(true)
-            expect = .objectStart
-            return .event(.beginObject)
-        case 0x5B:  // '['
-            guard stack.count < maxDepth else { throw JSONError.depthExceeded(at: i) }
-            i += 1
-            stack.append(false)
-            expect = .arrayStart
-            return .event(.beginArray)
-        case 0x22:  // '"'
-            switch try scanStringEnd(i) {
-            case .incomplete: return .needMore
-            case .ok(let end, let hasEscape):
-                let s = decodeString(i, end, hasEscape: hasEscape)
-                i = end
-                expect = afterScalar
-                return .event(.string(s))
-            }
-        case 0x74, 0x66, 0x6E:  // t / f / n
-            switch try scanLiteralEnd(i) {
-            case .incomplete: return .needMore
-            case .ok(let end, let event):
-                i = end
-                expect = afterScalar
-                return .event(event)
-            }
-        case 0x2D, 0x30...0x39:  // '-' / digit
-            switch try scanNumberEnd(i) {
-            case .incomplete: return .needMore
-            case .ok(let end):
-                let value = parseNumber(i, end)
-                i = end
-                expect = afterScalar
-                return .event(.number(value))
-            }
-        default:
-            // JSON5 value starts: single-quoted string and leading `+`/`.`/`Infinity`/`NaN`.
-            if isJSON5, c == 0x27 {
+            case 0x7B:  // '{'
+                guard stack.count < maxDepth else { throw JSONError.depthExceeded(at: i) }
+                i += 1
+                stack.append(true)
+                expect = .objectStart
+                return .event(.beginObject)
+            case 0x5B:  // '['
+                guard stack.count < maxDepth else { throw JSONError.depthExceeded(at: i) }
+                i += 1
+                stack.append(false)
+                expect = .arrayStart
+                return .event(.beginArray)
+            case 0x22:  // '"'
                 switch try scanStringEnd(i) {
-                case .incomplete: return .needMore
-                case .ok(let end, let hasEscape):
-                    let s = decodeString(i, end, hasEscape: hasEscape)
-                    i = end
-                    expect = afterScalar
-                    return .event(.string(s))
+                    case .incomplete: return .needMore
+                    case .ok(let end, let hasEscape):
+                        let s = decodeString(i, end, hasEscape: hasEscape)
+                        i = end
+                        expect = afterScalar
+                        return .event(.string(s))
                 }
-            }
-            if isJSON5, c == 0x2B || c == 0x2E || c == 0x49 || c == 0x4E {  // + . I(nfinity) N(aN)
+            case 0x74, 0x66, 0x6E:  // t / f / n
+                switch try scanLiteralEnd(i) {
+                    case .incomplete: return .needMore
+                    case .ok(let end, let event):
+                        i = end
+                        expect = afterScalar
+                        return .event(event)
+                }
+            case 0x2D, 0x30 ... 0x39:  // '-' / digit
                 switch try scanNumberEnd(i) {
-                case .incomplete: return .needMore
-                case .ok(let end):
-                    let value = parseNumber(i, end)
-                    i = end
-                    expect = afterScalar
-                    return .event(.number(value))
+                    case .incomplete: return .needMore
+                    case .ok(let end):
+                        let value = parseNumber(i, end)
+                        i = end
+                        expect = afterScalar
+                        return .event(.number(value))
                 }
-            }
-            throw JSONError.unexpectedCharacter(c, at: i)
+            default:
+                // JSON5 value starts: single-quoted string and leading `+`/`.`/`Infinity`/`NaN`.
+                if isJSON5, c == 0x27 {
+                    switch try scanStringEnd(i) {
+                        case .incomplete: return .needMore
+                        case .ok(let end, let hasEscape):
+                            let s = decodeString(i, end, hasEscape: hasEscape)
+                            i = end
+                            expect = afterScalar
+                            return .event(.string(s))
+                    }
+                }
+                if isJSON5, c == 0x2B || c == 0x2E || c == 0x49 || c == 0x4E {  // + . I(nfinity) N(aN)
+                    switch try scanNumberEnd(i) {
+                        case .incomplete: return .needMore
+                        case .ok(let end):
+                            let value = parseNumber(i, end)
+                            i = end
+                            expect = afterScalar
+                            return .event(.number(value))
+                    }
+                }
+                throw JSONError.unexpectedCharacter(c, at: i)
         }
     }
 
     // MARK: - Resumable scanners (index-based over `buffer`; `.incomplete` means "need more bytes")
 
-    private enum ScanOutcome { case ok(Int), incomplete }
+    private enum ScanOutcome {
+        case ok(Int)
+        case incomplete
+    }
 
     // `.ok(end, hasEscape)`: `end` is the index past the close quote, `hasEscape` reports whether the
     // body contains a backslash (so `decodeString` skips a second scan). `.incomplete` if the buffer
     // ends mid-string.
-    private enum StringScanOutcome { case ok(Int, Bool), incomplete }
+    private enum StringScanOutcome {
+        case ok(Int, Bool)
+        case incomplete
+    }
 
     // Scan a `"…"` string from the opening quote `open` via the shared grammar (Core/Tokenizer.swift).
     // `.incomplete` (buffer ended mid-token) means "wait for the next feed"; `.invalid` is malformed.
@@ -584,9 +593,9 @@ public struct JSONEventStreamReader {
                 : JSONString.scanLexeme(p, open, count, strict: strict)
         }
         switch outcome {
-        case .ok(let end, let hasEscape): return .ok(end, hasEscape)
-        case .incomplete: return .incomplete
-        case .invalid: throw JSONError.invalidString(at: open)
+            case .ok(let end, let hasEscape): return .ok(end, hasEscape)
+            case .incomplete: return .incomplete
+            case .invalid: throw JSONError.invalidString(at: open)
         }
     }
 
@@ -596,15 +605,15 @@ public struct JSONEventStreamReader {
         let event: JSONEvent
         let literal: StaticString
         switch buffer[start] {
-        case 0x74: (literal, event) = ("true", .bool(true))
-        case 0x66: (literal, event) = ("false", .bool(false))
-        default: (literal, event) = ("null", .null)
+            case 0x74: (literal, event) = ("true", .bool(true))
+            case 0x66: (literal, event) = ("false", .bool(false))
+            default: (literal, event) = ("null", .null)
         }
         let length = literal.utf8CodeUnitCount
         let available = Swift.min(length, count - start)
         var matched = true
         literal.withUTF8Buffer { lit in
-            for k in 0..<available where buffer[start + k] != lit[k] { matched = false }
+            for k in 0 ..< available where buffer[start + k] != lit[k] { matched = false }
         }
         guard matched else { throw JSONError.unexpectedCharacter(buffer[start], at: start) }
         if start + length > count {
@@ -613,7 +622,10 @@ public struct JSONEventStreamReader {
         }
         return .ok(start + length, event)
     }
-    private enum LiteralOutcome { case ok(Int, JSONEvent), incomplete }
+    private enum LiteralOutcome {
+        case ok(Int, JSONEvent)
+        case incomplete
+    }
 
     // Loosely consume the number alphabet, then validate. Mid-stream a number that runs to the
     // buffer end is `.incomplete` (digits could continue); at `finish()` it is validated as-is.
@@ -627,9 +639,9 @@ public struct JSONEventStreamReader {
                 : JSONNumber.scanLexeme(p, start, count, strict: strict, complete: finished)
         }
         switch outcome {
-        case .ok(let end): return .ok(end)
-        case .incomplete: return .incomplete
-        case .invalid: throw JSONError.invalidNumber(at: start)
+            case .ok(let end): return .ok(end)
+            case .incomplete: return .incomplete
+            case .invalid: throw JSONError.invalidNumber(at: start)
         }
     }
 
@@ -668,7 +680,8 @@ public struct JSONEventStreamReader {
         }
         while i < count {
             let c = buffer[i]
-            if c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 { i += 1 } else { break }
+            guard c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 else { break }
+            i += 1
         }
         return false
     }

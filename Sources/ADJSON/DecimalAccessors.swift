@@ -27,7 +27,7 @@ enum ADJSONDecimal {
 // be represented exactly, so hand it to the string parser rather than risk a divergent rounding.
 private let decimalSignificandCeiling: UInt128 = {
     var value: UInt128 = 1
-    for _ in 0..<38 { value &*= 10 }
+    for _ in 0 ..< 38 { value &*= 10 }
     return value
 }()
 // 2^64, to fold the significand's high/low 64-bit halves into a `Decimal` exactly.
@@ -132,9 +132,9 @@ extension JSONValue {
     /// ``JSON/decimal`` on the parsed document **before** materializing a tree.
     public var decimal: Decimal? {
         switch self {
-        case .int(let value): return Decimal(value)
-        case .number(let value): return decimalFromDouble(value)
-        default: return nil
+            case .int(let value): return Decimal(value)
+            case .number(let value): return decimalFromDouble(value)
+            default: return nil
         }
     }
 }

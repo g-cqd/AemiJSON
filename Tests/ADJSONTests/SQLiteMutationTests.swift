@@ -55,7 +55,7 @@ struct SQLiteMutationTests {
         (#"{"a":1}"#, "$.a", "2", .replace, #"{"a":2}"#),
         (#"{"a":1}"#, "$.b", "2", .replace, #"{"a":1}"#),  // missing ⇒ no-op
         (#"{}"#, "$.a.b", "1", .replace, #"{}"#),  // missing intermediate ⇒ no-op
-        (#"{"a":1}"#, "$", "5", .replace, #"5"#),  // root always replaceable
+        (#"{"a":1}"#, "$", "5", .replace, #"5"#)  // root always replaceable
     ]
 
     @Test(arguments: corpus)

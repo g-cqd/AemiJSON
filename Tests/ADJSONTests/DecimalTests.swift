@@ -70,10 +70,11 @@ struct DecimalTests {
             "99999999999999999999999999999999999999",  // 38 nines — Decimal's capacity
             "123456789012345678901234567890123456789",  // 39 digits → fallback
             "1e5", "1.5e10", "-2.5e-7", "3.14159E2", "1E-30", "0.000000000000000000001",
-            "100000000000000000000",
+            "100000000000000000000"
         ]
-        let decoded = try ADJSON.JSONDecoder().decode(
-            [Decimal].self, from: Data(("[" + cases.joined(separator: ",") + "]").utf8))
+        let decoded = try ADJSON.JSONDecoder()
+            .decode(
+                [Decimal].self, from: Data(("[" + cases.joined(separator: ",") + "]").utf8))
         for (i, c) in cases.enumerated() {
             #expect(decoded[i] == Decimal(string: c, locale: posix), "mismatch for \(c)")
         }

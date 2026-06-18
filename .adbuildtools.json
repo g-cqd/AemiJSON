@@ -1,0 +1,6 @@
+{
+    "devEnv": "ADJSON_DEV",
+    "shippedTargets": ["Sources/ADJSON", "Sources/ADJSONCore"],
+    "strtodBan": true,
+    "forceUnwrapBan": true
+}

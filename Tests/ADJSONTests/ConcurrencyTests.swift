@@ -12,7 +12,7 @@ private struct Row: Codable, Equatable, Sendable {
 }
 
 private func makeRows(_ n: Int) -> [Row] {
-    (0..<n).map { Row(id: $0, name: "row\($0)", score: Double($0) / 7.0, tags: ["a", "b"], active: $0 % 2 == 0) }
+    (0 ..< n).map { Row(id: $0, name: "row\($0)", score: Double($0) / 7.0, tags: ["a", "b"], active: $0 % 2 == 0) }
 }
 
 @Test func concurrentDecodeMatchesSerial() async throws {

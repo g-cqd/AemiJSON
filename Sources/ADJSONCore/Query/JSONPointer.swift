@@ -34,12 +34,12 @@ public struct JSONPointer: Sendable, Equatable {
                 continue
             }
             switch it.next() {
-            case "1": out.append("/")
-            case "0": out.append("~")
-            case let other?:
-                out.append("~")
-                out.append(other)
-            case nil: out.append("~")
+                case "1": out.append("/")
+                case "0": out.append("~")
+                case let other?:
+                    out.append("~")
+                    out.append(other)
+                case nil: out.append("~")
             }
         }
         return out

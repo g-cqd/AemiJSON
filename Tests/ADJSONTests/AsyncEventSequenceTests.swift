@@ -38,7 +38,7 @@ private func asyncEvents(_ json: String, chunkSize: Int) async throws -> [JSONEv
     #expect(
         events == [
             .beginObject, .key("a"), .number(1), .key("b"), .beginArray,
-            .bool(true), .null, .string("x"), .endArray, .endObject,
+            .bool(true), .null, .string("x"), .endArray, .endObject
         ])
 }
 

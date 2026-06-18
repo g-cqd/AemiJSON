@@ -22,7 +22,7 @@ private struct FastRec: Codable, Equatable {
     var enc = ADJSON.JSONEncoder()
     enc.keyEncodingStrategy = .custom { "x_" + $0 }
     for data in [
-        try enc.encode(PlainRec(firstName: "a", ageYears: 1)), try enc.encode(FastRec(firstName: "a", ageYears: 1)),
+        try enc.encode(PlainRec(firstName: "a", ageYears: 1)), try enc.encode(FastRec(firstName: "a", ageYears: 1))
     ] {
         let root = try ADJSON.parse(data).root
         #expect(root["x_firstName"].string == "a")

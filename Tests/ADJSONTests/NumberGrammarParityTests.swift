@@ -27,7 +27,7 @@ struct NumberGrammarParityTests {
     private func shortStrings(maxLen: Int, alphabet: [Character]) -> [String] {
         var all: [String] = []
         var current: [String] = [""]
-        for _ in 1...maxLen {
+        for _ in 1 ... maxLen {
             var next: [String] = []
             next.reserveCapacity(current.count * alphabet.count)
             for prefix in current { for c in alphabet { next.append(prefix + String(c)) } }
@@ -38,7 +38,7 @@ struct NumberGrammarParityTests {
     }
 
     private static let modes: [(name: String, options: JSONParseOptions)] = [
-        ("strict", .strict), ("lenient", .lenient), ("json5", .json5),
+        ("strict", .strict), ("lenient", .lenient), ("json5", .json5)
     ]
 
     // Exhaustive over a number-focused alphabet (digits, signs, dot, exponent, hex marker, and the
@@ -62,7 +62,7 @@ struct NumberGrammarParityTests {
     @Test(arguments: [
         "0", "-0", "42", "-42", "3.14", "1e10", "1E10", "1e+10", "1e-10", "0.5",
         "123456789012345678901234567890", "9007199254740993", "1.7976931348623157e308",
-        "01", "1.", ".5", "+1", "1e", "1e+", "1.2.3", "--1", "0x1F", "Infinity", "NaN", "0.", "1.e3",
+        "01", "1.", ".5", "+1", "1e", "1e+", "1.2.3", "--1", "0x1F", "Infinity", "NaN", "0.", "1.e3"
     ])
     func tapeAndSaxAgreeOnCuratedElements(_ literal: String) {
         for mode in Self.modes {

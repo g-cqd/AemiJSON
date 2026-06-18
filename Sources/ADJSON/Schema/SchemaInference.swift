@@ -65,40 +65,40 @@ private func ingest(_ root: JSON, into rootAcc: SchemaAccumulator) {
 private func describeValue(_ value: Any, into acc: SchemaAccumulator, depth: Int = 0) {
     let mirror = Mirror(reflecting: value)
     switch mirror.displayStyle {
-    case .optional:
-        if let child = mirror.children.first {
-            describeValue(child.value, into: acc, depth: depth + 1)
-        } else {
-            acc.types.insert("null")
-        }
-    case .struct, .class:
-        acc.types.insert("object")
-        acc.objectCount += 1
-        guard depth < maxInferenceDepth else { return }
-        for child in mirror.children {
-            guard let label = child.label else { continue }
-            let sub = acc.properties[label] ?? SchemaAccumulator()
-            describeValue(child.value, into: sub, depth: depth + 1)
-            acc.properties[label] = sub
-            if Mirror(reflecting: child.value).displayStyle != .optional { acc.presence[label, default: 0] += 1 }
-        }
-    case .collection:
-        acc.types.insert("array")
-        guard depth < maxInferenceDepth else { return }
-        let items = acc.items ?? SchemaAccumulator()
-        for child in mirror.children { describeValue(child.value, into: items, depth: depth + 1) }
-        acc.items = items
-    case .dictionary:
-        acc.types.insert("object")
-    default:
-        switch value {
-        case is Bool: acc.types.insert("boolean")
-        case is Int, is Int8, is Int16, is Int32, is Int64, is UInt, is UInt8, is UInt16, is UInt32, is UInt64:
-            acc.types.insert("integer")
-        case is Double, is Float: acc.types.insert("number")
-        case is String: acc.types.insert("string")
-        default: break
-        }
+        case .optional:
+            if let child = mirror.children.first {
+                describeValue(child.value, into: acc, depth: depth + 1)
+            } else {
+                acc.types.insert("null")
+            }
+        case .struct, .class:
+            acc.types.insert("object")
+            acc.objectCount += 1
+            guard depth < maxInferenceDepth else { return }
+            for child in mirror.children {
+                guard let label = child.label else { continue }
+                let sub = acc.properties[label] ?? SchemaAccumulator()
+                describeValue(child.value, into: sub, depth: depth + 1)
+                acc.properties[label] = sub
+                if Mirror(reflecting: child.value).displayStyle != .optional { acc.presence[label, default: 0] += 1 }
+            }
+        case .collection:
+            acc.types.insert("array")
+            guard depth < maxInferenceDepth else { return }
+            let items = acc.items ?? SchemaAccumulator()
+            for child in mirror.children { describeValue(child.value, into: items, depth: depth + 1) }
+            acc.items = items
+        case .dictionary:
+            acc.types.insert("object")
+        default:
+            switch value {
+                case is Bool: acc.types.insert("boolean")
+                case is Int, is Int8, is Int16, is Int32, is Int64, is UInt, is UInt8, is UInt16, is UInt32, is UInt64:
+                    acc.types.insert("integer")
+                case is Double, is Float: acc.types.insert("number")
+                case is String: acc.types.insert("string")
+                default: break
+            }
     }
 }
 
@@ -106,7 +106,7 @@ private func describeValue(_ value: Any, into acc: SchemaAccumulator, depth: Int
 // deep accumulator serializes without native-stack recursion. The accumulator tree is acyclic (every
 // `items` / property is a distinct node), so each node is rendered exactly once.
 private func render(_ root: SchemaAccumulator) -> String {
-    var done = [ObjectIdentifier: String]()
+    var done: [ObjectIdentifier: String] = [:]
     var work: [(SchemaAccumulator, Bool)] = [(root, false)]
     while let (acc, expanded) = work.popLast() {
         let id = ObjectIdentifier(acc)
@@ -155,7 +155,7 @@ private func renderNode(_ acc: SchemaAccumulator, children: [ObjectIdentifier: S
 // Reuses the canonical encoder escaper (the single source of truth in `JSONOutput`) so the
 // rendered schema text escapes control characters identically to the rest of the library.
 private func schemaQuote(_ s: String) -> String {
-    var out = [UInt8]()
+    var out: [UInt8] = []
     JSONOutput.appendString(s, to: &out)
     return String(decoding: out, as: UTF8.self)
 }

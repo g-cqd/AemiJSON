@@ -17,10 +17,10 @@ struct CoverageCheckPlugin: CommandPlugin {
         var iterator = arguments.makeIterator()
         while let arg = iterator.next() {
             switch arg {
-            case "--floor": if let value = iterator.next(), let parsed = Double(value) { floor = parsed }
-            case "--config": if let value = iterator.next() { config = value }
-            case "--bin-path": binPathOverride = iterator.next()
-            default: break
+                case "--floor": if let value = iterator.next(), let parsed = Double(value) { floor = parsed }
+                case "--config": if let value = iterator.next() { config = value }
+                case "--bin-path": binPathOverride = iterator.next()
+                default: break
             }
         }
 
