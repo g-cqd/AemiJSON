@@ -334,15 +334,9 @@ struct TapeBuilder {
     // are only ever the per-byte `0x80`, so `trailingZeroBitCount >> 3` (little-endian) locates the
     // first stop byte. Uses the classic "bytes < n" / "bytes == c" bit hacks (Bit Twiddling Hacks).
     @inline(__always) static func stringStopMask(_ v: UInt64) -> UInt64 {
-        let ones: UInt64 = 0x0101_0101_0101_0101
-        let high: UInt64 = 0x8080_8080_8080_8080
-        let lessThan0x20 = (v &- (ones &* 0x20)) & ~v & high  // bytes < 0x20
-        let nonASCII = v & high  // bytes >= 0x80
-        let quote = v ^ (ones &* 0x22)  // zero byte where v == '"'
-        let isQuote = (quote &- ones) & ~quote & high
-        let backslash = v ^ (ones &* 0x5C)  // zero byte where v == '\'
-        let isBackslash = (backslash &- ones) & ~backslash & high
-        return lessThan0x20 | nonASCII | isQuote | isBackslash
+        // Parse stops on a control, a non-ASCII lead, a quote, or a backslash. (Encode shares the
+        // control/quote/backslash terms but omits non-ASCII — UTF-8 is copied verbatim there.)
+        SWAR.lessThan(v, 0x20) | SWAR.nonASCII(v) | SWAR.equals(v, 0x22) | SWAR.equals(v, 0x5C)
     }
 
     // `p[j]` is a backslash; validates the escape and advances `j` past it.

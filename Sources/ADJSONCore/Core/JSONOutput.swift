@@ -71,6 +71,16 @@ public enum JSONOutput {
     /// `<`, `>`, `&` (as `<`/`>`/`&`) and the JS line/paragraph separators U+2028 /
     /// U+2029 (as ` `/` `). Off by default; the checks short-circuit so the default path is
     /// unchanged.
+    /// SWAR escape stop-mask for ``appendString``: `0x80` in each byte that must be escaped on the
+    /// default / `escapeSlashes` profile — a control (`< 0x20`), `"`, `\` (and `/` when escaping
+    /// slashes). Non-ASCII is intentionally NOT flagged (well-formed UTF-8 is copied verbatim on
+    /// encode), which is the one term that differs from the parser's `stringStopMask`.
+    @inlinable @inline(__always)
+    static func encodeStopMask(_ v: UInt64, escapeSlashes: Bool) -> UInt64 {
+        let m = SWAR.lessThan(v, 0x20) | SWAR.equals(v, 0x22) | SWAR.equals(v, 0x5C)
+        return escapeSlashes ? m | SWAR.equals(v, 0x2F) : m
+    }
+
     @inlinable
     public static func appendString(
         _ s: String, to bytes: inout [UInt8], escapeSlashes: Bool = false, escapeHTMLUnsafe: Bool = false
@@ -83,6 +93,22 @@ public enum JSONOutput {
             var runStart = 0
             var i = 0
             while i < n {
+                // SWAR fast-forward over clean runs (8 bytes/step) on the default / escapeSlashes
+                // profile, stopping at a control, `"`, `\` (or `/`); non-ASCII is copied verbatim. The
+                // HTML-safe mode skips it — that path also needs the `<`/`>`/`&` and 3-byte sequence checks.
+                if !escapeHTMLUnsafe {
+                    while i + 8 <= n {
+                        let word = UInt64(littleEndian: UnsafeRawPointer(p + i).loadUnaligned(as: UInt64.self))
+                        let mask = encodeStopMask(word, escapeSlashes: escapeSlashes)
+                        if mask == 0 {
+                            i += 8
+                            continue
+                        }
+                        i += mask.trailingZeroBitCount >> 3
+                        break
+                    }
+                    guard i < n else { break }
+                }
                 let b = p[i]
                 // U+2028 / U+2029 are 3-byte sequences (E2 80 A8/A9), so they need a UTF-8-aware branch
                 // rather than a single-byte test — taken only under HTML-safe escaping.
