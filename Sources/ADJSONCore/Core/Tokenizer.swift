@@ -1,10 +1,12 @@
 import ADFCore
 
 // Shared, resumability-aware RFC 8259 / lenient token grammar — the single source of truth for the
-// SAX readers (pull `JSONEventReader` and push `JSONEventStreamReader`), so a grammar fix lands in
-// one place instead of three. The tape `Scanner` keeps its own SWAR-integrated scan for throughput
-// (a deliberate fast-path variant, see the Architecture article); these helpers are the shared,
-// pointer-based grammar everything else agrees with.
+// SAX readers (pull `JSONEventReader` and push `JSONEventStreamReader`). The tape `Scanner` keeps a
+// separate, SWAR-integrated scan: it runs over the whole buffer in one pass, fuses int-vs-double
+// classification into that pass, and never needs to suspend — whereas these helpers must be
+// resumable (`.incomplete`) so a token split across feeds resumes cleanly. The two are deliberately
+// distinct implementations of one grammar; `NumberGrammarParityTests` and `StringEscapeParityTests`
+// bind them to the same accepted language so they cannot drift apart.
 //
 // Resumability is first-class: a token that reaches the buffer end while more bytes may still arrive
 // returns `.incomplete`, which is exactly what the push reader needs at a chunk boundary. The
@@ -303,9 +305,8 @@ extension JSONString {
         return value
     }
 
-    static func isHexDigit(_ b: UInt8) -> Bool {
-        (b >= 0x30 && b <= 0x39) || ((b | 0x20) >= 0x61 && (b | 0x20) <= 0x66)
-    }
+    // One hex-digit definition for the whole engine: ADFCore's `Hex.value` table (nil = not a hex digit).
+    static func isHexDigit(_ b: UInt8) -> Bool { Hex.value(b) != nil }
 
     /// Scan a JSON5 string starting at the opening quote `open` (a `'` or `"`); the terminator matches
     /// the opening quote. Validates the JSON5 escape set (`\x`, `\v`, `\0`, line continuations, and

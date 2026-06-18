@@ -362,16 +362,17 @@ struct TapeBuilder {
         }
     }
 
+    // The 4-hex-digit decode is shared with the SAX scanner (`JSONString.hex4`); only the error shape
+    // differs (the tape throws a positioned `JSONError`, the lexeme scanner returns nil).
     func hex4(_ at: Int) throws(JSONError) -> UInt16 {
-        guard at + 4 <= n else { throw JSONError.invalidString(at: at) }
-        var value: UInt16 = 0
-        for k in 0..<4 {
-            guard let digit = Hex.value(p[at + k]) else { throw JSONError.invalidString(at: at) }
-            value = (value << 4) | UInt16(digit)
-        }
+        guard at + 4 <= n, let value = JSONString.hex4(p, at) else { throw JSONError.invalidString(at: at) }
         return value
     }
 
+    // The tape's number scan: one pass that validates the lexeme AND classifies int-vs-double (the
+    // `isInt` flag), tuned for throughput. It is a separate implementation of the same grammar the
+    // resumable SAX scanner (`JSONNumber.scanLexeme`, Core/Tokenizer.swift) enforces;
+    // `NumberGrammarParityTests` binds the two to the same accepted language.
     mutating func scanNumber() throws(JSONError) {
         let start = i
         var isInt: UInt64 = 1
@@ -558,13 +559,15 @@ struct TapeBuilder {
     // non-ASCII; the rest also allowing digits). Recorded as an escape-free string slot.
     mutating func scanIdentifierKeyJSON5() throws(JSONError) {
         let start = i
-        guard i < n, isIdentStart(p[i]) else { throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i) }
+        guard i < n, JSONString.isIdentStart(p[i]) else {
+            throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i)
+        }
         if p[i] >= 0x80 { i += try JSONUTF8.sequenceLength(p, i, n) } else { i += 1 }
         while i < n {
             let c = p[i]
             if c >= 0x80 {
                 i += try JSONUTF8.sequenceLength(p, i, n)
-            } else if isIdentStart(c) || isDigit(c) {
+            } else if JSONString.isIdentStart(c) || isDigit(c) {
                 i += 1
             } else {
                 break
@@ -573,10 +576,6 @@ struct TapeBuilder {
         let length = i - start
         guard length <= Slot.maxLength else { throw JSONError.documentTooLarge }
         slots.append(Slot.scalar(JSONKind.string.rawValue, offset: start, length: length, flags: 0))
-    }
-
-    @inline(__always) func isIdentStart(_ b: UInt8) -> Bool {
-        ((b | 0x20) >= 0x61 && (b | 0x20) <= 0x7A) || b == 0x5F || b == 0x24 || b >= 0x80
     }
 
     // JSON5 number: optional `+`/`-`, then `Infinity` / `NaN`, a hex integer (`0x…`), or a decimal
