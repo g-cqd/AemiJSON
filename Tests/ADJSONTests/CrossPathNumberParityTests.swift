@@ -104,4 +104,21 @@ struct CrossPathNumberParityTests {
         let reencoded = try ADJSON.JSONEncoder().encode(viaFast)
         #expect(try ADJSON.JSONDecoder().decode(Nums.self, from: reencoded) == viaFast)
     }
+
+    // MARK: SAX — the pull reader exposes the exact number lexeme the Double payload would round.
+
+    @Test func saxCurrentNumberLexemeRecoversExactSource() throws {
+        var reader = JSONEventReader(#"[123456789012345678901234567890,9007199254740993,"x",3.5]"#)
+        #expect(try reader.next() == .beginArray)
+        #expect(reader.currentNumberLexeme == nil)  // a container is not a number
+        _ = try reader.next()  // 30-digit number — beyond Double, exact in the lexeme
+        #expect(reader.currentNumberLexeme == "123456789012345678901234567890")
+        _ = try reader.next()  // 9007199254740993 (> 2^53) — recoverable as an exact Int64
+        #expect(reader.currentNumberLexeme == "9007199254740993")
+        #expect(Int64(reader.currentNumberLexeme ?? "") == 9_007_199_254_740_993)
+        #expect(try reader.next() == .string("x"))
+        #expect(reader.currentNumberLexeme == nil)  // a non-number event clears it
+        _ = try reader.next()  // 3.5
+        #expect(reader.currentNumberLexeme == "3.5")
+    }
 }

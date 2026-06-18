@@ -1,10 +1,10 @@
 /// A single SAX event produced by ``JSONEventReader``.
 ///
-/// `.number` carries the parsed `Double`, so an integer-shaped token beyond 2^53 loses precision.
-/// When you need lossless 64-bit integers, materialize through ``JSONValue`` (which keeps an exact
-/// `Int64`) or use the Codable decoder rather than the SAX stream — the reader exposes no separate
-/// integer accessor. Object members surface as a `.key` event immediately followed by the value's
-/// event(s).
+/// `.number` carries the parsed `Double`, so an integer-shaped token beyond 2^53, or a high-precision
+/// decimal, loses precision in the payload. To recover the exact value from the pull reader, read
+/// ``JSONEventReader/currentNumberLexeme`` right after a `.number` event (the raw source digits, from
+/// which an exact `Int64`/`Decimal` parses); alternatively materialize through ``JSONValue`` or use the
+/// Codable decoder. Object members surface as a `.key` event immediately followed by the value's event(s).
 public enum JSONEvent: Sendable, Equatable {
     case beginObject
     case endObject
@@ -42,6 +42,9 @@ public struct JSONEventReader {
         case arrayValueOrClose, arrayCommaOrClose
     }
     private var expect: Expect = .rootValue
+    // Byte range of the number behind the most recent `.number` event, for `currentNumberLexeme`.
+    // Set by `readNumber`; cleared at the top of each `next()` so it reflects only the last event.
+    private var lastNumberRange: Range<Int>?
 
     public init(_ bytes: [UInt8], options: JSONParseOptions = .strict) {
         self.bytes = bytes
@@ -58,6 +61,7 @@ public struct JSONEventReader {
     /// The next event, or `nil` at the clean end of the document. Throws ``JSONError`` on malformed
     /// input. After `nil` is returned, further calls keep returning `nil`.
     public mutating func next() throws(JSONError) -> JSONEvent? {
+        lastNumberRange = nil  // a non-number event leaves `currentNumberLexeme` nil
         switch expect {
         case .rootDone:
             skipWS()
@@ -265,9 +269,23 @@ public struct JSONEventReader {
         }
         guard case .ok(let end) = outcome else { throw JSONError.invalidNumber(at: start) }
         i = end
+        lastNumberRange = start..<end
         return bytes.withUnsafeBufferPointer { buf in
             guard let p = buf.baseAddress else { return .nan }
             return JSONNumber.parseDouble(p, start, end - start)
+        }
+    }
+
+    /// The raw UTF-8 lexeme — the exact source digits — of the number behind the most recently
+    /// returned `.number` event, or `nil` if the last event was not a number. Lets a consumer recover a
+    /// value the `Double` payload would round: an integer beyond 2^53 (`Int64(lexeme)`) or a
+    /// high-precision decimal. Valid until the next ``next()`` call. The bytes are ASCII (RFC 8259 /
+    /// JSON5 numbers), so the decode never fails.
+    public var currentNumberLexeme: String? {
+        guard let range = lastNumberRange else { return nil }
+        return bytes.withUnsafeBufferPointer { buf in
+            guard let p = buf.baseAddress else { return nil }
+            return String(decoding: UnsafeBufferPointer(start: p + range.lowerBound, count: range.count), as: UTF8.self)
         }
     }
 
