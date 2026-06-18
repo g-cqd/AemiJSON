@@ -62,14 +62,15 @@ nonisolated(unsafe) let benchmarks = {
     // beyond UInt64/Double, the case `Decimal` is really for). Foundation special-cases `Decimal` too,
     // so each compares the two exact-decimal paths, not Decimal-vs-Double.
     let decimalShortData = Data(
-        ("[" + (0..<20_000).map { "\($0).\(1000 + ($0 &* 7) % 9000)" }.joined(separator: ",") + "]").utf8)
+        ("[" + (0 ..< 20_000).map { "\($0).\(1000 + ($0 &* 7) % 9000)" }.joined(separator: ",") + "]").utf8)
     let decimalLongData = Data(
         ("["
-            + (0..<20_000).map { "123456789012345678901234567.\(1000 + ($0 &* 7) % 9000)" }
-            .joined(separator: ",") + "]").utf8)
+            + (0 ..< 20_000).map { "123456789012345678901234567.\(1000 + ($0 &* 7) % 9000)" }
+            .joined(separator: ",") + "]")
+            .utf8)
     // ISO-8601 date payload (20k timestamps), serialized once via the `.iso8601` strategy so both
     // decoders parse identical bytes.
-    let isoDates = (0..<20_000).map { Date(timeIntervalSince1970: Double(1_600_000_000 + $0)) }
+    let isoDates = (0 ..< 20_000).map { Date(timeIntervalSince1970: Double(1_600_000_000 + $0)) }
     let isoDateData: Data = {
         var encoder = ADJSON.JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -253,7 +254,7 @@ nonisolated(unsafe) let benchmarks = {
 
     // Object with many escaped keys: member() compares the lookup key against each candidate, and the
     // escaped-key compare is now alloc-free (was a String per comparison). last-wins scans them all.
-    let escapedKeysJSON = "{" + (0..<100).map { #""k\u0041\#($0)":\#($0)"# }.joined(separator: ",") + "}"
+    let escapedKeysJSON = "{" + (0 ..< 100).map { #""k\u0041\#($0)":\#($0)"# }.joined(separator: ",") + "}"
     let escapedKeyDoc = try! ADJSON.parse(escapedKeysJSON)  // keys "kAN" decode to "kAN"
     Benchmark("compare/escaped-key lookup") { bm in
         for _ in bm.scaledIterations { blackHole(escapedKeyDoc.root["kA99"].intValue) }
@@ -329,7 +330,7 @@ nonisolated(unsafe) let benchmarks = {
             "$.store.book[*].title",
             #"$[?(@.followers > 50000 && @.login != "abc")].login"#,
             "$..profile.bio",
-            "$['a']['b'][0:10:2].c",
+            "$['a']['b'][0:10:2].c"
         ]
         for _ in bm.scaledIterations {
             for path in paths { blackHole(try? JSONPath(path)) }
@@ -362,6 +363,29 @@ nonisolated(unsafe) let benchmarks = {
     Benchmark("concurrent/parallel decode") { bm async in
         for _ in bm.scaledIterations {
             blackHole(try! await ADJSON.decodeArrayConcurrently(User.self, from: usersDocument, minimumBatch: 256))
+        }
+    }
+    // NDJSON / JSON Lines: many independent documents. Each record owns its bytes, so the parallel
+    // parse has no shared-buffer refcount contention (unlike fanning out reads over one document).
+    let ndjsonBytes: [UInt8] = {
+        var b: [UInt8] = []
+        let encoder = ADJSON.JSONEncoder()
+        for user in users {
+            b.append(contentsOf: try! encoder.encodeToBytes(user))
+            b.append(0x0A)
+        }
+        return b
+    }()
+    Benchmark("concurrent/serial parseLines") { bm in
+        for _ in bm.scaledIterations {
+            var docs: [JSONDocument] = []
+            for line in ADJSON.ndjsonLines(ndjsonBytes) { docs.append(try! ADJSON.parse(line)) }
+            blackHole(docs)
+        }
+    }
+    Benchmark("concurrent/parallel parseLines") { bm async in
+        for _ in bm.scaledIterations {
+            blackHole(try! await ADJSON.parseLinesConcurrently(ndjsonBytes, minimumBatch: 64))
         }
     }
 
@@ -399,7 +423,7 @@ nonisolated(unsafe) let benchmarks = {
         "gsoc-2018.json": "$[*].name",
         "marine_ik.json": "$.images[*].name",
         "twitterescaped.json": "$.statuses[*].user.screen_name",
-        "numbers.json": "$[0:1000]",
+        "numbers.json": "$[0:1000]"
     ]
     // A small RFC 6902 patch — add a top-level key for object roots, append for array roots.
     let corpusObjectPatch = try! JSONPatch(Data(#"[{"op":"add","path":"/_bench","value":true}]"#.utf8))
@@ -407,7 +431,7 @@ nonisolated(unsafe) let benchmarks = {
 
     let corpusFiles = [
         "twitter.json", "citm_catalog.json", "canada.json", "github_events.json", "gsoc-2018.json",
-        "marine_ik.json", "twitterescaped.json", "numbers.json",
+        "marine_ik.json", "twitterescaped.json", "numbers.json"
     ]
     for file in corpusFiles {
         guard let data = try? Data(contentsOf: corpusURL(file)) else { continue }
