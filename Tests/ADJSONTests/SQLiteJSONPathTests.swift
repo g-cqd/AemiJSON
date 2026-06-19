@@ -1,3 +1,4 @@
+import ADTestKit
 import Foundation
 import Testing
 
@@ -66,17 +67,19 @@ struct SQLiteJSONPathTests {
 struct SQLiteJSONFunctionTests {
     @Test func typeAndArrayLength() {
         let j = doc(#"{"o":{},"a":[1,2,3],"i":5,"r":5.5,"s":"x","t":true,"f":false,"n":null}"#)
-        #expect(SQLiteJSON.type(j) == "object")
-        #expect(SQLiteJSON.type(j.a) == "array")
-        #expect(SQLiteJSON.type(j.i) == "integer")
-        #expect(SQLiteJSON.type(j.r) == "real")
-        #expect(SQLiteJSON.type(j.s) == "text")
-        #expect(SQLiteJSON.type(j.t) == "true")
-        #expect(SQLiteJSON.type(j.f) == "false")
-        #expect(SQLiteJSON.type(j.n) == "null")
-        #expect(SQLiteJSON.type(j.missing) == nil)
-        #expect(SQLiteJSON.arrayLength(j.a) == 3)
-        #expect(SQLiteJSON.arrayLength(j.o) == 0)
+        // Typed `expectEqual` keeps each dynamic-member-lookup operand type-checking independently,
+        // so the fanned-out checks stay under the 100ms whole-body budget.
+        expectEqual(SQLiteJSON.type(j), "object")
+        expectEqual(SQLiteJSON.type(j.a), "array")
+        expectEqual(SQLiteJSON.type(j.i), "integer")
+        expectEqual(SQLiteJSON.type(j.r), "real")
+        expectEqual(SQLiteJSON.type(j.s), "text")
+        expectEqual(SQLiteJSON.type(j.t), "true")
+        expectEqual(SQLiteJSON.type(j.f), "false")
+        expectEqual(SQLiteJSON.type(j.n), "null")
+        expectNil(SQLiteJSON.type(j.missing))
+        expectEqual(SQLiteJSON.arrayLength(j.a), 3)
+        expectEqual(SQLiteJSON.arrayLength(j.o), 0)
     }
 
     @Test func valid() {
@@ -88,16 +91,17 @@ struct SQLiteJSONFunctionTests {
 
     @Test func arrowVsArrowText() {
         let j = doc(#"{"s":"hi","i":5,"r":2.5,"t":true,"n":null,"o":{"x":1},"a":[1,2]}"#)
-        // -> returns the JSON node (a string serializes quoted); ->> returns unquoted text.
-        #expect(spath("$.s").arrow(j).string == "hi")
-        #expect(spath("$.s").arrowText(j) == "hi")
-        #expect(spath("$.i").arrowText(j) == "5")
-        #expect(spath("$.r").arrowText(j) == "2.5")
-        #expect(spath("$.t").arrowText(j) == "true")
-        #expect(spath("$.n").arrowText(j) == nil)  // JSON null → SQL NULL
-        #expect(spath("$.missing").arrowText(j) == nil)
-        #expect(spath("$.o").arrowText(j) == #"{"x":1}"#)  // container → JSON text
-        #expect(spath("$.a").arrowText(j) == "[1,2]")
+        // -> returns the JSON node (a string serializes quoted); ->> returns unquoted text. Typed asserts
+        // keep each chained operand independent so the body stays under the 100ms budget.
+        expectEqual(spath("$.s").arrow(j).string, "hi")
+        expectEqual(spath("$.s").arrowText(j), "hi")
+        expectEqual(spath("$.i").arrowText(j), "5")
+        expectEqual(spath("$.r").arrowText(j), "2.5")
+        expectEqual(spath("$.t").arrowText(j), "true")
+        expectNil(spath("$.n").arrowText(j))  // JSON null → SQL NULL
+        expectNil(spath("$.missing").arrowText(j))
+        expectEqual(spath("$.o").arrowText(j), #"{"x":1}"#)  // container → JSON text
+        expectEqual(spath("$.a").arrowText(j), "[1,2]")
     }
 
     @Test func extractSingleAndMultiPath() {
@@ -151,32 +155,36 @@ struct SQLiteJSONFunctionTests {
         #expect(SQLiteJSON.quote(.number(.infinity)) == "null")  // non-finite → well-formed null
     }
 
-    @Test func jsonEach() {
-        // Object: one row per member; key set, index nil; full path; type per value.
+    @Test func jsonEachObjectRows() {
+        // Object: one row per member; key set, index nil; full path; type per value. Typed asserts keep
+        // the keypath-map comparisons off the macro's re-type-check path (the combined suite hit 203ms).
         let obj = doc(#"{"a":1,"b":[10,20],"c":"x"}"#)
         let objRows = Array(SQLiteJSON.each(obj))
-        #expect(objRows.map(\.key) == ["a", "b", "c"])
-        #expect(objRows.allSatisfy { $0.index == nil })
-        #expect(objRows.map(\.type) == ["integer", "array", "text"])
-        #expect(objRows.map(\.path) == ["$.a", "$.b", "$.c"])
-        #expect(objRows[0].value.int == 1)
+        expectEqual(objRows.map(\.key), ["a", "b", "c"])
+        expectTrue(objRows.allSatisfy { $0.index == nil })
+        expectEqual(objRows.map(\.type), ["integer", "array", "text"])
+        expectEqual(objRows.map(\.path), ["$.a", "$.b", "$.c"])
+        expectEqual(objRows[0].value.int, 1)
+    }
 
+    @Test func jsonEachArrayScalarAndEmpty() {
         // Array: one row per element; index set, key nil.
         let arrRows = Array(SQLiteJSON.each(doc("[10,20,30]")))
-        #expect(arrRows.map(\.index) == [0, 1, 2])
-        #expect(arrRows.allSatisfy { $0.key == nil })
-        #expect(arrRows.map(\.path) == ["$[0]", "$[1]", "$[2]"])
+        expectEqual(arrRows.map(\.index), [0, 1, 2])
+        expectTrue(arrRows.allSatisfy { $0.key == nil })
+        expectEqual(arrRows.map(\.path), ["$[0]", "$[1]", "$[2]"])
 
         // Scalar: a single self-row at `$`.
         let scalarRows = Array(SQLiteJSON.each(doc("42")))
-        #expect(scalarRows.count == 1)
-        #expect(scalarRows[0].path == "$" && scalarRows[0].type == "integer")
-        #expect(scalarRows[0].value.int == 42)
+        expectEqual(scalarRows.count, 1)
+        expectEqual(scalarRows[0].path, "$")
+        expectEqual(scalarRows[0].type, "integer")
+        expectEqual(scalarRows[0].value.int, 42)
 
         // Empty container / missing: no rows.
-        #expect(Array(SQLiteJSON.each(doc("{}"))).isEmpty)
-        #expect(Array(SQLiteJSON.each(doc("[]"))).isEmpty)
-        #expect(Array(SQLiteJSON.each(doc(#"{"a":1}"#).missing)).isEmpty)
+        expectTrue(Array(SQLiteJSON.each(doc("{}"))).isEmpty)
+        expectTrue(Array(SQLiteJSON.each(doc("[]"))).isEmpty)
+        expectTrue(Array(SQLiteJSON.each(doc(#"{"a":1}"#).missing)).isEmpty)
     }
 
     @Test func jsonEachQuotesSpecialKeysAndRoundTrips() throws {

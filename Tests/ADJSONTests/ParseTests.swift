@@ -154,19 +154,22 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
     #expect(try ADJSON.JSONDecoder().decode([Int].self, from: data) == [Int.min, Int.max])
 }
 
-@Test func json5GrammarParsesExtensions() throws {
-    func parse5(_ s: String) throws(JSONError) -> JSON {
-        let doc = try ADJSON.parse(s, options: .json5)
-        return doc.root
-    }
+// Shared JSON5 parse helper for the split grammar suites below. Hoisted to file scope so each focused
+// `@Test` keeps a small, fast-to-type-check body (the combined suite tipped past the 100ms budget).
+private func parse5(_ s: String) throws(JSONError) -> JSON {
+    try ADJSON.parse(s, options: .json5).root
+}
 
+@Test func json5GrammarParsesExtensions() throws {
     // Comments, unquoted keys, single-quoted strings, trailing commas.
     let j = try parse5(
         "{\n  // line comment\n  unquoted: 'single quoted',\n  \"quoted\": 1, /* block */\n  arr: [1, 2, 3,],\n}")
     #expect(j.unquoted.string == "single quoted")
     #expect(j.quoted.int == 1)
     #expect(j.arr.arrayValue.compactMap(\.int) == [1, 2, 3])
+}
 
+@Test func json5ParsesNumberAndStringExtensions() throws {
     // Numbers: leading +, .5, 5., hex, Infinity, NaN.
     #expect(try parse5("+5").int == 5)
     #expect(try parse5(".5").double == 0.5)
@@ -181,7 +184,9 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
     #expect(try parse5(#"'\x41\x42'"#).string == "AB")
     #expect(try parse5(#"'tab\tend'"#).string == "tab\tend")
     #expect(try parse5("'line1\\\nline2'").string == "line1line2")
+}
 
+@Test func json5StrictModeRejectionsAndDecoder() throws {
     // Strict mode rejects every one of these.
     #expect(throws: JSONError.self) { try ADJSON.parse("{a:1}") }
     #expect(throws: JSONError.self) { try ADJSON.parse("[1,2,]") }
