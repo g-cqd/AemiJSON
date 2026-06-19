@@ -1,4 +1,5 @@
 import ADJSONCore
+public import ADTestKitSeams
 public import Foundation
 
 extension JSONDocument {
@@ -59,15 +60,18 @@ extension ADJSON {
     ///   pre-transform the element types so the default mapping suffices.
     public static func decodeArrayConcurrently<T: Decodable & Sendable>(
         _ type: T.Type, from data: Data, minimumBatch: Int = 512,
-        maxDecodingDepth: Int = concurrentDecodeDefaultDepth
+        maxDecodingDepth: Int = concurrentDecodeDefaultDepth,
+        taskProvider: any TaskProvider = LiveTaskProvider()
     ) async throws -> [T] {
         try await decodeArrayConcurrently(
-            type, from: try ADJSON.parse(data), minimumBatch: minimumBatch, maxDecodingDepth: maxDecodingDepth)
+            type, from: try ADJSON.parse(data), minimumBatch: minimumBatch,
+            maxDecodingDepth: maxDecodingDepth, taskProvider: taskProvider)
     }
 
     public static func decodeArrayConcurrently<T: Decodable & Sendable>(
         _ type: T.Type, from document: JSONDocument, minimumBatch: Int = 512,
-        maxDecodingDepth: Int = concurrentDecodeDefaultDepth
+        maxDecodingDepth: Int = concurrentDecodeDefaultDepth,
+        taskProvider: any TaskProvider = LiveTaskProvider()
     ) async throws -> [T] {
         guard let starts = document.topLevelArrayElementStarts() else {
             return try JSONDecoder().decode([T].self, from: document)
@@ -80,25 +84,29 @@ extension ADJSON {
         let chunkCount = min(cores, max(1, n / minimumBatch))
         let chunkSize = (n + chunkCount - 1) / chunkCount
 
-        return try await withThrowingTaskGroup(of: (Int, [T]).self) { group in
-            var chunkIndex = 0
-            var lo = 0
-            while lo < n {
-                let hi = min(lo + chunkSize, n)
-                let lo0 = lo
-                let idx = chunkIndex
-                group.addTask {
-                    (idx, try document.decodeElementRange(T.self, lo0, hi, starts, maxDecodingDepth: maxDecodingDepth))
-                }
-                lo = hi
-                chunkIndex += 1
-            }
-            var parts = [[T]?](repeating: nil, count: chunkIndex)
-            for try await (i, part) in group { parts[i] = part }
-            var out: [T] = []
-            out.reserveCapacity(n)
-            for p in parts { out.append(contentsOf: p ?? []) }
-            return out
+        // One `.work` task per element batch via the injected provider (live = `Task.init`); handles are
+        // kept in chunk order and gathered in order, preserving the input order the former `(index, part)`
+        // collection produced. A test injects `TaskProviderSpy` + `waitForAllTasks()` to settle deterministically.
+        var handles: [Task<[T], any Error>] = []
+        handles.reserveCapacity(chunkCount)
+        var lo = 0
+        while lo < n {
+            let hi = min(lo + chunkSize, n)
+            let lo0 = lo
+            handles.append(
+                taskProvider.task(role: .work) {
+                    try document.decodeElementRange(T.self, lo0, hi, starts, maxDecodingDepth: maxDecodingDepth)
+                })
+            lo = hi
         }
+        var out: [T] = []
+        out.reserveCapacity(n)
+        do {
+            for handle in handles { out.append(contentsOf: try await handle.value) }
+        } catch {
+            for handle in handles { handle.cancel() }
+            throw error
+        }
+        return out
     }
 }

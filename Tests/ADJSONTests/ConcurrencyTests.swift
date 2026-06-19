@@ -1,3 +1,4 @@
+import ADTestKit
 import Foundation
 import Testing
 
@@ -30,6 +31,34 @@ private func makeRows(_ n: Int) -> [Row] {
     let data = try ADJSON.JSONEncoder().encode(rows)
     let out = try await ADJSON.decodeArrayConcurrently(Row.self, from: data, minimumBatch: 512)
     #expect(out == rows)
+}
+
+// MARK: - TaskProvider seam (deterministic spy settling)
+
+@Test func concurrentDecodeSettlesViaTaskProviderSpy() async throws {
+    // Inject the kit's spy: it spawns the real `.work` tasks (so the decode actually runs) while
+    // tracking them, then settles deterministically — no real-time wait, no serial-result race.
+    let rows = makeRows(3000)
+    let data = try ADJSON.JSONEncoder().encode(rows)
+    let spy = TaskProviderSpy()
+    let decoded = try await ADJSON.decodeArrayConcurrently(
+        Row.self, from: data, minimumBatch: 64, taskProvider: spy)
+    try await spy.waitForAllTasks()
+    #expect(decoded == rows)  // correct AND in input order (the manual ordered gather)
+    #expect(spy.spawnedCount > 1, "the fan-out spawned more than one chunk task")
+    #expect(spy.liveCount == 0, "every spawned `.work` task settled")
+}
+
+@Test func concurrentParseSettlesViaTaskProviderSpy() async throws {
+    let recordCount = 2000
+    let ndjson = (0 ..< recordCount).map { #"{"i":\#($0)}"# }.joined(separator: "\n")
+    let spy = TaskProviderSpy()
+    let docs = try await ADJSON.parseLinesConcurrently(
+        [UInt8](ndjson.utf8), minimumBatch: 64, taskProvider: spy)
+    try await spy.waitForAllTasks()  // deterministic settle — no real-time wait
+    #expect(docs.count == recordCount)
+    #expect(spy.spawnedCount > 1, "the fan-out spawned more than one chunk task")
+    #expect(spy.liveCount == 0, "every spawned `.work` task settled")
 }
 
 @Test func parseMetricsIncrement() throws {

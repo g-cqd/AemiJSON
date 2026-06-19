@@ -1,4 +1,5 @@
 import ADJSONCore
+public import ADTestKitSeams
 public import Foundation
 
 extension ADJSON {
@@ -56,7 +57,8 @@ extension ADJSON {
     ///   serially on the calling task; above it they are split into
     ///   `min(coreCount, count / minimumBatch)` batches.
     public static func parseLinesConcurrently(
-        _ bytes: [UInt8], options: JSONParseOptions = .strict, minimumBatch: Int = 64
+        _ bytes: [UInt8], options: JSONParseOptions = .strict, minimumBatch: Int = 64,
+        taskProvider: any TaskProvider = LiveTaskProvider()
     ) async throws -> [JSONDocument] {
         let lines = ndjsonLines(bytes)
         let n = lines.count
@@ -68,29 +70,34 @@ extension ADJSON {
         let chunkCount = min(cores, max(1, n / minimumBatch))
         let chunkSize = (n + chunkCount - 1) / chunkCount
 
-        return try await withThrowingTaskGroup(of: (Int, [JSONDocument]).self) { group in
-            var chunkIndex = 0
-            var lo = 0
-            while lo < n {
-                let hi = min(lo + chunkSize, n)
-                let lo0 = lo
-                let idx = chunkIndex
-                group.addTask {
+        // Spawn one `.work` task per chunk through the injected provider (live = `Task.init`), holding
+        // the handles in chunk order, then gather them in order — preserving the input order the former
+        // `(index, part)` task-group collection produced. A test injects a `TaskProviderSpy` and
+        // `await waitForAllTasks()` to settle these handles deterministically.
+        var handles: [Task<[JSONDocument], any Error>] = []
+        handles.reserveCapacity(chunkCount)
+        var lo = 0
+        while lo < n {
+            let hi = min(lo + chunkSize, n)
+            let lo0 = lo
+            handles.append(
+                taskProvider.task(role: .work) {
                     var docs: [JSONDocument] = []
                     docs.reserveCapacity(hi - lo0)
                     for k in lo0 ..< hi { docs.append(try ADJSON.parse(lines[k], options: options)) }
-                    return (idx, docs)
-                }
-                lo = hi
-                chunkIndex += 1
-            }
-            var parts = [[JSONDocument]?](repeating: nil, count: chunkIndex)
-            for try await (i, part) in group { parts[i] = part }
-            var out: [JSONDocument] = []
-            out.reserveCapacity(n)
-            for p in parts { out.append(contentsOf: p ?? []) }
-            return out
+                    return docs
+                })
+            lo = hi
         }
+        var out: [JSONDocument] = []
+        out.reserveCapacity(n)
+        do {
+            for handle in handles { out.append(contentsOf: try await handle.value) }
+        } catch {
+            for handle in handles { handle.cancel() }  // first error cancels the rest, as the group did
+            throw error
+        }
+        return out
     }
 
     /// `Data` convenience for ``parseLinesConcurrently(_:options:minimumBatch:)``.

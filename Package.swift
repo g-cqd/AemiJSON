@@ -1,4 +1,4 @@
-// swift-tools-version: 6.3
+// swift-tools-version: 6.4
 import CompilerPluginSupport
 import PackageDescription
 
@@ -25,14 +25,14 @@ let timingWarningFlags: [SwiftSetting] = [
     ])
 ]
 
-// Tests use the same per-EXPRESSION budget (a single >100ms expression is a real type-checker
-// pathology worth flagging), but a looser whole-FUNCTION-body budget: a thorough test fans out into
-// many `#expect` macro expansions whose summed type-check time clears 100ms even when every
-// individual expression is fast, so 100ms here is pure noise (and the flagged set drifts by
-// toolchain). 250ms still catches a genuinely pathological body without penalizing expressive tests.
+// Tests share the same 100ms budgets as the rest of the package — both per-EXPRESSION and
+// whole-FUNCTION-body. The `@dynamicMemberLookup` `JSON` chains that previously pushed thorough test
+// bodies past 100ms were fixed at the root (split into focused tests, big literals hoisted to typed
+// `let`s, chained `#expect`s moved to the kit's typed `expectEqual`/`expectTrue` asserts) rather than
+// papered over with a looser budget, so a regression past 100ms is once again a hard build error.
 let testTimingWarningFlags: [SwiftSetting] = [
     .unsafeFlags([
-        "-Xfrontend", "-warn-long-function-bodies=250",
+        "-Xfrontend", "-warn-long-function-bodies=100",
         "-Xfrontend", "-warn-long-expression-type-checking=100"
     ])
 ]
@@ -73,8 +73,21 @@ let adfoundationDependency: Package.Dependency = {
     return .package(url: "https://github.com/g-cqd/ADFoundation.git", branch: "main")
 }()
 
+// ADTestKit — its shipped-safe `ADTestKitSeams` module is a NON-dev dependency of the async-heavy
+// `ADJSON` umbrella target (the `TaskProvider` seam in the concurrent parse/decode paths). The
+// test-only `ADTestKit` module is still wired only into the test target below. Resolved from a local
+// checkout via `ADTESTKIT_PATH`, otherwise the published `main`. `ADTestKitSeams` is pure Swift with no
+// swift-syntax/Proto, so a consumer's resolved graph grows only by swift-collections/swift-system.
+let adtestkitDependency: Package.Dependency = {
+    if let path = Context.environment["ADTESTKIT_PATH"], !path.isEmpty {
+        return .package(path: path)
+    }
+    return .package(url: "https://github.com/g-cqd/ADTestKit.git", branch: "main")
+}()
+
 var packageDependencies: [Package.Dependency] = [
     adfoundationDependency,
+    adtestkitDependency,
     .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0"),
     // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
     // with zero transitive package dependencies (measured), so the core stays portable; together with
@@ -98,6 +111,8 @@ if isDev {
     // added only under `ADJSON_DEV`, so consumers never resolve it.
     packageDependencies.append(
         .package(url: "https://github.com/ordo-one/benchmark", from: "1.4.0"))
+    // (ADTestKit is now a non-dev dependency above — its shipped `ADTestKitSeams` backs the ADJSON
+    // umbrella's concurrency seam; the test-only `ADTestKit` product is wired into the test target.)
 }
 if isNIO {
     // swift-nio (NIOCore) supplies `ByteBuffer`. Resolved only under `ADJSON_NIO`, so default
@@ -160,7 +175,13 @@ let package = Package(
         .target(
             // `adfCore` is declared directly (not only transitively via `ADJSONCore`) because the
             // umbrella links it itself — `EncoderBufferPool` uses `ADFCore.ByteBufferPool`.
-            name: "ADJSON", dependencies: ["ADJSONCore", "ADJSONMacros", orderedCollections, adfCore],
+            // `ADTestKitSeams` is the shipped-safe `TaskProvider` seam the concurrent parse/decode paths
+            // default to `LiveTaskProvider` (production-identical); a test injects a `TaskProviderSpy`.
+            name: "ADJSON",
+            dependencies: [
+                "ADJSONCore", "ADJSONMacros", orderedCollections, adfCore,
+                .product(name: "ADTestKitSeams", package: "ADTestKit")
+            ],
             swiftSettings: strictSettings, plugins: adjsonBuildPlugins),
         .testTarget(
             name: "ADJSONTests",
@@ -216,6 +237,10 @@ if isFuzz {
 }
 
 if isDev {
+    // Wire the dev-only ADTestKit into the test target (downstream consumers never see it).
+    if let tests = package.targets.first(where: { $0.name == "ADJSONTests" }) {
+        tests.dependencies.append(.product(name: "ADTestKit", package: "ADTestKit"))
+    }
     // ordo-one package-benchmark suite (ADJSON_DEV-gated): the `swift package benchmark` plugin runs
     // these with statistical rigor and can gate CI on p-percentile thresholds. Lives under
     // `Benchmarks/` per the framework's convention.
