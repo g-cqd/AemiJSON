@@ -73,11 +73,23 @@ let adfoundationDependency: Package.Dependency = {
     return .package(url: "https://github.com/g-cqd/ADFoundation.git", branch: "main")
 }()
 
-// ADTestKit — its shipped-safe `ADTestKitSeams` module is a NON-dev dependency of the async-heavy
-// `ADJSON` umbrella target (the `TaskProvider` seam in the concurrent parse/decode paths). The
-// test-only `ADTestKit` module is still wired only into the test target below. Resolved from a local
-// checkout via `ADTESTKIT_PATH`, otherwise the published `main`. `ADTestKitSeams` is pure Swift with no
-// swift-syntax/Proto, so a consumer's resolved graph grows only by swift-collections/swift-system.
+// ADConcurrency — the zero-dependency, shipped-safe seam the async-heavy `ADJSON` umbrella defaults
+// to (`TaskProvider`/`LiveTaskProvider` in the concurrent parse/decode paths). It previously came from
+// `ADTestKitSeams`, which dragged the whole test-kit package into every ADJSON consumer's PRODUCTION
+// resolution graph; depending on the `ADConcurrency` leaf instead removes that coupling. Resolved from
+// a local checkout via `ADCONCURRENCY_PATH`, otherwise the published `main`. Pure Swift, no
+// swift-syntax/Proto, so a consumer's resolved graph grows only by this one leaf.
+let adconcurrencyDependency: Package.Dependency = {
+    if let path = Context.environment["ADCONCURRENCY_PATH"], !path.isEmpty {
+        return .package(path: path)
+    }
+    return .package(url: "https://github.com/g-cqd/ADConcurrency.git", branch: "main")
+}()
+
+// ADTestKit — the full test-only kit (`TaskProviderSpy`, oracles, SeededRNG). Now a DEV-ONLY
+// dependency wired solely into the test target (below): with the production seam relocated to
+// `ADConcurrency`, the shipped ADJSON library no longer depends on the test kit at all. Resolved from
+// a local checkout via `ADTESTKIT_PATH`, otherwise the published `main`.
 let adtestkitDependency: Package.Dependency = {
     if let path = Context.environment["ADTESTKIT_PATH"], !path.isEmpty {
         return .package(path: path)
@@ -87,7 +99,7 @@ let adtestkitDependency: Package.Dependency = {
 
 var packageDependencies: [Package.Dependency] = [
     adfoundationDependency,
-    adtestkitDependency,
+    adconcurrencyDependency,
     .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0"),
     // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
     // with zero transitive package dependencies (measured), so the core stays portable; together with
@@ -111,8 +123,10 @@ if isDev {
     // added only under `ADJSON_DEV`, so consumers never resolve it.
     packageDependencies.append(
         .package(url: "https://github.com/ordo-one/benchmark", from: "1.4.0"))
-    // (ADTestKit is now a non-dev dependency above — its shipped `ADTestKitSeams` backs the ADJSON
-    // umbrella's concurrency seam; the test-only `ADTestKit` product is wired into the test target.)
+    // ADTestKit is now DEV-ONLY: the production seam lives in the `ADConcurrency` leaf (a non-dev
+    // dependency above), so the test-only kit (`TaskProviderSpy`, oracles) is resolved only here and
+    // wired into the test target at the bottom of the manifest.
+    packageDependencies.append(adtestkitDependency)
 }
 if isNIO {
     // swift-nio (NIOCore) supplies `ByteBuffer`. Resolved only under `ADJSON_NIO`, so default
@@ -175,12 +189,13 @@ let package = Package(
         .target(
             // `adfCore` is declared directly (not only transitively via `ADJSONCore`) because the
             // umbrella links it itself — `EncoderBufferPool` uses `ADFCore.ByteBufferPool`.
-            // `ADTestKitSeams` is the shipped-safe `TaskProvider` seam the concurrent parse/decode paths
-            // default to `LiveTaskProvider` (production-identical); a test injects a `TaskProviderSpy`.
+            // `ADConcurrency` is the zero-dep, shipped-safe `TaskProvider` seam the concurrent
+            // parse/decode paths default to `LiveTaskProvider` (production-identical); a test injects a
+            // `TaskProviderSpy` (from the dev-only `ADTestKit`, which re-exports the same seam).
             name: "ADJSON",
             dependencies: [
                 "ADJSONCore", "ADJSONMacros", orderedCollections, adfCore,
-                .product(name: "ADTestKitSeams", package: "ADTestKit")
+                .product(name: "ADConcurrency", package: "ADConcurrency")
             ],
             swiftSettings: strictSettings, plugins: adjsonBuildPlugins),
         .testTarget(
