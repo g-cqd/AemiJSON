@@ -169,7 +169,9 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
         JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true),
         JSONEncodingOptions(numberFormat: .ecma262, keyOrder: .sorted, prettyPrinted: true),
         JSONEncodingOptions(escapeSlashes: true, prettyPrinted: true),
-        JSONEncodingOptions(prettyPrinted: true, escapeHTMLUnsafe: true)
+        JSONEncodingOptions(prettyPrinted: true, escapeHTMLUnsafe: true),
+        JSONEncodingOptions(prettyPrinted: true, prettyKeySeparator: .javaScript),
+        JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true, prettyKeySeparator: .javaScript)
     ]
     for doc in docs {
         let root = try ADJSON.parse(doc).root
@@ -314,6 +316,56 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
               "e" : {}
             }
             """)
+}
+
+// The pretty key separator is configurable: `.foundation` keeps `" : "` (the default), `.javaScript`
+// drops the leading space to `": "` for `JSON.stringify(value, null, n)` parity. Verified on the two
+// direct serializers — the eager `JSONValue` walk and the lazy `JSON` cursor — which must agree.
+@Test func prettyKeySeparatorJavaScriptDropsLeadingSpace() throws {
+    let tree = JSONValue.object(["a": .number(1), "b": .array([.number(2), .string("x")]), "e": .object([:])])
+    let js = JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true, prettyKeySeparator: .javaScript)
+    let expected = """
+        {
+          "a": 1.0,
+          "b": [
+            2.0,
+            "x"
+          ],
+          "e": {}
+        }
+        """
+    #expect(String(decoding: try tree.encodedBytes(options: js), as: UTF8.self) == expected)
+    // Lazy cursor over the same value emits byte-identically.
+    let cursor = try ADJSON.parse(tree.encodedBytes(options: .rfc8259)).root
+    #expect(String(decoding: try cursor.encodedBytes(options: js), as: UTF8.self) == expected)
+    // The default separator is untouched (still space-colon-space).
+    let foundation = JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true)
+    #expect(String(decoding: try tree.encodedBytes(options: foundation), as: UTF8.self).contains("\"a\" : 1.0"))
+}
+
+// The Codable streaming encoder honors the separator on both pretty routes — the declaration-order
+// single pass (`TapeEncoder.writeKeyPretty`) and the sorted re-emit — and the `.javaScript` preset
+// opts into it, so `.javaScript` + pretty is full `JSON.stringify(value, null, 2)` parity.
+@Test func codablePrettyHonorsJavaScriptSeparator() throws {
+    struct F: Encodable {
+        var a: Double = 2.0
+        var b: Double = 3.5
+    }
+    var declaration = ADJSON.JSONEncoder()
+    declaration.prettyPrinted = true
+    declaration.options = JSONEncodingOptions(prettyKeySeparator: .javaScript)
+    #expect(String(decoding: try declaration.encode(F()), as: UTF8.self) == "{\n  \"a\": 2.0,\n  \"b\": 3.5\n}")
+
+    var sorted = ADJSON.JSONEncoder()
+    sorted.prettyPrinted = true
+    sorted.options = JSONEncodingOptions(keyOrder: .sorted, prettyKeySeparator: .javaScript)
+    #expect(String(decoding: try sorted.encode(F()), as: UTF8.self) == "{\n  \"a\": 2.0,\n  \"b\": 3.5\n}")
+
+    // The preset carries the separator and ECMA-262 numbers together (`2.0` → `2`).
+    var preset = ADJSON.JSONEncoder()
+    preset.prettyPrinted = true
+    preset.options = .javaScript
+    #expect(String(decoding: try preset.encode(F()), as: UTF8.self) == "{\n  \"a\": 2,\n  \"b\": 3.5\n}")
 }
 
 @Test func jsonValueLosslessLargeIntegers() throws {

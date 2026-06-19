@@ -8,6 +8,9 @@ package final class JSONWriter {
     /// options before serializing (default: minimal RFC 8259 escaping).
     package var escapeSlashes = false
     package var escapeHTMLUnsafe = false
+    /// Pretty key separator emitted by ``writeKeyPretty(_:)``: `" : "` when `true` (Foundation,
+    /// the default), `": "` when `false` (JavaScript `JSON.stringify`). Set from the encode options.
+    package var prettySpaceBeforeColon = true
 
     package init(capacity: Int = 0) {
         bytes = []
@@ -47,10 +50,10 @@ package final class JSONWriter {
         for _ in 0 ..< (level * 2) { bytes.append(0x20) }
     }
 
-    // A pretty object key: `"key" : ` (the space-colon-space form used in indented output).
+    // A pretty object key: `"key" : ` (Foundation) or `"key": ` (JS), per `prettySpaceBeforeColon`.
     @inline(__always) package func writeKeyPretty(_ s: String) {
         writeString(s)
-        raw(" : ")
+        if prettySpaceBeforeColon { raw(" : ") } else { raw(": ") }
     }
 
     package func writeString(_ s: String) {

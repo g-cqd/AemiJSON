@@ -300,6 +300,7 @@ extension JSONValue {
         // interleaved with separators in reverse, so a deeply nested tree serializes with no call
         // recursion. Output order is identical to the recursive `writeCompact`.
         let pretty = options.prettyPrinted
+        let spaceBeforeColon = options.prettyKeySeparator == .foundation
         let escapeSlashes = options.escapeSlashes
         let escapeHTMLUnsafe = options.escapeHTMLUnsafe
         var stack: [WriteOp] = [.value(self, depth: depth)]
@@ -311,9 +312,9 @@ extension JSONValue {
                     JSONOutput.appendString(
                         k, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
                     if pretty {
-                        bytes.append(0x20)
+                        if spaceBeforeColon { bytes.append(0x20) }  // `"k" : ` (Foundation) vs `"k": ` (JS)
                         bytes.append(0x3A)
-                        bytes.append(0x20)  // `"k" : ` — space-colon-space
+                        bytes.append(0x20)
                     } else {
                         bytes.append(0x3A)
                     }

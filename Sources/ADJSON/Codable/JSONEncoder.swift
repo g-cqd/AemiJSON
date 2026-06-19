@@ -100,6 +100,7 @@ extension ADJSON {
             let writer = JSONWriter(adopting: EncoderBufferPool.take())
             writer.escapeSlashes = options.escapeSlashes
             writer.escapeHTMLUnsafe = options.escapeHTMLUnsafe
+            writer.prettySpaceBeforeColon = options.prettyKeySeparator == .foundation
             let state = EncodeState(
                 writer, options: options, strategies: strategies, maxEncodeDepth: maxEncodingDepth, pretty: pretty)
             do {

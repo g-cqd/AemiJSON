@@ -22,6 +22,7 @@ extension JSON {
         var bytes: [UInt8] = []
         bytes.reserveCapacity(256)
         let pretty = options.prettyPrinted
+        let spaceBeforeColon = options.prettyKeySeparator == .foundation
         let escapeSlashes = options.escapeSlashes
         let escapeHTMLUnsafe = options.escapeHTMLUnsafe
         var stack: [WriteOp] = [.value(self, depth: 0)]
@@ -33,9 +34,9 @@ extension JSON {
                     JSONOutput.appendString(
                         k, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
                     if pretty {
-                        bytes.append(0x20)
+                        if spaceBeforeColon { bytes.append(0x20) }  // `"k" : ` (Foundation) vs `"k": ` (JS)
                         bytes.append(0x3A)
-                        bytes.append(0x20)  // `"k" : ` — space-colon-space
+                        bytes.append(0x20)
                     } else {
                         bytes.append(0x3A)
                     }

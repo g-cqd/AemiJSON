@@ -51,6 +51,15 @@ public struct JSONEncodingOptions: Sendable {
         case null
     }
 
+    /// The `key`/`value` separator emitted in pretty-printed output (ignored when compact, which
+    /// always uses a bare `:`).
+    public enum KeySeparator: Sendable, Equatable {
+        /// `" : "` — space-colon-space, matching `Foundation`'s `.prettyPrinted` (the default).
+        case foundation
+        /// `": "` — colon-space, matching JavaScript `JSON.stringify(value, null, indent)`.
+        case javaScript
+    }
+
     public var nonFinite: NonFiniteStrategy
     public var numberFormat: NumberFormat
     public var keyOrder: KeyOrder
@@ -61,9 +70,13 @@ public struct JSONEncodingOptions: Sendable {
     public var escapeHTMLUnsafe: Bool
     public var nilStrategy: NilStrategy
     /// Emit human-readable output: a newline after each `{`/`[`/`,`, two-space indentation per
-    /// nesting level, and a `" : "` key separator — matching `Foundation`'s `.prettyPrinted`
-    /// (default `false`). Empty containers stay on one line (`[]` / `{}`).
+    /// nesting level, and the `prettyKeySeparator` between keys and values (default `false`).
+    /// Empty containers stay on one line (`[]` / `{}`).
     public var prettyPrinted: Bool
+    /// The key/value separator used when `prettyPrinted` is set. Defaults to `.foundation` (`" : "`,
+    /// matching `Foundation`'s `.prettyPrinted`); use `.javaScript` (`": "`) for `JSON.stringify`
+    /// parity. No effect on compact output.
+    public var prettyKeySeparator: KeySeparator
 
     public init(
         nonFinite: NonFiniteStrategy = .throw,
@@ -72,6 +85,7 @@ public struct JSONEncodingOptions: Sendable {
         escapeSlashes: Bool = false,
         nilStrategy: NilStrategy = .omit,
         prettyPrinted: Bool = false,
+        prettyKeySeparator: KeySeparator = .foundation,
         escapeHTMLUnsafe: Bool = false
     ) {
         self.nonFinite = nonFinite
@@ -80,14 +94,17 @@ public struct JSONEncodingOptions: Sendable {
         self.escapeSlashes = escapeSlashes
         self.nilStrategy = nilStrategy
         self.prettyPrinted = prettyPrinted
+        self.prettyKeySeparator = prettyKeySeparator
         self.escapeHTMLUnsafe = escapeHTMLUnsafe
     }
 
     /// Strict RFC 8259 / ECMA-404: reject non-finite numbers, shortest numbers, declaration order.
     public static let rfc8259 = JSONEncodingOptions()
 
-    /// Byte-for-byte JavaScript `JSON.stringify`: non-finite → `null`, ECMA-262 number formatting.
-    public static let javaScript = JSONEncodingOptions(nonFinite: .null, numberFormat: .ecma262)
+    /// Byte-for-byte JavaScript `JSON.stringify`: non-finite → `null`, ECMA-262 number formatting,
+    /// and a `": "` key separator when pretty-printed (`JSON.stringify(value, null, indent)`).
+    public static let javaScript = JSONEncodingOptions(
+        nonFinite: .null, numberFormat: .ecma262, prettyKeySeparator: .javaScript)
 
     /// SQLite's JSON text: `%!.15g` reals, unescaped slashes, declaration order, minified — matches
     /// `sqlite3`'s `json()` / `json_quote()` output for the value model.
