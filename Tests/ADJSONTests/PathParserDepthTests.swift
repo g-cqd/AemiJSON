@@ -1,4 +1,4 @@
-import Foundation
+import ADTestKit
 import Testing
 
 @testable import ADJSON
@@ -39,27 +39,13 @@ struct PathParserDepthTests {
     // per-level frame cost that the 8 MB test thread would absorb is forced to overflow here instead.
     private static let workerStackSize = 512 * 1024
 
-    /// Run `body` on a fresh 512 KiB `Thread` and block until it finishes. `body` is expected to be
-    /// total (catch its own errors); if it instead overflows the small stack the process aborts, which
-    /// is the failure this harness is designed to surface. Returns only after the worker has joined.
-    private func onWorkerStack(_ body: @Sendable @escaping () -> Void) {
-        let done = DispatchSemaphore(value: 0)
-        let thread = Thread {
-            body()
-            done.signal()
-        }
-        thread.stackSize = Self.workerStackSize
-        thread.name = "PathParserDepthTests.worker"
-        thread.start()
-        done.wait()
-    }
-
-    /// Parse `path` on the worker stack. The outcome (parsed vs threw a clean `JSONPathError`) is
-    /// irrelevant to safety — only that the worker returns at all (no overflow). When `evaluate` is set
-    /// and the parse succeeds, the compiled path is also run against a tiny document so the *evaluator's*
-    /// recursion (`evalFilter`) is exercised on the same small stack.
+    /// Parse `path` on a fresh 512 KiB constrained stack (via the shared `ADTestKit
+    /// .runOnConstrainedStack`) and block until it joins. The outcome (parsed vs threw a clean
+    /// `JSONPathError`) is irrelevant to safety — only that the worker returns at all (no overflow).
+    /// When `evaluate` is set and the parse succeeds, the compiled path is also run against a tiny
+    /// document so the *evaluator's* recursion (`evalFilter`) is exercised on the same small stack.
     private func parseSafely(_ path: String, evaluate: JSON? = nil) {
-        onWorkerStack {
+        runOnConstrainedStack(stackSize: Self.workerStackSize, name: "PathParserDepthTests.worker") {
             guard let compiled = try? JSONPath(path) else { return }  // clean throw — fine
             if let doc = evaluate { _ = compiled.query(doc) }
         }
@@ -128,7 +114,7 @@ struct PathParserDepthTests {
     @Test func pointerParsersSurvive512KiBStack() throws {
         // RFC 6901 / Relative JSON Pointer parse with plain loops; long inputs are a survival baseline.
         for n in [100, 1_000, 5_000] {
-            onWorkerStack {
+            runOnConstrainedStack(stackSize: Self.workerStackSize, name: "PathParserDepthTests.worker") {
                 _ = try? JSONPointer(String(repeating: "/a", count: n))
                 _ = try? RelativeJSONPointer("0" + String(repeating: "/a", count: n))
                 _ = try? SQLiteJSONPath("$" + String(repeating: "[0]", count: n))
@@ -188,33 +174,31 @@ struct PathParserDepthTests {
         "$[?" + String(repeating: "length(", count: n) + "@" + String(repeating: ")", count: n) + "==1]"
     }
 
-    /// Assert `path` compiles, on the 512 KiB worker stack.
+    /// Assert `path` compiles, on the 512 KiB worker stack. The constrained-stack run returns the
+    /// outcome directly, so no hand-off box is needed.
     private func assertParses(_ path: String) {
-        let box = OutcomeBox()
-        onWorkerStack { box.set(parsed: (try? JSONPath(path)) != nil) }
-        #expect(box.parsed == true, "expected a parse within the cap, on the 512 KiB stack")
+        let parsed = runOnConstrainedStack(
+            stackSize: Self.workerStackSize, name: "PathParserDepthTests.worker"
+        ) {
+            (try? JSONPath(path)) != nil
+        }
+        #expect(parsed == true, "expected a parse within the cap, on the 512 KiB stack")
     }
 
     /// Assert `path` is rejected with a `JSONPathError` (not a crash), on the 512 KiB worker stack.
     private func assertRejectsCleanly(_ path: String) {
-        let box = OutcomeBox()
-        onWorkerStack {
+        let parsed = runOnConstrainedStack(
+            stackSize: Self.workerStackSize, name: "PathParserDepthTests.worker"
+        ) { () -> Bool in
             do {
                 _ = try JSONPath(path)
-                box.set(parsed: true)
+                return true
             } catch is JSONPathError {
-                box.set(parsed: false)
+                return false
             } catch {
-                box.set(parsed: true)  // some other error — still not a crash, but not the contract
+                return true  // some other error — still not a crash, but not the contract
             }
         }
-        #expect(box.parsed == false, "expected a clean JSONPathError past the cap, on the 512 KiB stack")
+        #expect(parsed == false, "expected a clean JSONPathError past the cap, on the 512 KiB stack")
     }
-}
-
-/// Tiny reference box so the worker thread can hand its outcome back to the joined test thread. The
-/// `onWorkerStack` join (semaphore wait) happens-before the read, so the plain `var` needs no lock.
-private final class OutcomeBox: @unchecked Sendable {
-    private(set) var parsed: Bool?
-    func set(parsed value: Bool) { parsed = value }
 }
