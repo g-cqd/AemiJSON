@@ -424,6 +424,23 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     #expect(String(decoding: try enc.encode(F()), as: UTF8.self) == "{\n\t\"a\" : 1\n}")
 }
 
+// `.minified` is the fewest-bytes preset: compact (no whitespace), ECMA-262 numbers (`2.0` → `2`),
+// and non-finite → `null` (never throws).
+@Test func minifiedPresetProducesSmallestOutput() throws {
+    let tree = JSONValue.object([
+        "a": .number(1), "r": .number(2.5), "b": .array([.number(2), .number(2.0)])
+    ])
+    let out = String(decoding: try tree.encodedBytes(options: .minified), as: UTF8.self)
+    #expect(!out.contains(" ") && !out.contains("\n"))  // no whitespace at all
+    #expect(out == #"{"a":1,"r":2.5,"b":[2,2]}"#)  // ECMA-262 drops the trailing `.0`
+    // It is strictly no larger than the default compact (`.rfc8259`), which keeps `2.0`.
+    let rfc = try tree.encodedBytes(options: .rfc8259)
+    #expect(try tree.encodedBytes(options: .minified).count <= rfc.count)
+    // Non-finite collapses to `null` instead of throwing.
+    let nonFinite = JSONValue.array([.number(.infinity), .number(.nan), .number(-.infinity)])
+    #expect(String(decoding: try nonFinite.encodedBytes(options: .minified), as: UTF8.self) == "[null,null,null]")
+}
+
 @Test func jsonValueLosslessLargeIntegers() throws {
     // A 64-bit ID beyond 2^53 round-trips exactly via the `.int` case (the Double model could not).
     let maxInt = "9223372036854775807"  // Int64.max

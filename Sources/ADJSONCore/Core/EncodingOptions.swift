@@ -155,4 +155,10 @@ public struct JSONEncodingOptions: Sendable {
     /// SQLite's JSON text: `%!.15g` reals, unescaped slashes, declaration order, minified — matches
     /// `sqlite3`'s `json()` / `json_quote()` output for the value model.
     public static let sqlite = JSONEncodingOptions(numberFormat: .sqlitePrintfG)
+
+    /// The fewest bytes: compact (no whitespace), ECMA-262 numbers (shortest finite forms — `2.0` →
+    /// `2`, `-0.0` → `0`, `1e-07` → `1e-7`), and non-finite → `null` so encoding never fails. Minimal
+    /// escaping and declaration key order are already size-optimal, so nothing else to shrink. Note
+    /// `.ecma262` renders a `Double` `2.0` as `2`, indistinguishable from an integer on reparse.
+    public static let minified = JSONEncodingOptions(nonFinite: .null, numberFormat: .ecma262)
 }
