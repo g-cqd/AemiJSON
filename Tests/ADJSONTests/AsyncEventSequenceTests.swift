@@ -1,3 +1,4 @@
+import ADTestKit
 import Testing
 
 @testable import ADJSON
@@ -69,4 +70,24 @@ private func asyncEvents(_ json: String, chunkSize: Int) async throws -> [JSONEv
         ByteStream(bytes: Array(json.utf8)), options: JSONParseOptions(maxDepth: depth + 1), chunkSize: 256)
     for try await event in seq where event == .beginArray { begins += 1 }
     #expect(begins == depth)
+}
+
+@Test func asyncProbeObservesExactEventSequence() async throws {
+    // A driver task records each streamed event into an `AsyncEventProbe`; the test suspends until the
+    // exact expected count lands, then inspects the recorded events for full order — a
+    // suspend-until-count boundary plus event introspection that native `Confirmation`
+    // (count-within-a-closure, no event capture, no stall diagnostic) cannot express.
+    let json = #"{"a":1,"b":[true,null,"x"]}"#
+    let expected: [JSONEvent] = [
+        .beginObject, .key("a"), .number(1), .key("b"), .beginArray,
+        .bool(true), .null, .string("x"), .endArray, .endObject
+    ]
+    let probe = AsyncEventProbe<JSONEvent>()
+    let driver = Task {
+        let seq = JSONEventAsyncSequence(ByteStream(bytes: Array(json.utf8)), chunkSize: 4)
+        for try await event in seq { probe.record(event) }
+    }
+    let observed = try await probe.wait(forAtLeast: expected.count)
+    expectEqual(observed, expected)
+    try await driver.value  // surface any parse error and confirm the stream completed cleanly
 }

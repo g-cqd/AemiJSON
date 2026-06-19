@@ -1,3 +1,4 @@
+import ADTestKit
 import Foundation
 import Testing
 
@@ -106,8 +107,14 @@ private let sampleData = Data([0x00, 0x01, 0x02, 0xFF, 0x10, 0xAB])
 }
 
 @Test func nonConformingFloatDefaultRejectsStrings() {
-    #expect(throws: (any Error).self) {
+    expectThrows {
         try ADJSON.JSONDecoder().decode(DoubleBox.self, from: Data(#"{"v":"Infinity"}"#.utf8))
+    } where: { (error: DecodingError) in
+        // The default (.throw) strategy rejects the JSON string where a Double is expected.
+        switch error {
+            case .typeMismatch, .dataCorrupted: true
+            default: false
+        }
     }
 }
 

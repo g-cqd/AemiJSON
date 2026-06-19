@@ -1,7 +1,9 @@
+import ADTestKit
 import Foundation
 import Testing
 
 @testable import ADJSON
+@testable import ADJSONCore
 
 private func doc(_ s: String) -> JSON { try! ADJSON.parse(s).root }
 
@@ -93,7 +95,11 @@ private let store = doc(
 }
 
 @Test func jsonPathInvalidThrows() {
-    #expect(throws: (any Error).self) { try doc("{}").query("store.book") }  // missing $
+    expectThrows {
+        try doc("{}").query("store.book")
+    } where: { (_: JSONPathError) in
+        true
+    }  // missing $
 }
 
 @Test func filterNotFloodParsesWithoutStackOverflow() throws {
