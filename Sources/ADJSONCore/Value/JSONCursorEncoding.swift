@@ -23,6 +23,7 @@ extension JSON {
         bytes.reserveCapacity(256)
         let pretty = options.prettyPrinted
         let spaceBeforeColon = options.prettyKeySeparator == .foundation
+        let indentUnit = pretty ? options.indent.unitBytes : []
         let escapeSlashes = options.escapeSlashes
         let escapeHTMLUnsafe = options.escapeHTMLUnsafe
         var stack: [WriteOp] = [.value(self, depth: 0)]
@@ -42,8 +43,7 @@ extension JSON {
                     }
                 case .indent(let level, let comma):
                     if comma { bytes.append(0x2C) }
-                    bytes.append(0x0A)
-                    for _ in 0 ..< (level * 2) { bytes.append(0x20) }
+                    JSONOutput.appendNewlineIndent(to: &bytes, level: level, unit: indentUnit)
                 case .value(let node, let depth):
                     guard depth <= JSONValue.maxEncodingDepth else {
                         throw EncodingError.invalidValue(

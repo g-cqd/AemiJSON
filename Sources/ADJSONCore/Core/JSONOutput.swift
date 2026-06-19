@@ -63,6 +63,16 @@ public enum JSONOutput {
         }
     }
 
+    /// Appends a newline (`\n`) followed by the pretty-print indent `unit` repeated `level` times.
+    /// One definition shared by every serializer — the eager `JSONValue` walk, the lazy `JSON`
+    /// cursor, and the streaming `JSONWriter` — so the indent can't drift between them.
+    @inlinable
+    public static func appendNewlineIndent(to bytes: inout [UInt8], level: Int, unit: [UInt8]) {
+        bytes.append(0x0A)
+        guard !unit.isEmpty else { return }
+        for _ in 0 ..< level { bytes.append(contentsOf: unit) }
+    }
+
     /// Appends `"…"` with RFC 8259 minimal escaping: `"`, `\`, and the C0 controls
     /// (`\n \r \t \b \f` short forms, everything else `\u00XX`). Bytes ≥ 0x20 other than
     /// `"`/`\` are copied verbatim in runs, so well-formed UTF-8 passes through untouched.

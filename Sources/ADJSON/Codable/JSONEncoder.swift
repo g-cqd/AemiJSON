@@ -101,6 +101,7 @@ extension ADJSON {
             writer.escapeSlashes = options.escapeSlashes
             writer.escapeHTMLUnsafe = options.escapeHTMLUnsafe
             writer.prettySpaceBeforeColon = options.prettyKeySeparator == .foundation
+            if pretty { writer.indentUnit = options.indent.unitBytes }
             let state = EncodeState(
                 writer, options: options, strategies: strategies, maxEncodeDepth: maxEncodingDepth, pretty: pretty)
             do {

@@ -171,7 +171,11 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
         JSONEncodingOptions(escapeSlashes: true, prettyPrinted: true),
         JSONEncodingOptions(prettyPrinted: true, escapeHTMLUnsafe: true),
         JSONEncodingOptions(prettyPrinted: true, prettyKeySeparator: .javaScript),
-        JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true, prettyKeySeparator: .javaScript)
+        JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true, prettyKeySeparator: .javaScript),
+        JSONEncodingOptions(prettyPrinted: true, indent: .spaces(4)),
+        JSONEncodingOptions(prettyPrinted: true, indent: .string("\t")),
+        .javaScript(space: 2),
+        .javaScript(indent: "\t")
     ]
     for doc in docs {
         let root = try ADJSON.parse(doc).root
@@ -366,6 +370,58 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     preset.prettyPrinted = true
     preset.options = .javaScript
     #expect(String(decoding: try preset.encode(F()), as: UTF8.self) == "{\n  \"a\": 2,\n  \"b\": 3.5\n}")
+}
+
+// `.javaScript(space:)` / `.javaScript(indent:)` mirror `JSON.stringify(value, null, space)`:
+// ECMA-262 numbers, a `": "` separator, and a configurable indent — N spaces or a literal unit.
+@Test func javaScriptFactoryMatchesStringifyIndentation() throws {
+    let tree = JSONValue.object([
+        "a": .number(1), "b": .array([.number(2), .string("x")]), "e": .object([:])
+    ])
+    // JSON.stringify(value, null, 2) — note bare `1`/`2` (ECMA-262), not `1.0`.
+    #expect(
+        String(decoding: try tree.encodedBytes(options: .javaScript(space: 2)), as: UTF8.self) == """
+            {
+              "a": 1,
+              "b": [
+                2,
+                "x"
+              ],
+              "e": {}
+            }
+            """)
+    // JSON.stringify(value, null, 4).
+    let four = "{\n    \"a\": 1,\n    \"b\": [\n        2,\n        \"x\"\n    ],\n    \"e\": {}\n}"
+    #expect(String(decoding: try tree.encodedBytes(options: .javaScript(space: 4)), as: UTF8.self) == four)
+    // JSON.stringify(value, null, "\t").
+    let tabbed = "{\n\t\"a\": 1,\n\t\"b\": [\n\t\t2,\n\t\t\"x\"\n\t],\n\t\"e\": {}\n}"
+    #expect(String(decoding: try tree.encodedBytes(options: .javaScript(indent: "\t")), as: UTF8.self) == tabbed)
+}
+
+// JS edge cases of the `space` argument: `<= 0` and `""` are compact; a numeric `space` clamps to
+// `Math.min(10, space)`.
+@Test func javaScriptFactoryClampsAndCompactsLikeStringify() throws {
+    let tree = JSONValue.object(["a": .number(1), "b": .array([.number(2)])])
+    let compact = try tree.encodedBytes(options: .javaScript)
+    #expect(try tree.encodedBytes(options: .javaScript(space: 0)) == compact)
+    #expect(try tree.encodedBytes(options: .javaScript(space: -5)) == compact)
+    #expect(try tree.encodedBytes(options: .javaScript(indent: "")) == compact)
+    // `space > 10` clamps to 10 spaces, so 10 and 20 produce identical output.
+    let ten = String(decoding: try tree.encodedBytes(options: .javaScript(space: 10)), as: UTF8.self)
+    #expect(try tree.encodedBytes(options: .javaScript(space: 20)) == Array(ten.utf8))
+    #expect(ten.contains("\n          \"a\": 1"))  // exactly ten leading spaces at depth 1
+}
+
+// The indent width is also exposed on the general (non-JS) pretty path, keeping the Foundation
+// `" : "` separator. Verified through the Codable streaming encoder.
+@Test func prettyIndentWidthIsConfigurableOnFoundationPath() throws {
+    struct F: Encodable { var a = 1 }
+    var enc = ADJSON.JSONEncoder()
+    enc.prettyPrinted = true
+    enc.options = JSONEncodingOptions(indent: .spaces(4))
+    #expect(String(decoding: try enc.encode(F()), as: UTF8.self) == "{\n    \"a\" : 1\n}")
+    enc.options = JSONEncodingOptions(indent: .string("\t"))
+    #expect(String(decoding: try enc.encode(F()), as: UTF8.self) == "{\n\t\"a\" : 1\n}")
 }
 
 @Test func jsonValueLosslessLargeIntegers() throws {

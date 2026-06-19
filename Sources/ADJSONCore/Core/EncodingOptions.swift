@@ -60,6 +60,25 @@ public struct JSONEncodingOptions: Sendable {
         case javaScript
     }
 
+    /// The indentation unit emitted once per nesting level in pretty-printed output (ignored when
+    /// `prettyPrinted` is false). Mirrors the two forms of `JSON.stringify`'s `space` argument.
+    public enum Indent: Sendable, Equatable {
+        /// `count` spaces per level (negatives treated as `0`). Two spaces — `Foundation`'s
+        /// `.prettyPrinted` and the conventional `JSON.stringify` indent — is the default.
+        case spaces(Int)
+        /// An arbitrary literal indent unit per level, e.g. `"\t"` for tabs — the string form of
+        /// `JSON.stringify`'s `space`.
+        case string(String)
+
+        /// The UTF-8 bytes emitted for one nesting level.
+        package var unitBytes: [UInt8] {
+            switch self {
+                case .spaces(let count): Array(repeating: 0x20, count: max(0, count))
+                case .string(let unit): Array(unit.utf8)
+            }
+        }
+    }
+
     public var nonFinite: NonFiniteStrategy
     public var numberFormat: NumberFormat
     public var keyOrder: KeyOrder
@@ -69,14 +88,17 @@ public struct JSONEncodingOptions: Sendable {
     /// line/paragraph separators U+2028 / U+2029. Off by default (output stays minimal RFC 8259).
     public var escapeHTMLUnsafe: Bool
     public var nilStrategy: NilStrategy
-    /// Emit human-readable output: a newline after each `{`/`[`/`,`, two-space indentation per
-    /// nesting level, and the `prettyKeySeparator` between keys and values (default `false`).
-    /// Empty containers stay on one line (`[]` / `{}`).
+    /// Emit human-readable output: a newline after each `{`/`[`/`,`, `indent` per nesting level,
+    /// and the `prettyKeySeparator` between keys and values (default `false`). Empty containers stay
+    /// on one line (`[]` / `{}`).
     public var prettyPrinted: Bool
     /// The key/value separator used when `prettyPrinted` is set. Defaults to `.foundation` (`" : "`,
     /// matching `Foundation`'s `.prettyPrinted`); use `.javaScript` (`": "`) for `JSON.stringify`
     /// parity. No effect on compact output.
     public var prettyKeySeparator: KeySeparator
+    /// The indentation unit per nesting level when `prettyPrinted` is set. Defaults to `.spaces(2)`
+    /// (`Foundation`'s `.prettyPrinted` width). No effect on compact output.
+    public var indent: Indent
 
     public init(
         nonFinite: NonFiniteStrategy = .throw,
@@ -86,6 +108,7 @@ public struct JSONEncodingOptions: Sendable {
         nilStrategy: NilStrategy = .omit,
         prettyPrinted: Bool = false,
         prettyKeySeparator: KeySeparator = .foundation,
+        indent: Indent = .spaces(2),
         escapeHTMLUnsafe: Bool = false
     ) {
         self.nonFinite = nonFinite
@@ -95,16 +118,39 @@ public struct JSONEncodingOptions: Sendable {
         self.nilStrategy = nilStrategy
         self.prettyPrinted = prettyPrinted
         self.prettyKeySeparator = prettyKeySeparator
+        self.indent = indent
         self.escapeHTMLUnsafe = escapeHTMLUnsafe
     }
 
     /// Strict RFC 8259 / ECMA-404: reject non-finite numbers, shortest numbers, declaration order.
     public static let rfc8259 = JSONEncodingOptions()
 
-    /// Byte-for-byte JavaScript `JSON.stringify`: non-finite → `null`, ECMA-262 number formatting,
-    /// and a `": "` key separator when pretty-printed (`JSON.stringify(value, null, indent)`).
+    /// Byte-for-byte JavaScript `JSON.stringify(value)` — compact: non-finite → `null`, ECMA-262
+    /// number formatting. For the indented forms (`JSON.stringify(value, null, space)`), use the
+    /// `javaScript(space:)` / `javaScript(indent:)` factories.
     public static let javaScript = JSONEncodingOptions(
         nonFinite: .null, numberFormat: .ecma262, prettyKeySeparator: .javaScript)
+
+    /// JavaScript `JSON.stringify(value, null, space)` with a numeric `space`: indent each nesting
+    /// level by `space` spaces, clamped to `0...10` exactly as the spec does (`Math.min(10, space)`,
+    /// negatives treated as `0`). `space <= 0` yields the compact form (equivalent to `.javaScript`);
+    /// `space > 0` pretty-prints with a `": "` separator. Non-finite → `null`, ECMA-262 numbers.
+    public static func javaScript(space: Int) -> JSONEncodingOptions {
+        let width = min(10, max(0, space))
+        return JSONEncodingOptions(
+            nonFinite: .null, numberFormat: .ecma262, prettyPrinted: width > 0,
+            prettyKeySeparator: .javaScript, indent: .spaces(width))
+    }
+
+    /// JavaScript `JSON.stringify(value, null, space)` with a string `space`: indent each nesting
+    /// level by `indent`, truncated to its first 10 characters as the spec does. An empty string
+    /// yields the compact form (equivalent to `.javaScript`). Non-finite → `null`, ECMA-262 numbers.
+    public static func javaScript(indent: String) -> JSONEncodingOptions {
+        let unit = String(indent.prefix(10))
+        return JSONEncodingOptions(
+            nonFinite: .null, numberFormat: .ecma262, prettyPrinted: !unit.isEmpty,
+            prettyKeySeparator: .javaScript, indent: .string(unit))
+    }
 
     /// SQLite's JSON text: `%!.15g` reals, unescaped slashes, declaration order, minified — matches
     /// `sqlite3`'s `json()` / `json_quote()` output for the value model.

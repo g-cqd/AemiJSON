@@ -11,6 +11,9 @@ package final class JSONWriter {
     /// Pretty key separator emitted by ``writeKeyPretty(_:)``: `" : "` when `true` (Foundation,
     /// the default), `": "` when `false` (JavaScript `JSON.stringify`). Set from the encode options.
     package var prettySpaceBeforeColon = true
+    /// Pretty-print indent unit emitted once per nesting level by ``newlineIndent(_:)`` (default two
+    /// spaces). Set from the encode options' `indent`.
+    package var indentUnit: [UInt8] = [0x20, 0x20]
 
     package init(capacity: Int = 0) {
         bytes = []
@@ -42,12 +45,11 @@ package final class JSONWriter {
         bytes.append(0x3A)
     }
 
-    // Pretty-print indent: newline + `level * 2` spaces. One definition shared by every serializer —
-    // the eager `JSONValue` walk, the lazy `JSON` cursor, and the streaming Codable encoder — so the
-    // indent width can't drift between them.
+    // Pretty-print indent: newline + `indentUnit` repeated per level, via the shared
+    // `JSONOutput.appendNewlineIndent` so the eager `JSONValue` walk, the lazy `JSON` cursor, and the
+    // streaming Codable encoder can't drift apart.
     @inline(__always) package func newlineIndent(_ level: Int) {
-        bytes.append(0x0A)
-        for _ in 0 ..< (level * 2) { bytes.append(0x20) }
+        JSONOutput.appendNewlineIndent(to: &bytes, level: level, unit: indentUnit)
     }
 
     // A pretty object key: `"key" : ` (Foundation) or `"key": ` (JS), per `prettySpaceBeforeColon`.
