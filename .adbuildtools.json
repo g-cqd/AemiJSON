@@ -2,5 +2,8 @@
     "devEnv": "ADJSON_DEV",
     "shippedTargets": ["Sources/ADJSON", "Sources/ADJSONCore"],
     "strtodBan": true,
-    "forceUnwrapBan": true
+    "forceUnwrapBan": true,
+    "prngBan": true,
+    "untypedThrowsBan": true,
+    "wallClockBan": true
 }
