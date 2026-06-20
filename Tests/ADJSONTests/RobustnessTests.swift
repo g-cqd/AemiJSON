@@ -8,7 +8,6 @@ import Testing
 // bounds-guarded and the path parsers are depth-bounded, so every input must *return or throw* — the
 // test completing without a crash is the assertion. Under the CI ASan/TSan passes this also exercises
 // the unsafe scanner for OOB / use-after-free. (The coverage-guided libFuzzer target is separate.)
-@Suite("Robustness")
 struct RobustnessTests {
     // Exercise the whole read pipeline on one input under both validation modes.
     private func exercise(parse bytes: [UInt8]) {
