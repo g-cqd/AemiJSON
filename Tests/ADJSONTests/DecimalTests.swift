@@ -4,7 +4,6 @@ import Testing
 
 // Exact-decimal support: the lazy `JSON.decimal` reads the original number lexeme (preserving values
 // `Double` would round), and Codable decode/encode special-case `Decimal` to match Foundation.
-@Suite("Decimal")
 struct DecimalTests {
     @Test func jsonDecimalPreservesLargeIntegerExactly() throws {
         let big = "123456789012345678901234567890"  // 30 digits — beyond Int64 and 2^53
