@@ -141,12 +141,12 @@ jobs:
     # consumers. The full package (umbrella + macros + tests) is built/tested too, since swift-syntax,
     # Foundation, and Synchronization are all available on Linux.
     #
-    # Advisory (continue-on-error) for now: the package's tools-version (6.3) tracks an unreleased
-    # toolchain, so this runs the main-nightly Linux container, which can be unstable independent of
-    # the code. Promote to a required gate once a matching stable Linux toolchain ships.
+    # Advisory (continue-on-error) for now: the package targets Swift 6.4, whose stable Linux toolchain
+    # has not yet shipped, so this runs the 6.4 nightly Linux container, which can be unstable
+    # independent of the code. Promote to a required gate once the matching stable Linux toolchain ships.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    container: swiftlang/swift:nightly-main-jammy
+    container: swiftlang/swift:nightly-6.4-jammy
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
@@ -257,7 +257,7 @@ jobs:
     # the job and uploads the reproducer; commit any reproducer as a regression test.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    container: swiftlang/swift:nightly-main-jammy
+    container: swiftlang/swift:nightly-6.4-jammy
     continue-on-error: true
     timeout-minutes: 30
     steps:
