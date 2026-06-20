@@ -27,7 +27,6 @@ private func significantDigits(_ s: String) -> String {
     return out
 }
 
-@Suite("Shortest Double")
 struct ShortestDoubleTests {
     @Test func canonicalForms() {
         #expect(shortest(0) == "0.0")
