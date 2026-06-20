@@ -8,7 +8,6 @@ import Testing
 // same value (they share `JSONString.unescape`). This suite feeds short, escape-heavy strings to both
 // and asserts they agree on accept/reject and on the decoded contents — the contract that lets the two
 // grammars stay separate without drifting.
-@Suite("String/escape grammar parity (tape vs SAX)")
 struct StringEscapeParityTests {
     private func tape(_ doc: String, _ options: JSONParseOptions) -> (ok: Bool, value: String?) {
         guard let parsed = try? ADJSON.parse(doc, options: options) else { return (false, nil) }
