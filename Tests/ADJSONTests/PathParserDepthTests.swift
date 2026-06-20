@@ -33,7 +33,6 @@ import Testing
 // Conclusion: no parser crashes the 512 KiB stack at any depth up to 5000 — the guard rejects deep
 // nesting cleanly first. This suite is the regression lock that keeps it that way.
 
-@Suite("Path parser depth safety")
 struct PathParserDepthTests {
     // Pinned to the sibling SQL engine's worker-stack size. Smaller than any default thread stack, so a
     // per-level frame cost that the 8 MB test thread would absorb is forced to overflow here instead.
