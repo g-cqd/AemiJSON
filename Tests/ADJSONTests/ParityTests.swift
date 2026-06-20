@@ -61,7 +61,6 @@ private func makeChain(depth: Int, rng: inout SeededRNG) -> JSONValue {
     return v
 }
 
-@Suite("Path parity")
 struct ParityTests {
     // Compact (writeCompact / recursive for shallow), sorted-key and pretty (writeIterative) must all
     // round-trip to a value equal to the original — and to each other — after parse + materialize.
