@@ -44,6 +44,12 @@ let benchSettings: [SwiftSetting] = strictSettings + timingWarningFlags
 let testSettings: [SwiftSetting] =
     strictSettings + testTimingWarningFlags + [.unsafeFlags(["-enable-actor-data-race-checks"])]
 
+// Shipped kernel (the byte-level parser): strict + StrictMemorySafety + Lifetimes, matching the other
+// AD-family kernels (ADFCore, ADHTMLCore, ADDBCore, ADServeCore). Every unsafe construct in the parser must
+// be explicitly marked `unsafe`. Only `ADJSONCore` carries this; the umbrella / macros stay on strict.
+let kernelSettings: [SwiftSetting] =
+    strictSettings + [.strictMemorySafety(), .enableExperimentalFeature("Lifetimes")]
+
 // Dev-only tooling is gated behind `ADJSON_DEV` so packages that depend on ADJSON never resolve it
 // (consumers keep just swift-syntax, which the macro needs). Contributors and CI set `ADJSON_DEV=1`
 // to enable the DocC plugin, the shared ADBuildTools `format` / `lint` / `LintBuild` plugins, and the
@@ -185,7 +191,7 @@ let package = Package(
         // OrderedCollections (order-preserving eager objects) and ADFCore (shared byte/number
         // primitives) — both Foundation-free with no transitive package deps, so the core stays portable.
         .target(
-            name: "ADJSONCore", dependencies: [orderedCollections, adfCore], swiftSettings: strictSettings),
+            name: "ADJSONCore", dependencies: [orderedCollections, adfCore], swiftSettings: kernelSettings),
         .target(
             // `adfCore` is declared directly (not only transitively via `ADJSONCore`) because the
             // umbrella links it itself — `EncoderBufferPool` uses `ADFCore.ByteBufferPool`.

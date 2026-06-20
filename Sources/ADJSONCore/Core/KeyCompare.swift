@@ -10,7 +10,7 @@ public import ADFCore
 public enum JSONKey {
     @inlinable
     public static func bytesEqual(_ a: UnsafePointer<UInt8>, _ b: UnsafePointer<UInt8>, _ count: Int) -> Bool {
-        ByteCompare.equal(a, b, count)
+        unsafe ByteCompare.equal(a, b, count)
     }
 
     // Compares a Swift `String` key's UTF-8 against a raw key buffer (the sites where one side is a
@@ -21,7 +21,7 @@ public enum JSONKey {
         return k.withUTF8 { kb in
             guard kb.count == count else { return false }
             guard let ka = kb.baseAddress else { return count == 0 }
-            return bytesEqual(ka, b, count)
+            return unsafe bytesEqual(ka, b, count)
         }
     }
 
@@ -38,17 +38,17 @@ public enum JSONKey {
             var k = key
             return k.withUTF8 { kb in
                 guard let kp = kb.baseAddress else { return len == 0 }
-                return JSONString.unescapedEquals(p, off, len, kp, kb.count)
+                return unsafe JSONString.unescapedEquals(p, off, len, kp, kb.count)
             }
         }
-        return bytesEqual(key, p + off, len)
+        return unsafe bytesEqual(key, p + off, len)
     }
 
     @inlinable
     public static func matches(
         _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, _ key: StaticString
     ) -> Bool {
-        if escaped { return JSONString.unescapedEquals(p, off, len, key.utf8Start, key.utf8CodeUnitCount) }
-        return len == key.utf8CodeUnitCount && bytesEqual(p + off, key.utf8Start, len)
+        if escaped { return unsafe JSONString.unescapedEquals(p, off, len, key.utf8Start, key.utf8CodeUnitCount) }
+        return unsafe len == key.utf8CodeUnitCount && bytesEqual(p + off, key.utf8Start, len)
     }
 }

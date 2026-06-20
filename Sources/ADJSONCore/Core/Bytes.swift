@@ -16,14 +16,14 @@ extension JSONDocument {
                     guard let base = buffer.baseAddress else {
                         preconditionFailure("JSONDocument input is never empty")
                     }
-                    return try body(base)
+                    return unsafe try body(base)
                 }
             case .source(let source):
-                return try source.withBytes { raw in
+                return unsafe try source.withBytes { raw in
                     guard let base = raw.baseAddress else {
                         preconditionFailure("JSONDocument input is never empty")
                     }
-                    return try body(base.assumingMemoryBound(to: UInt8.self))
+                    return unsafe try body(base.assumingMemoryBound(to: UInt8.self))
                 }
         }
     }
@@ -37,12 +37,12 @@ extension JSONDocument {
     package func withBuffers<R>(
         _ body: (UnsafePointer<UInt8>, Int, UnsafePointer<UInt64>, Int) throws -> R
     ) rethrows -> R {
-        try withBytePointer { byteBase in
+        unsafe try withBytePointer { byteBase in
             try tape.withUnsafeBufferPointer { tapeBuffer in
                 guard let tapeBase = tapeBuffer.baseAddress else {
                     preconditionFailure("JSONDocument tape is never empty")
                 }
-                return try body(byteBase, backing.count, tapeBase, tapeBuffer.count)
+                return unsafe try body(byteBase, backing.count, tapeBase, tapeBuffer.count)
             }
         }
     }

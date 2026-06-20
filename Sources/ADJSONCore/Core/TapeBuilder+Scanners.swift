@@ -21,7 +21,7 @@ extension TapeBuilder {
             // step; on a clean word `j` jumps by 8, otherwise to the first byte the scalar tail must
             // inspect. Only whole words inside the buffer are loaded (`j + 8 <= n`).
             while j + 8 <= n {
-                let word = UInt64(littleEndian: UnsafeRawPointer(p + j).loadUnaligned(as: UInt64.self))
+                let word = UInt64(littleEndian: unsafe UnsafeRawPointer(p + j).loadUnaligned(as: UInt64.self))
                 let mask = Self.stringStopMask(word)
                 if mask == 0 {
                     j += 8
@@ -31,7 +31,7 @@ extension TapeBuilder {
                 break
             }
             guard j < n else { break }
-            let c = p[j]
+            let c = unsafe p[j]
             if c == 0x22 { break }
             if c == 0x5C {
                 esc = 1
@@ -50,8 +50,8 @@ extension TapeBuilder {
                 // < 0x80, so `p[j] >= 0x80` means another multi-byte lead; the run ends at the first
                 // ASCII byte. Each sequence is still fully validated (overlong / surrogate / bounds).
                 repeat {
-                    j += try JSONUTF8.sequenceLength(p, j, n)
-                } while j < n && p[j] >= 0x80
+                    j += try unsafe JSONUTF8.sequenceLength(p, j, n)
+                } while unsafe j < n && p[j] >= 0x80
                 continue
             }
             j += 1
@@ -77,13 +77,15 @@ extension TapeBuilder {
     // `p[j]` is a backslash; validates the escape and advances `j` past it.
     mutating func validateEscape(_ j: inout Int) throws(JSONError) {
         guard j + 1 < n else { throw JSONError.invalidString(at: j) }
-        switch p[j + 1] {
+        switch unsafe p[j + 1] {
             case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
                 j += 2
             case 0x75:  // \uXXXX
                 let high = try hex4(j + 2)
                 if high >= 0xD800 && high <= 0xDBFF {
-                    guard j + 7 < n, p[j + 6] == 0x5C, p[j + 7] == 0x75 else { throw JSONError.invalidString(at: j) }
+                    guard j + 7 < n, unsafe p[j + 6] == 0x5C, unsafe p[j + 7] == 0x75 else {
+                        throw JSONError.invalidString(at: j)
+                    }
                     let low = try hex4(j + 8)
                     guard low >= 0xDC00 && low <= 0xDFFF else { throw JSONError.invalidString(at: j) }
                     j += 12
@@ -100,7 +102,7 @@ extension TapeBuilder {
     // The 4-hex-digit decode is shared with the SAX scanner (`JSONString.hex4`); only the error shape
     // differs (the tape throws a positioned `JSONError`, the lexeme scanner returns nil).
     func hex4(_ at: Int) throws(JSONError) -> UInt16 {
-        guard at + 4 <= n, let value = JSONString.hex4(p, at) else { throw JSONError.invalidString(at: at) }
+        guard at + 4 <= n, let value = unsafe JSONString.hex4(p, at) else { throw JSONError.invalidString(at: at) }
         return value
     }
 
@@ -119,24 +121,24 @@ extension TapeBuilder {
             // Lenient: relaxes the strict grammar (leading zeros, leading '+', trailing '.')
             // but still emits only well-formed number tokens, so a malformed run like `1.2.3`
             // or `1e` is rejected here rather than silently decoding to NaN/nil later.
-            if i < n && (p[i] == 0x2D || p[i] == 0x2B) { i += 1 }
+            if unsafe i < n && (p[i] == 0x2D || p[i] == 0x2B) { i += 1 }
             let intStart = i
-            while i < n && isDigit(p[i]) { i += 1 }
+            while unsafe i < n && isDigit(p[i]) { i += 1 }
             var sawDigits = i > intStart
-            if i < n && p[i] == 0x2E {
+            if unsafe i < n && p[i] == 0x2E {
                 isInt = 0
                 i += 1
                 let fracStart = i
-                while i < n && isDigit(p[i]) { i += 1 }
+                while unsafe i < n && isDigit(p[i]) { i += 1 }
                 sawDigits = sawDigits || i > fracStart
             }
             guard sawDigits else { throw JSONError.invalidNumber(at: start) }
-            if i < n && (p[i] == 0x65 || p[i] == 0x45) {
+            if unsafe i < n && (p[i] == 0x65 || p[i] == 0x45) {
                 isInt = 0
                 i += 1
-                if i < n && (p[i] == 0x2B || p[i] == 0x2D) { i += 1 }
+                if unsafe i < n && (p[i] == 0x2B || p[i] == 0x2D) { i += 1 }
                 let expStart = i
-                while i < n && isDigit(p[i]) { i += 1 }
+                while unsafe i < n && isDigit(p[i]) { i += 1 }
                 guard i > expStart else { throw JSONError.invalidNumber(at: start) }
             }
         }
@@ -151,39 +153,39 @@ extension TapeBuilder {
     // profile, so the strict/lenient hot path pays nothing.
     func enforceIJSONNumberRange(start: Int, length: Int, isInt: UInt64) throws(JSONError) {
         if isInt == 1 {
-            guard let value = JSONNumber.parseInteger(p, start, length, Int64.self),
+            guard let value = unsafe JSONNumber.parseInteger(p, start, length, Int64.self),
                 value >= -9_007_199_254_740_991, value <= 9_007_199_254_740_991
             else { throw JSONError.invalidNumber(at: start) }
-        } else if !JSONNumber.parseDouble(p, start, length).isFinite {
+        } else if unsafe !JSONNumber.parseDouble(p, start, length).isFinite {
             throw JSONError.invalidNumber(at: start)
         }
     }
 
     // RFC 8259: [ '-' ] ( '0' | [1-9][0-9]* ) [ '.' [0-9]+ ] [ (e|E) [+|-] [0-9]+ ]
     mutating func scanNumberStrict(_ isInt: inout UInt64, start: Int) throws(JSONError) {
-        if i < n && p[i] == 0x2D { i += 1 }
+        if unsafe i < n && p[i] == 0x2D { i += 1 }
         guard i < n else { throw JSONError.invalidNumber(at: start) }
-        if p[i] == 0x30 {
+        if unsafe p[i] == 0x30 {
             i += 1
-            if i < n && isDigit(p[i]) { throw JSONError.invalidNumber(at: start) }  // no leading zero
-        } else if p[i] >= 0x31 && p[i] <= 0x39 {
+            if unsafe i < n && isDigit(p[i]) { throw JSONError.invalidNumber(at: start) }  // no leading zero
+        } else if unsafe p[i] >= 0x31 && p[i] <= 0x39 {
             i += 1
-            while i < n && isDigit(p[i]) { i += 1 }
+            while unsafe i < n && isDigit(p[i]) { i += 1 }
         } else {
             throw JSONError.invalidNumber(at: start)
         }
-        if i < n && p[i] == 0x2E {
+        if unsafe i < n && p[i] == 0x2E {
             isInt = 0
             i += 1
-            guard i < n && isDigit(p[i]) else { throw JSONError.invalidNumber(at: start) }
-            while i < n && isDigit(p[i]) { i += 1 }
+            guard unsafe i < n && isDigit(p[i]) else { throw JSONError.invalidNumber(at: start) }
+            while unsafe i < n && isDigit(p[i]) { i += 1 }
         }
-        if i < n && (p[i] == 0x65 || p[i] == 0x45) {
+        if unsafe i < n && (p[i] == 0x65 || p[i] == 0x45) {
             isInt = 0
             i += 1
-            if i < n && (p[i] == 0x2B || p[i] == 0x2D) { i += 1 }
-            guard i < n && isDigit(p[i]) else { throw JSONError.invalidNumber(at: start) }
-            while i < n && isDigit(p[i]) { i += 1 }
+            if unsafe i < n && (p[i] == 0x2B || p[i] == 0x2D) { i += 1 }
+            guard unsafe i < n && isDigit(p[i]) else { throw JSONError.invalidNumber(at: start) }
+            while unsafe i < n && isDigit(p[i]) { i += 1 }
         }
     }
 
@@ -191,7 +193,7 @@ extension TapeBuilder {
 
     mutating func scanLiteral() throws(JSONError) {
         let start = i
-        switch p[i] {
+        switch unsafe p[i] {
             case 0x74:
                 try expectLiteral("true")
                 slots.append(Slot.scalar(JSONKind.boolTrue.rawValue, offset: start, length: 4, flags: 0))
@@ -206,8 +208,8 @@ extension TapeBuilder {
 
     @inline(__always) mutating func expectLiteral(_ lit: StaticString) throws(JSONError) {
         let len = lit.utf8CodeUnitCount
-        guard i + len <= n, JSONKey.bytesEqual(p + i, lit.utf8Start, len) else {
-            throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i)
+        guard i + len <= n, unsafe JSONKey.bytesEqual(p + i, lit.utf8Start, len) else {
+            throw JSONError.unexpectedCharacter(i < n ? unsafe p[i] : 0, at: i)
         }
         i += len
     }
@@ -219,12 +221,12 @@ extension TapeBuilder {
     // rejected. No SWAR fast path — the terminator may be `'` — since JSON5 is an opt-in convenience
     // mode, not a throughput path.
     mutating func scanStringJSON5() throws(JSONError) {
-        let quote = p[i]  // ' or "
+        let quote = unsafe p[i]  // ' or "
         let start = i + 1
         var j = start
         var esc: UInt64 = 0
         while j < n {
-            let c = p[j]
+            let c = unsafe p[j]
             if c == quote { break }
             if c == 0x5C {
                 esc = 1
@@ -233,7 +235,7 @@ extension TapeBuilder {
             }
             if c < 0x20 { throw JSONError.invalidString(at: j) }
             if c >= 0x80 {
-                j += try JSONUTF8.sequenceLength(p, j, n)
+                j += try unsafe JSONUTF8.sequenceLength(p, j, n)
                 continue
             }
             j += 1
@@ -248,24 +250,26 @@ extension TapeBuilder {
     // `p[j]` is a backslash; validates a JSON5 escape and advances `j` past it (and the escaped char).
     mutating func validateEscapeJSON5(_ j: inout Int) throws(JSONError) {
         guard j + 1 < n else { throw JSONError.invalidString(at: j) }
-        let e = p[j + 1]
+        let e = unsafe p[j + 1]
         switch e {
             case 0x22, 0x27, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74, 0x76:  // " ' \ / b f n r t v
                 j += 2
             case 0x30:  // \0 — NUL, only when not followed by a decimal digit
-                if j + 2 < n, isDigit(p[j + 2]) { throw JSONError.invalidString(at: j) }
+                if j + 2 < n, unsafe isDigit(p[j + 2]) { throw JSONError.invalidString(at: j) }
                 j += 2
             case 0x31 ... 0x39:  // \1 … \9 are not valid JSON5 escapes
                 throw JSONError.invalidString(at: j)
             case 0x78:  // \xHH
-                guard j + 3 < n, Hex.value(p[j + 2]) != nil, Hex.value(p[j + 3]) != nil else {
+                guard j + 3 < n, unsafe Hex.value(p[j + 2]) != nil, unsafe Hex.value(p[j + 3]) != nil else {
                     throw JSONError.invalidString(at: j)
                 }
                 j += 4
             case 0x75:  // \uHHHH (with surrogate pairing), same shape as strict
                 let high = try hex4(j + 2)
                 if high >= 0xD800 && high <= 0xDBFF {
-                    guard j + 7 < n, p[j + 6] == 0x5C, p[j + 7] == 0x75 else { throw JSONError.invalidString(at: j) }
+                    guard j + 7 < n, unsafe p[j + 6] == 0x5C, unsafe p[j + 7] == 0x75 else {
+                        throw JSONError.invalidString(at: j)
+                    }
                     let low = try hex4(j + 8)
                     guard low >= 0xDC00 && low <= 0xDFFF else { throw JSONError.invalidString(at: j) }
                     j += 12
@@ -277,13 +281,13 @@ extension TapeBuilder {
             case 0x0A:  // line continuation: \ + LF
                 j += 2
             case 0x0D:  // line continuation: \ + CR (or CRLF)
-                j += (j + 2 < n && p[j + 2] == 0x0A) ? 3 : 2
+                j += unsafe (j + 2 < n && p[j + 2] == 0x0A) ? 3 : 2
             default:
                 // Identity escape (`\X` → `X`). The escaped scalar may be multi-byte (incl. the
                 // U+2028/U+2029 line continuations), so validate and advance a full UTF-8 sequence.
                 if e >= 0x80 {
                     j += 1
-                    j += try JSONUTF8.sequenceLength(p, j, n)
+                    j += try unsafe JSONUTF8.sequenceLength(p, j, n)
                 } else {
                     j += 2
                 }
@@ -294,14 +298,14 @@ extension TapeBuilder {
     // non-ASCII; the rest also allowing digits). Recorded as an escape-free string slot.
     mutating func scanIdentifierKeyJSON5() throws(JSONError) {
         let start = i
-        guard i < n, JSONString.isIdentStart(p[i]) else {
-            throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i)
+        guard i < n, unsafe JSONString.isIdentStart(p[i]) else {
+            throw JSONError.unexpectedCharacter(i < n ? unsafe p[i] : 0, at: i)
         }
-        if p[i] >= 0x80 { i += try JSONUTF8.sequenceLength(p, i, n) } else { i += 1 }
+        if unsafe p[i] >= 0x80 { i += try unsafe JSONUTF8.sequenceLength(p, i, n) } else { i += 1 }
         while i < n {
-            let c = p[i]
+            let c = unsafe p[i]
             if c >= 0x80 {
-                i += try JSONUTF8.sequenceLength(p, i, n)
+                i += try unsafe JSONUTF8.sequenceLength(p, i, n)
             } else if JSONString.isIdentStart(c) || isDigit(c) {
                 i += 1
             } else {
@@ -317,45 +321,45 @@ extension TapeBuilder {
     // with optional leading/trailing dot and exponent. `isInt` is cleared for fractions, exponents,
     // and the non-finite literals; it stays set for plain and hex integers.
     mutating func scanNumberJSON5(_ isInt: inout UInt64, start: Int) throws(JSONError) {
-        if i < n, p[i] == 0x2D || p[i] == 0x2B { i += 1 }  // sign
+        if i < n, unsafe p[i] == 0x2D || p[i] == 0x2B { i += 1 }  // sign
         guard i < n else { throw JSONError.invalidNumber(at: start) }
-        if p[i] == 0x49 {  // 'I' → Infinity
+        if unsafe p[i] == 0x49 {  // 'I' → Infinity
             try expectLiteral("Infinity")
             isInt = 0
             return
         }
-        if p[i] == 0x4E {  // 'N' → NaN
+        if unsafe p[i] == 0x4E {  // 'N' → NaN
             try expectLiteral("NaN")
             isInt = 0
             return
         }
-        if p[i] == 0x30, i + 1 < n, p[i + 1] == 0x78 || p[i + 1] == 0x58 {  // 0x / 0X
+        if unsafe p[i] == 0x30, i + 1 < n, unsafe p[i + 1] == 0x78 || p[i + 1] == 0x58 {  // 0x / 0X
             i += 2
             let hexStart = i
-            while i < n, Hex.value(p[i]) != nil { i += 1 }
+            while i < n, unsafe Hex.value(p[i]) != nil { i += 1 }
             guard i > hexStart else { throw JSONError.invalidNumber(at: start) }
             return  // integer
         }
         var sawDigit = false
-        while i < n, isDigit(p[i]) {
+        while i < n, unsafe isDigit(p[i]) {
             i += 1
             sawDigit = true
         }
-        if i < n, p[i] == 0x2E {  // '.'
+        if i < n, unsafe p[i] == 0x2E {  // '.'
             isInt = 0
             i += 1
-            while i < n, isDigit(p[i]) {
+            while i < n, unsafe isDigit(p[i]) {
                 i += 1
                 sawDigit = true
             }
         }
         guard sawDigit else { throw JSONError.invalidNumber(at: start) }
-        if i < n, p[i] == 0x65 || p[i] == 0x45 {  // e / E
+        if i < n, unsafe p[i] == 0x65 || p[i] == 0x45 {  // e / E
             isInt = 0
             i += 1
-            if i < n, p[i] == 0x2B || p[i] == 0x2D { i += 1 }
+            if i < n, unsafe p[i] == 0x2B || p[i] == 0x2D { i += 1 }
             let expStart = i
-            while i < n, isDigit(p[i]) { i += 1 }
+            while i < n, unsafe isDigit(p[i]) { i += 1 }
             guard i > expStart else { throw JSONError.invalidNumber(at: start) }
         }
     }

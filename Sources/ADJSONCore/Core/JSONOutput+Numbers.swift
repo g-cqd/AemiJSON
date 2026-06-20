@@ -29,7 +29,7 @@ extension JSONOutput {
         desc.withUTF8 { d in
             let count = d.count
             var pos = 0
-            let negative = d.first == 0x2D
+            let negative = unsafe d.first == 0x2D
             if negative { pos = 1 }
 
             // Split off an explicit exponent (`e±NN`), if any.
@@ -37,17 +37,17 @@ extension JSONOutput {
             var mantEnd = count
             var j = pos
             while j < count {
-                if d[j] == 0x65 || d[j] == 0x45 {
+                if unsafe d[j] == 0x65 || d[j] == 0x45 {
                     mantEnd = j
                     var ei = j + 1
                     var eNeg = false
-                    if ei < count, d[ei] == 0x2B || d[ei] == 0x2D {
-                        eNeg = d[ei] == 0x2D
+                    if ei < count, unsafe d[ei] == 0x2B || d[ei] == 0x2D {
+                        eNeg = unsafe d[ei] == 0x2D
                         ei += 1
                     }
                     var e = 0
                     while ei < count {
-                        e = e * 10 + Int(d[ei] - 0x30)
+                        e = unsafe e * 10 + Int(d[ei] - 0x30)
                         ei += 1
                     }
                     exp = eNeg ? -e : e
@@ -60,7 +60,7 @@ extension JSONOutput {
             var dotAt = -1
             var t = pos
             while t < mantEnd {
-                if d[t] == 0x2E {
+                if unsafe d[t] == 0x2E {
                     dotAt = t
                     break
                 }
@@ -75,17 +75,17 @@ extension JSONOutput {
                 var pointPos: Int
                 if dotAt >= 0 {
                     for x in pos ..< dotAt {
-                        digits[dc] = d[x]
+                        unsafe digits[dc] = unsafe d[x]
                         dc += 1
                     }
                     for x in (dotAt + 1) ..< mantEnd {
-                        digits[dc] = d[x]
+                        unsafe digits[dc] = unsafe d[x]
                         dc += 1
                     }
                     pointPos = dotAt - pos
                 } else {
                     for x in pos ..< mantEnd {
-                        digits[dc] = d[x]
+                        unsafe digits[dc] = unsafe d[x]
                         dc += 1
                     }
                     pointPos = mantEnd - pos
@@ -94,15 +94,15 @@ extension JSONOutput {
 
                 // Normalize to shortest significant digits `[start, end)`, adjusting `pointPos`.
                 var start = 0
-                while start < dc, digits[start] == 0x30 {
+                while start < dc, unsafe digits[start] == 0x30 {
                     start += 1
                     pointPos -= 1
                 }
                 var end = dc
-                while end > start, digits[end - 1] == 0x30 { end -= 1 }
+                while end > start, unsafe digits[end - 1] == 0x30 { end -= 1 }
                 // The buffer addresses the stack `digits` allocation, valid only for this `body` call —
                 // `body` must consume it inline and must not store or return it (it dangles after).
-                body(negative, UnsafeBufferPointer(start: digitsBase + start, count: end - start), pointPos)
+                unsafe body(negative, UnsafeBufferPointer(start: digitsBase + start, count: end - start), pointPos)
             }
         }
     }
@@ -113,7 +113,7 @@ extension JSONOutput {
     /// decimal↔exponential threshold is `n > 21` / `n ≤ -6`). Reuses Swift's shortest digits via
     /// ``withShortestDigits(_:_:)`` and only re-renders their placement. Caller handles non-finite.
     public static func appendECMANumber(_ v: Double, to bytes: inout [UInt8]) {
-        withShortestDigits(v) { negative, digits, pointPos in
+        unsafe withShortestDigits(v) { negative, digits, pointPos in
             let k = digits.count
             if k == 0 {  // zero — ECMA renders `-0` as `0`, so no sign
                 bytes.append(0x30)
@@ -122,22 +122,22 @@ extension JSONOutput {
             let n = pointPos
             if negative { bytes.append(0x2D) }
             if k <= n, n <= 21 {
-                for x in 0 ..< k { bytes.append(digits[x]) }
+                for x in 0 ..< k { bytes.append(unsafe digits[x]) }
                 for _ in 0 ..< (n - k) { bytes.append(0x30) }
             } else if n > 0, n <= 21 {
-                for x in 0 ..< n { bytes.append(digits[x]) }
+                for x in 0 ..< n { bytes.append(unsafe digits[x]) }
                 bytes.append(0x2E)
-                for x in n ..< k { bytes.append(digits[x]) }
+                for x in n ..< k { bytes.append(unsafe digits[x]) }
             } else if n > -6, n <= 0 {
                 bytes.append(0x30)
                 bytes.append(0x2E)
                 for _ in 0 ..< (-n) { bytes.append(0x30) }
-                for x in 0 ..< k { bytes.append(digits[x]) }
+                for x in 0 ..< k { bytes.append(unsafe digits[x]) }
             } else {
-                bytes.append(digits[0])
+                bytes.append(unsafe digits[0])
                 if k > 1 {
                     bytes.append(0x2E)
-                    for x in 1 ..< k { bytes.append(digits[x]) }
+                    for x in 1 ..< k { bytes.append(unsafe digits[x]) }
                 }
                 bytes.append(0x65)  // 'e'
                 let e = n - 1
@@ -252,7 +252,7 @@ extension JSONOutput {
         }
         var buf = [CChar](repeating: 0, count: 32)
         _ = buf.withUnsafeMutableBufferPointer { p in
-            withVaList([v]) { vsnprintf(p.baseAddress, 32, "%.15g", $0) }
+            unsafe withVaList([v]) { unsafe vsnprintf(p.baseAddress, 32, "%.15g", $0) }
         }
         var count = 0
         var dotIndex = -1

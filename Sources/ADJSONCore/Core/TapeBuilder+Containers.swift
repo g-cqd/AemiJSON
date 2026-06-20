@@ -11,7 +11,7 @@ extension TapeBuilder {
         slots.append(0)  // placeholder, patched at close
         i += 1
         skipWS()
-        if i < n && p[i] == 0x7D {
+        if unsafe i < n && p[i] == 0x7D {
             i += 1
             try closeContainer(openIdx, count: 0, isObject: true)
             return true
@@ -29,7 +29,7 @@ extension TapeBuilder {
         slots.append(0)
         i += 1
         skipWS()
-        if i < n && p[i] == 0x5D {
+        if unsafe i < n && p[i] == 0x5D {
             i += 1
             try closeContainer(openIdx, count: 0, isObject: false)
             return true
@@ -63,7 +63,7 @@ extension TapeBuilder {
             stack[stack.count - 1].count += 1
             skipWS()
             guard i < n else { throw JSONError.unexpectedEndOfInput }
-            let sep = p[i]
+            let sep = unsafe p[i]
             if stack[stack.count - 1].isObject {
                 completed = try foldObjectSeparator(sep)
             } else {

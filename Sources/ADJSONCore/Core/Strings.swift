@@ -12,7 +12,7 @@ public enum JSONString {
         var j = offset
         let end = offset + length
         while j < end {
-            let c = p[j]
+            let c = unsafe p[j]
             if c != 0x5C {
                 out.append(c)
                 j += 1
@@ -20,7 +20,7 @@ public enum JSONString {
             }
             j += 1
             guard j < end else { break }
-            let e = p[j]
+            let e = unsafe p[j]
             j += 1
             switch e {
                 case 0x22: out.append(0x22)
@@ -32,11 +32,11 @@ public enum JSONString {
                 case 0x62: out.append(0x08)
                 case 0x66: out.append(0x0C)
                 case 0x75:
-                    let hi = readHex4(p, j, end)
+                    let hi = unsafe readHex4(p, j, end)
                     j += 4
                     var scalar = UInt32(hi)
-                    if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
-                        let lo = readHex4(p, j + 2, end)
+                    if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, unsafe p[j] == 0x5C, unsafe p[j + 1] == 0x75 {
+                        let lo = unsafe readHex4(p, j + 2, end)
                         if lo >= 0xDC00 && lo <= 0xDFFF {
                             scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
                             j += 6
@@ -65,7 +65,7 @@ public enum JSONString {
         var j = offset
         let end = offset + length
         unescape: while j < end {
-            let c = p[j]
+            let c = unsafe p[j]
             if c != 0x5C {
                 out.append(c)
                 j += 1
@@ -73,7 +73,7 @@ public enum JSONString {
             }
             j += 1
             guard j < end else { break }
-            let e = p[j]
+            let e = unsafe p[j]
             j += 1
             switch e {
                 case 0x22: out.append(0x22)  // \"
@@ -91,15 +91,15 @@ public enum JSONString {
                     // The scanner guarantees two hex digits follow, but don't make the in-bounds read
                     // depend on that invariant alone: bail if the buffer is somehow short.
                     guard j + 1 < end else { break unescape }
-                    let value = UInt32(Hex.value(p[j]) ?? 0) << 4 | UInt32(Hex.value(p[j + 1]) ?? 0)
+                    let value = unsafe UInt32(Hex.value(p[j]) ?? 0) << 4 | UInt32(Hex.value(p[j + 1]) ?? 0)
                     j += 2
                     Unicode.UTF8.encode(Unicode.Scalar(UInt8(truncatingIfNeeded: value))) { out.append($0) }
                 case 0x75:  // \uHHHH (+ surrogate pair)
-                    let hi = readHex4(p, j, end)
+                    let hi = unsafe readHex4(p, j, end)
                     j += 4
                     var scalar = UInt32(hi)
-                    if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
-                        let lo = readHex4(p, j + 2, end)
+                    if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, unsafe p[j] == 0x5C, unsafe p[j + 1] == 0x75 {
+                        let lo = unsafe readHex4(p, j + 2, end)
                         if lo >= 0xDC00 && lo <= 0xDFFF {
                             scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
                             j += 6
@@ -111,16 +111,18 @@ public enum JSONString {
                         out.append(contentsOf: [0xEF, 0xBF, 0xBD])  // U+FFFD
                     }
                 case 0x0A: break  // \ + LF → line continuation (elided)
-                case 0x0D: if j < end, p[j] == 0x0A { j += 1 }  // \ + CR / CRLF → elided
+                case 0x0D: if j < end, unsafe p[j] == 0x0A { j += 1 }  // \ + CR / CRLF → elided
                 default:
                     if e >= 0x80 {  // identity-escaped multi-byte scalar, or a U+2028/U+2029 continuation
                         let len = e >= 0xF0 ? 4 : (e >= 0xE0 ? 3 : 2)
-                        if len == 3, e == 0xE2, j + 1 < end, p[j] == 0x80, p[j + 1] == 0xA8 || p[j + 1] == 0xA9 {
+                        if len == 3, e == 0xE2, j + 1 < end, unsafe p[j] == 0x80,
+                            unsafe p[j + 1] == 0xA8 || p[j + 1] == 0xA9
+                        {
                             j += 2  // elide the U+2028/U+2029 line continuation (lead already consumed)
                         } else {
                             out.append(e)
                             for _ in 1 ..< len where j < end {
-                                out.append(p[j])
+                                out.append(unsafe p[j])
                                 j += 1
                             }
                         }
@@ -145,14 +147,14 @@ public enum JSONString {
         var t = 0
         // Match one decoded byte against the target; false on overrun or mismatch.
         func emit(_ b: UInt8) -> Bool {
-            if t >= targetLength || target[t] != b { return false }
+            if unsafe t >= targetLength || target[t] != b { return false }
             t += 1
             return true
         }
         var j = offset
         let end = offset + length
         while j < end {
-            let c = p[j]
+            let c = unsafe p[j]
             if c != 0x5C {
                 if !emit(c) { return false }
                 j += 1
@@ -160,7 +162,7 @@ public enum JSONString {
             }
             j += 1
             guard j < end else { break }
-            let e = p[j]
+            let e = unsafe p[j]
             j += 1
             switch e {
                 case 0x22: if !emit(0x22) { return false }
@@ -172,7 +174,7 @@ public enum JSONString {
                 case 0x62: if !emit(0x08) { return false }
                 case 0x66: if !emit(0x0C) { return false }
                 case 0x75:
-                    if !decodeUnicodeEscape(p, &j, end, emit) { return false }
+                    if unsafe !decodeUnicodeEscape(p, &j, end, emit) { return false }
                 default: if !emit(e) { return false }
             }
         }
@@ -185,11 +187,11 @@ public enum JSONString {
     private static func decodeUnicodeEscape(
         _ p: UnsafePointer<UInt8>, _ j: inout Int, _ end: Int, _ emit: (UInt8) -> Bool
     ) -> Bool {
-        let hi = readHex4(p, j, end)
+        let hi = unsafe readHex4(p, j, end)
         j += 4
         var scalar = UInt32(hi)
-        if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
-            let lo = readHex4(p, j + 2, end)
+        if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, unsafe p[j] == 0x5C, unsafe p[j + 1] == 0x75 {
+            let lo = unsafe readHex4(p, j + 2, end)
             if lo >= 0xDC00 && lo <= 0xDFFF {
                 scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
                 j += 6
@@ -214,7 +216,7 @@ public enum JSONString {
         var k = start
         let stop = min(start + 4, end)
         while k < stop {
-            v = (v << 4) | UInt16(Hex.value(p[k]) ?? 0)
+            v = unsafe (v << 4) | UInt16(Hex.value(p[k]) ?? 0)
             k += 1
         }
         return v

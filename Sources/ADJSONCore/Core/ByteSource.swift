@@ -25,15 +25,16 @@ extension ADJSON {
     public static func parse(
         _ source: some ByteSource & Sendable, options: JSONParseOptions = .strict
     ) throws(JSONError) -> JSONDocument {
-        let count = source.withBytes { $0.count }
+        let count = unsafe source.withBytes { $0.count }
         guard count > 0 else { throw JSONError.unexpectedEndOfInput }
         guard UInt64(count) <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
         // Same typed-throws funnel as `parse([UInt8])`: `withBytes` is untyped `rethrows`, so the
         // closure stays non-throwing and carries the `JSONError` out through `Result`.
         let tape =
-            try source.withBytes { raw -> Result<ContiguousArray<UInt64>, JSONError> in
+            unsafe try source.withBytes { raw -> Result<ContiguousArray<UInt64>, JSONError> in
                 guard let rawBase = raw.baseAddress else { return .failure(.unexpectedEndOfInput) }
-                var builder = TapeBuilder(rawBase.assumingMemoryBound(to: UInt8.self), raw.count, options: options)
+                var builder = unsafe TapeBuilder(
+                    rawBase.assumingMemoryBound(to: UInt8.self), raw.count, options: options)
                 return Result { () throws(JSONError) in try builder.build() }
             }
             .get()
@@ -57,7 +58,7 @@ extension ADJSON {
     public static func parse(
         _ buffer: UnsafeRawBufferPointer, options: JSONParseOptions = .strict
     ) throws(JSONError) -> JSONDocument {
-        try parse(BorrowedRawBytes(buffer), options: options)
+        unsafe try parse(BorrowedRawBytes(buffer), options: options)
     }
 }
 
@@ -69,8 +70,8 @@ extension ADJSON {
 /// decoder's tasks (each binds its own pointer over the same immutable bytes). A caller that mutates
 /// the buffer concurrently, or lets it outlive its memory, violates the contract and the safety
 /// guarantee with it.
-struct BorrowedRawBytes: ByteSource, @unchecked Sendable {
+@safe struct BorrowedRawBytes: ByteSource, @unchecked Sendable {
     let buffer: UnsafeRawBufferPointer
-    init(_ buffer: UnsafeRawBufferPointer) { self.buffer = buffer }
-    func withBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R { try body(buffer) }
+    init(_ buffer: UnsafeRawBufferPointer) { unsafe self.buffer = buffer }
+    func withBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R { unsafe try body(buffer) }
 }

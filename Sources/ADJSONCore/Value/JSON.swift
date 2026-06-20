@@ -45,14 +45,14 @@ public struct JSON: Sendable {
         guard tag == JSONKind.number.rawValue, Slot.flags(slot) & 1 == 1 else { return nil }
         let off = Slot.low(slot)
         let len = Slot.length(slot)
-        return doc.withBytePointer { JSONNumber.parseInteger($0, off, len, Int.self) }
+        return unsafe doc.withBytePointer { unsafe JSONNumber.parseInteger($0, off, len, Int.self) }
     }
 
     public var double: Double? {
         guard tag == JSONKind.number.rawValue else { return nil }
         let off = Slot.low(slot)
         let len = Slot.length(slot)
-        return doc.withBytePointer { JSONNumber.parseDouble($0, off, len) }
+        return unsafe doc.withBytePointer { unsafe JSONNumber.parseDouble($0, off, len) }
     }
 
     /// Parse the number as any fixed-width integer type (used by the decoder).
@@ -60,7 +60,7 @@ public struct JSON: Sendable {
         guard tag == JSONKind.number.rawValue else { return nil }
         let off = Slot.low(slot)
         let len = Slot.length(slot)
-        return doc.withBytePointer { JSONNumber.parseInteger($0, off, len, T.self) }
+        return unsafe doc.withBytePointer { unsafe JSONNumber.parseInteger($0, off, len, T.self) }
     }
 
     public var float: Float? {
@@ -70,7 +70,7 @@ public struct JSON: Sendable {
         // Parse the source decimal straight to `Float` (single rounding) rather than `Float(double)`:
         // narrowing a `Double` rounds twice and can yield a different `Float` bit pattern than rounding
         // the source decimal directly. This matches the Codable byte/tape `Float` decode path.
-        return doc.withBytePointer { JSONNumber.parseFloat($0, off, len) }
+        return unsafe doc.withBytePointer { unsafe JSONNumber.parseFloat($0, off, len) }
     }
 
     /// The number node's raw source text — the exact lexeme as it appeared in the input — or nil for a
@@ -81,8 +81,8 @@ public struct JSON: Sendable {
         guard tag == JSONKind.number.rawValue else { return nil }
         let off = Slot.low(slot)
         let len = Slot.length(slot)
-        return doc.withBytePointer {
-            String(decoding: UnsafeBufferPointer(start: $0 + off, count: len), as: UTF8.self)
+        return unsafe doc.withBytePointer {
+            unsafe String(decoding: UnsafeBufferPointer(start: $0 + off, count: len), as: UTF8.self)
         }
     }
 
@@ -91,9 +91,9 @@ public struct JSON: Sendable {
         let off = Slot.low(slot)
         let len = Slot.length(slot)
         let esc = Slot.flags(slot) & 1 == 1
-        return doc.withBytePointer { p in
-            if !esc { return String(decoding: UnsafeBufferPointer(start: p + off, count: len), as: UTF8.self) }
-            return doc.isJSON5 ? JSONString.unescapeJSON5(p, off, len) : JSONString.unescape(p, off, len)
+        return unsafe doc.withBytePointer { p in
+            if !esc { return unsafe String(decoding: UnsafeBufferPointer(start: p + off, count: len), as: UTF8.self) }
+            return unsafe doc.isJSON5 ? JSONString.unescapeJSON5(p, off, len) : JSONString.unescape(p, off, len)
         }
     }
 
@@ -115,16 +115,16 @@ public struct JSON: Sendable {
             // JSON5's escape set requires the dedicated decoder, so it materializes once; strict/lenient
             // compare the decoded bytes on the fly via the alloc-free comparator.
             if doc.isJSON5 {
-                let decoded = doc.withBytePointer { JSONString.unescapeJSON5($0, off, len) }
+                let decoded = unsafe doc.withBytePointer { unsafe JSONString.unescapeJSON5($0, off, len) }
                 return decoded == literal.description
             }
-            return doc.withBytePointer {
-                JSONString.unescapedEquals($0, off, len, literal.utf8Start, literal.utf8CodeUnitCount)
+            return unsafe doc.withBytePointer {
+                unsafe JSONString.unescapedEquals($0, off, len, literal.utf8Start, literal.utf8CodeUnitCount)
             }
         }
         // Unescaped fast path: raw byte compare against the literal's UTF-8, no allocation.
         guard len == literal.utf8CodeUnitCount else { return false }
-        return doc.withBytePointer { p in JSONKey.bytesEqual(p + off, literal.utf8Start, len) }
+        return unsafe doc.withBytePointer { p in unsafe JSONKey.bytesEqual(p + off, literal.utf8Start, len) }
     }
 
     /// Borrows the raw UTF-8 bytes of an **unescaped** string node for the duration of `body`,
@@ -136,8 +136,8 @@ public struct JSON: Sendable {
         guard tag == JSONKind.string.rawValue, Slot.flags(slot) & 1 == 0 else { return nil }
         let off = Slot.low(slot)
         let len = Slot.length(slot)
-        return try doc.withBytePointer { p in
-            try body(UnsafeRawBufferPointer(start: p + off, count: len))
+        return try unsafe doc.withBytePointer { p in
+            try unsafe body(UnsafeRawBufferPointer(start: p + off, count: len))
         }
     }
 
@@ -168,11 +168,11 @@ public struct JSON: Sendable {
         guard tag == JSONKind.object.rawValue else { return nil }
         let c = Slot.count(slot)
         var out = [String: JSON](minimumCapacity: c)
-        doc.withBytePointer { p in
+        unsafe doc.withBytePointer { p in
             var i = index + 1
             for _ in 0 ..< c {
                 let k = doc.tape[i]
-                let keyStr = decodeKey(p, k)
+                let keyStr = unsafe decodeKey(p, k)
                 out[keyStr] = JSON(doc: doc, index: i + 1)
                 i = nextIndex(after: i + 1)
             }
@@ -199,11 +199,11 @@ public struct JSON: Sendable {
     public func forEachMember(_ body: (String, JSON) -> Void) {
         guard tag == JSONKind.object.rawValue else { return }
         let c = Slot.count(slot)
-        doc.withBytePointer { p in
+        unsafe doc.withBytePointer { p in
             var i = index + 1
             for _ in 0 ..< c {
                 let k = doc.tape[i]
-                body(decodeKey(p, k), JSON(doc: doc, index: i + 1))
+                body(unsafe decodeKey(p, k), JSON(doc: doc, index: i + 1))
                 i = nextIndex(after: i + 1)
             }
         }
@@ -228,7 +228,7 @@ public struct JSON: Sendable {
     package func childAfterCursor(_ cursor: Int) -> (key: String?, value: JSON, next: Int) {
         if tag == JSONKind.object.rawValue {
             let keySlot = doc.tape[cursor]
-            let key = doc.withBytePointer { decodeKey($0, keySlot) }
+            let key = unsafe doc.withBytePointer { unsafe decodeKey($0, keySlot) }
             let valueIndex = cursor + 1
             return (key, JSON(doc: doc, index: valueIndex), nextIndex(after: valueIndex))
         }
@@ -265,13 +265,13 @@ public struct JSON: Sendable {
         guard tag == JSONKind.object.rawValue else { return .missing(doc) }
         let c = Slot.count(slot)
         let unique = doc.keysAreUnique  // unique keys → first match is the only match
-        return doc.withBytePointer { p -> JSON in
+        return unsafe doc.withBytePointer { p -> JSON in
             var i = index + 1
             var found = -1  // last match wins (consistent with `object` and JS / Foundation)
             for _ in 0 ..< c {
                 let k = doc.tape[i]
                 let valIdx = i + 1
-                if keyMatches(p, k, key) {
+                if unsafe keyMatches(p, k, key) {
                     found = valIdx
                     if unique { break }
                 }
@@ -339,7 +339,7 @@ public struct JSON: Sendable {
 
     @inline(__always)
     private func keyMatches(_ p: UnsafePointer<UInt8>, _ keySlot: UInt64, _ key: String) -> Bool {
-        JSONKey.matches(p, Slot.low(keySlot), Slot.length(keySlot), escaped: Slot.flags(keySlot) & 1 == 1, key)
+        unsafe JSONKey.matches(p, Slot.low(keySlot), Slot.length(keySlot), escaped: Slot.flags(keySlot) & 1 == 1, key)
     }
 
     @inline(__always)
@@ -347,8 +347,8 @@ public struct JSON: Sendable {
         let off = Slot.low(keySlot)
         let len = Slot.length(keySlot)
         if Slot.flags(keySlot) & 1 == 1 {
-            return doc.isJSON5 ? JSONString.unescapeJSON5(p, off, len) : JSONString.unescape(p, off, len)
+            return unsafe doc.isJSON5 ? JSONString.unescapeJSON5(p, off, len) : JSONString.unescape(p, off, len)
         }
-        return String(decoding: UnsafeBufferPointer(start: p + off, count: len), as: UTF8.self)
+        return unsafe String(decoding: UnsafeBufferPointer(start: p + off, count: len), as: UTF8.self)
     }
 }

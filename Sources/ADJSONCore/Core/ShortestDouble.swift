@@ -19,7 +19,7 @@ enum JSONShortest {
     /// inlinable ``JSONOutput/appendFiniteDouble`` can call it.
     @usableFromInline
     static func appendShortest(_ v: Double, to bytes: inout [UInt8]) {
-        JSONOutput.withShortestDigits(v) { negative, digits, pointPos in
+        unsafe JSONOutput.withShortestDigits(v) { negative, digits, pointPos in
             if negative { bytes.append(0x2D) }
             let k = digits.count
             if k == 0 {  // zero (incl. -0.0)
@@ -35,22 +35,22 @@ enum JSONShortest {
                     bytes.append(0x30)
                     bytes.append(0x2E)
                     for _ in 0 ..< (-n) { bytes.append(0x30) }
-                    for x in 0 ..< k { bytes.append(digits[x]) }
+                    for x in 0 ..< k { unsafe bytes.append(digits[x]) }
                 } else if n >= k {
-                    for x in 0 ..< k { bytes.append(digits[x]) }
+                    for x in 0 ..< k { unsafe bytes.append(digits[x]) }
                     for _ in 0 ..< (n - k) { bytes.append(0x30) }
                     bytes.append(0x2E)
                     bytes.append(0x30)
                 } else {
-                    for x in 0 ..< n { bytes.append(digits[x]) }
+                    for x in 0 ..< n { unsafe bytes.append(digits[x]) }
                     bytes.append(0x2E)
-                    for x in n ..< k { bytes.append(digits[x]) }
+                    for x in n ..< k { unsafe bytes.append(digits[x]) }
                 }
             } else {
-                bytes.append(digits[0])
+                unsafe bytes.append(digits[0])
                 if k > 1 {
                     bytes.append(0x2E)
-                    for x in 1 ..< k { bytes.append(digits[x]) }
+                    for x in 1 ..< k { unsafe bytes.append(digits[x]) }
                 }
                 bytes.append(0x65)  // 'e'
                 bytes.append(exponent >= 0 ? 0x2B : 0x2D)

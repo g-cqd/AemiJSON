@@ -28,7 +28,7 @@ package final class JSONWriter {
     @inline(__always) package func byte(_ b: UInt8) { bytes.append(b) }
 
     @inline(__always) package func raw(_ lit: StaticString) {
-        lit.withUTF8Buffer { bytes.append(contentsOf: $0) }
+        lit.withUTF8Buffer { unsafe bytes.append(contentsOf: $0) }
     }
 
     package func writeNull() { JSONOutput.appendNull(to: &bytes) }

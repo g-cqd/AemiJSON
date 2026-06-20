@@ -3,7 +3,7 @@ import ADFCore
 // Single-pass, iterative (explicit-stack, non-recursive) scanner that builds the tape
 // WITHOUT materializing any value. In strict mode it enforces the RFC 8259 grammar (number
 // shape, escape validity, UTF-8 well-formedness); in lenient mode it scans permissively.
-struct TapeBuilder {
+@safe struct TapeBuilder {
     let p: UnsafePointer<UInt8>
     let n: Int
     let strict: Bool
@@ -34,7 +34,7 @@ struct TapeBuilder {
         // for `p[0 ..< n]` and keeps it alive for this builder's whole lifetime; the builder reads only
         // within `[0, n)` (every access is guarded by `i < n`) and never lets `p` escape.
         assert(n >= 0, "TapeBuilder requires a non-negative byte count")
-        self.p = p
+        unsafe self.p = p
         self.n = n
         self.strict = options.isStrict
         self.json5 = options.isJSON5
@@ -65,7 +65,7 @@ struct TapeBuilder {
             return
         }
         while i < n {
-            let c = p[i]
+            let c = unsafe p[i]
             guard c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 else { break }
             i += 1
         }
@@ -76,18 +76,18 @@ struct TapeBuilder {
     // block comment consumes to EOF, so the parser then reports an unexpected end of input.
     mutating func skipWSAndCommentsJSON5() {
         while i < n {
-            let c = p[i]
+            let c = unsafe p[i]
             if c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 || c == 0x0B || c == 0x0C {
                 i += 1
                 continue
             }
             guard c == 0x2F, i + 1 < n else { break }  // '/'
-            if p[i + 1] == 0x2F {  // '//' line comment
+            if unsafe p[i + 1] == 0x2F {  // '//' line comment
                 i += 2
-                while i < n, p[i] != 0x0A, p[i] != 0x0D { i += 1 }
-            } else if p[i + 1] == 0x2A {  // '/*' block comment
+                while i < n, unsafe p[i] != 0x0A, unsafe p[i] != 0x0D { i += 1 }
+            } else if unsafe p[i + 1] == 0x2A {  // '/*' block comment
                 i += 2
-                while i + 1 < n, !(p[i] == 0x2A && p[i + 1] == 0x2F) { i += 1 }
+                while i + 1 < n, unsafe !(p[i] == 0x2A && p[i + 1] == 0x2F) { i += 1 }
                 i = (i + 1 < n) ? i + 2 : n  // consume '*/', or run to EOF if unterminated
             } else {
                 break  // lone '/'
@@ -103,7 +103,7 @@ struct TapeBuilder {
             // Positioned at the start of a value.
             skipWS()
             guard i < n else { throw JSONError.unexpectedEndOfInput }
-            let c = p[i]
+            let c = unsafe p[i]
             let completed: Bool
             switch c {
                 case 0x7B: completed = try openObject()  // '{'
@@ -130,7 +130,7 @@ struct TapeBuilder {
     // container's closer, consume it (the comma was trailing) and report the container closed.
     mutating func trailingCommaClosesContainer(_ closer: UInt8) -> Bool {
         skipWS()
-        if i < n, p[i] == closer {
+        if i < n, unsafe p[i] == closer {
             i += 1
             return true
         }
@@ -142,17 +142,17 @@ struct TapeBuilder {
     mutating func readKeyColon() throws(JSONError) {
         skipWS()
         let keyStart = i
-        if json5, i < n, p[i] != 0x22, p[i] != 0x27 {
+        if json5, i < n, unsafe p[i] != 0x22, unsafe p[i] != 0x27 {
             try scanIdentifierKeyJSON5()  // unquoted identifier
         } else {
-            guard i < n, p[i] == 0x22 || (json5 && p[i] == 0x27) else {
-                throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i)
+            guard i < n, unsafe p[i] == 0x22 || (json5 && p[i] == 0x27) else {
+                throw JSONError.unexpectedCharacter(i < n ? unsafe p[i] : 0, at: i)
             }
             try scanString()  // quoted key ('…' handled in json5)
         }
         if checkDuplicates { try recordKey(keyStart, frame: stack.count - 1) }
         skipWS()
-        guard i < n, p[i] == 0x3A else { throw JSONError.unexpectedCharacter(i < n ? p[i] : 0, at: i) }
+        guard i < n, unsafe p[i] == 0x3A else { throw JSONError.unexpectedCharacter(i < n ? unsafe p[i] : 0, at: i) }
         i += 1  // :
     }
 
@@ -182,14 +182,14 @@ struct TapeBuilder {
         let offset = Slot.low(keySlot)
         let length = Slot.length(keySlot)
         var hasher = Hasher()
-        hasher.combine(bytes: UnsafeRawBufferPointer(start: p + offset, count: length))
+        unsafe hasher.combine(bytes: UnsafeRawBufferPointer(start: p + offset, count: length))
         let hash = hasher.finalize()
         // Read the bucket for the collision check, then append in place. The `if let` binding is
         // released before the `default:` subscript mutates, so the stored array keeps refcount 1 and
         // the append doesn't copy-on-write the whole bucket on every key.
         if let bucket = stack[frame].seenKeys[hash] {
             for previous in bucket
-            where previous.length == length
+            where unsafe previous.length == length
                 && (length == 0 || JSONKey.bytesEqual(p + previous.offset, p + offset, length))
             {
                 throw JSONError.duplicateKey(at: keyStart)

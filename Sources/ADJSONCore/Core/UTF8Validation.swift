@@ -13,7 +13,7 @@ enum JSONUTF8 {
     /// length in bytes. Throws `JSONError.invalidUTF8` if malformed.
     @inline(__always)
     static func sequenceLength(_ p: UnsafePointer<UInt8>, _ j: Int, _ n: Int) throws(JSONError) -> Int {
-        guard let length = UTF8Validation.sequenceLength(p, j, n) else { throw JSONError.invalidUTF8(at: j) }
+        guard let length = unsafe UTF8Validation.sequenceLength(p, j, n) else { throw JSONError.invalidUTF8(at: j) }
         return length
     }
 }

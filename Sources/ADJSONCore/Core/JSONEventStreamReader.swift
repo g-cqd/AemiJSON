@@ -169,8 +169,8 @@ public struct JSONEventStreamReader {
         let base = readOffset
         if isJSON5, c != 0x22, c != 0x27 {  // unquoted ECMAScript identifier
             let outcome = buffer.withUnsafeBufferPointer { buf -> JSONString.ScanOutcome in
-                guard let p = buf.baseAddress.map({ $0 + base }) else { return .incomplete }
-                return JSONString.scanIdentifier(p, open, count, complete: finished)
+                guard let p = unsafe buf.baseAddress.map({ unsafe $0 + base }) else { return .incomplete }
+                return unsafe JSONString.scanIdentifier(p, open, count, complete: finished)
             }
             switch outcome {
                 case .incomplete: return .needMore
@@ -178,8 +178,9 @@ public struct JSONEventStreamReader {
                 case .ok(let end, _):
                     keyEnd = end
                     key = buffer.withUnsafeBufferPointer { buf in
-                        guard let p = buf.baseAddress.map({ $0 + base }) else { return "" }
-                        return String(decoding: UnsafeBufferPointer(start: p + open, count: end - open), as: UTF8.self)
+                        guard let p = unsafe buf.baseAddress.map({ unsafe $0 + base }) else { return "" }
+                        return unsafe String(
+                            decoding: UnsafeBufferPointer(start: p + open, count: end - open), as: UTF8.self)
                     }
             }
         } else {
@@ -193,10 +194,10 @@ public struct JSONEventStreamReader {
         }
         // The mandatory `:` (JSON5 permits whitespace/comments between the key and the colon).
         let skip = buffer.withUnsafeBufferPointer { buf -> JSONToken.SkipResult in
-            guard let p = buf.baseAddress.map({ $0 + base }) else {
+            guard let p = unsafe buf.baseAddress.map({ unsafe $0 + base }) else {
                 return JSONToken.SkipResult(end: keyEnd, incomplete: false)
             }
-            return JSONToken.skipInsignificant(p, keyEnd, count, json5: isJSON5, complete: finished)
+            return unsafe JSONToken.skipInsignificant(p, keyEnd, count, json5: isJSON5, complete: finished)
         }
         if skip.incomplete { return .needMore }
         let j = skip.end
@@ -284,10 +285,10 @@ public struct JSONEventStreamReader {
             let base = readOffset
             let cursor = i
             let result = buffer.withUnsafeBufferPointer { buf -> JSONToken.SkipResult in
-                guard let p = buf.baseAddress.map({ $0 + base }) else {
+                guard let p = unsafe buf.baseAddress.map({ unsafe $0 + base }) else {
                     return JSONToken.SkipResult(end: cursor, incomplete: false)
                 }
-                return JSONToken.skipInsignificant(p, cursor, count, json5: true, complete: finished)
+                return unsafe JSONToken.skipInsignificant(p, cursor, count, json5: true, complete: finished)
             }
             i = result.end
             return result.incomplete
@@ -322,8 +323,8 @@ extension JSONEventStreamReader {
     private func scanStringEnd(_ open: Int) throws(JSONError) -> StringScanOutcome {
         let base = readOffset
         let outcome = buffer.withUnsafeBufferPointer { buf -> JSONString.ScanOutcome in
-            guard let p = buf.baseAddress.map({ $0 + base }) else { return .incomplete }
-            return isJSON5
+            guard let p = unsafe buf.baseAddress.map({ unsafe $0 + base }) else { return .incomplete }
+            return unsafe isJSON5
                 ? JSONString.scanJSON5Lexeme(p, open, count)
                 : JSONString.scanLexeme(p, open, count, strict: strict)
         }
@@ -348,7 +349,7 @@ extension JSONEventStreamReader {
         let available = Swift.min(length, count - start)
         var matched = true
         literal.withUTF8Buffer { lit in
-            for k in 0 ..< available where byte(start + k) != lit[k] { matched = false }
+            for k in 0 ..< available where unsafe byte(start + k) != lit[k] { matched = false }
         }
         guard matched else { throw JSONError.unexpectedCharacter(byte(start), at: start) }
         if start + length > count {
@@ -369,8 +370,8 @@ extension JSONEventStreamReader {
         // buffer end `.incomplete` mid-stream but final once `finish()` has been signalled.
         let base = readOffset
         let outcome = buffer.withUnsafeBufferPointer { buf -> JSONNumber.ScanOutcome in
-            guard let p = buf.baseAddress.map({ $0 + base }) else { return .incomplete }
-            return isJSON5
+            guard let p = unsafe buf.baseAddress.map({ unsafe $0 + base }) else { return .incomplete }
+            return unsafe isJSON5
                 ? JSONNumber.scanJSON5Lexeme(p, start, count, complete: finished)
                 : JSONNumber.scanLexeme(p, start, count, strict: strict, complete: finished)
         }
@@ -388,19 +389,19 @@ extension JSONEventStreamReader {
         let length = endPastQuote - 1 - start
         let base = readOffset
         return buffer.withUnsafeBufferPointer { buf in
-            guard let p = buf.baseAddress.map({ $0 + base }) else { return "" }
+            guard let p = unsafe buf.baseAddress.map({ unsafe $0 + base }) else { return "" }
             if !hasEscape {
-                return String(decoding: UnsafeBufferPointer(start: p + start, count: length), as: UTF8.self)
+                return unsafe String(decoding: UnsafeBufferPointer(start: p + start, count: length), as: UTF8.self)
             }
-            return isJSON5 ? JSONString.unescapeJSON5(p, start, length) : JSONString.unescape(p, start, length)
+            return unsafe isJSON5 ? JSONString.unescapeJSON5(p, start, length) : JSONString.unescape(p, start, length)
         }
     }
 
     private func parseNumber(_ start: Int, _ end: Int) -> Double {
         let base = readOffset
         return buffer.withUnsafeBufferPointer { buf in
-            guard let p = buf.baseAddress.map({ $0 + base }) else { return .nan }
-            return JSONNumber.parseDouble(p, start, end - start)
+            guard let p = unsafe buf.baseAddress.map({ unsafe $0 + base }) else { return .nan }
+            return unsafe JSONNumber.parseDouble(p, start, end - start)
         }
     }
 }

@@ -54,10 +54,10 @@ public enum JSONOutput {
             var idx = 40
             repeat {
                 idx -= 1
-                buf[idx] = 0x30 + UInt8(truncatingIfNeeded: n % 10)
+                unsafe buf[idx] = 0x30 + UInt8(truncatingIfNeeded: n % 10)
                 n /= 10
             } while n > 0
-            bytes.append(contentsOf: buf[idx ..< 40])
+            unsafe bytes.append(contentsOf: buf[idx ..< 40])
         }
     }
 
@@ -106,7 +106,7 @@ public enum JSONOutput {
                 // HTML-safe mode skips it — that path also needs the `<`/`>`/`&` and 3-byte sequence checks.
                 if !escapeHTMLUnsafe {
                     while i + 8 <= n {
-                        let word = UInt64(littleEndian: UnsafeRawPointer(p + i).loadUnaligned(as: UInt64.self))
+                        let word = UInt64(littleEndian: unsafe UnsafeRawPointer(p + i).loadUnaligned(as: UInt64.self))
                         let mask = encodeStopMask(word, escapeSlashes: escapeSlashes)
                         if mask == 0 {
                             i += 8
@@ -117,14 +117,17 @@ public enum JSONOutput {
                     }
                     guard i < n else { break }
                 }
-                let b = p[i]
+                let b = unsafe p[i]
                 // U+2028 / U+2029 are 3-byte sequences (E2 80 A8/A9), so they need a UTF-8-aware branch
                 // rather than a single-byte test — taken only under HTML-safe escaping.
-                if escapeHTMLUnsafe, b == 0xE2, i + 2 < n, p[i + 1] == 0x80, p[i + 2] == 0xA8 || p[i + 2] == 0xA9 {
+                if escapeHTMLUnsafe, b == 0xE2, i + 2 < n, unsafe p[i + 1] == 0x80,
+                    unsafe p[i + 2] == 0xA8 || p[i + 2] == 0xA9
+                {
                     if i > runStart {
-                        bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
+                        unsafe bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
                     }
-                    bytes.append(contentsOf: [0x5C, 0x75, 0x32, 0x30, 0x32, p[i + 2] == 0xA8 ? 0x38 : 0x39])  //  /9
+                    // escape U+2028 / U+2029 to its ASCII escape (last digit 8 or 9)
+                    unsafe bytes.append(contentsOf: [0x5C, 0x75, 0x32, 0x30, 0x32, p[i + 2] == 0xA8 ? 0x38 : 0x39])
                     i += 3
                     runStart = i
                     continue
@@ -132,7 +135,7 @@ public enum JSONOutput {
                 let htmlUnsafe = escapeHTMLUnsafe && (b == 0x3C || b == 0x3E || b == 0x26)  // < > &
                 if b < 0x20 || b == 0x22 || b == 0x5C || (escapeSlashes && b == 0x2F) || htmlUnsafe {
                     if i > runStart {
-                        bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
+                        unsafe bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
                     }
                     appendEscape(b, to: &bytes)
                     i += 1
@@ -142,7 +145,7 @@ public enum JSONOutput {
                 }
             }
             if i > runStart {
-                bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
+                unsafe bytes.append(contentsOf: UnsafeBufferPointer(start: p + runStart, count: i - runStart))
             }
         }
         bytes.append(0x22)
