@@ -4,7 +4,6 @@ import Testing
 /// Regression coverage for the encoder/inference fail-safe fixes: a keyed `superEncoder()` must emit
 /// a `"super"` key (not a keyless value), and the recursive `JSONValue(encoding:)` and schema
 /// inference paths must fail closed on pathological depth instead of overflowing the native stack.
-@Suite("Encoder safety")
 struct EncoderSafetyTests {
     // MARK: superEncoder emits a "super" key
 
