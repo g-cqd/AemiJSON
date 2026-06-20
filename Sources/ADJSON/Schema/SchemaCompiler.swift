@@ -41,6 +41,14 @@ final class SchemaCompiler {
     }
 
     private func fill(_ node: inout SchemaNode, from schema: JSON, at path: String) {
+        fillScalars(&node, from: schema)
+        fillStructure(&node, from: schema, at: path)
+        fillCompositionAndDeps(&node, from: schema, at: path)
+    }
+
+    /// Type, const/enum, and the numeric / string / array-size / object-size scalar
+    /// constraint keywords (no sub-schema reservation).
+    private func fillScalars(_ node: inout SchemaNode, from schema: JSON) {
         if let s = schema["type"].string, let t = SchemaType(rawValue: s) {
             node.types = [t]
         } else if let arr = schema["type"].array {
@@ -67,7 +75,12 @@ final class SchemaCompiler {
         node.minProperties = schema["minProperties"].int
         node.maxProperties = schema["maxProperties"].int
         if let r = schema["required"].array { node.required = r.compactMap(\.string) }
+    }
 
+    /// Structural applicators — properties / patternProperties / additionalProperties and
+    /// prefixItems / items / contains — reserving each sub-schema (kept in original order
+    /// so reserved node indices are unchanged).
+    private func fillStructure(_ node: inout SchemaNode, from schema: JSON, at path: String) {
         if let props = schema["properties"].object {
             var d: [String: Int] = [:]
             for (k, v) in props { d[k] = reserve(v, at: path + "/properties/" + jsonPointerEscape(k)) }
@@ -97,7 +110,11 @@ final class SchemaCompiler {
             node.minContains = schema["minContains"].int
             node.maxContains = schema["maxContains"].int
         }
+    }
 
+    /// Composition + dependency + reference keywords — allOf / anyOf / oneOf / not /
+    /// if / then / else / dependentRequired / dependentSchemas / $defs / $ref.
+    private func fillCompositionAndDeps(_ node: inout SchemaNode, from schema: JSON, at path: String) {
         if let a = schema["allOf"].array { node.allOf = a.enumerated().map { reserve($1, at: path + "/allOf/\($0)") } }
         if let a = schema["anyOf"].array { node.anyOf = a.enumerated().map { reserve($1, at: path + "/anyOf/\($0)") } }
         if let a = schema["oneOf"].array { node.oneOf = a.enumerated().map { reserve($1, at: path + "/oneOf/\($0)") } }

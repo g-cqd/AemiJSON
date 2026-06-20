@@ -11,6 +11,98 @@ extension JSON {
         case indent(level: Int, comma: Bool)
     }
 
+    /// Emits one tape node — a scalar (mirroring `JSONValue.scalarValue`), or a container
+    /// whose children + separators are pushed onto `stack` in reverse for the iterative
+    /// walk. Throws past `maxEncodingDepth`.
+    private func emitValue(
+        _ node: JSON, depth: Int, into bytes: inout [UInt8], stack: inout [WriteOp],
+        options: JSONEncodingOptions
+    ) throws {
+        guard depth <= JSONValue.maxEncodingDepth else {
+            throw EncodingError.invalidValue(
+                node,
+                .init(codingPath: [], debugDescription: "Nesting exceeds \(JSONValue.maxEncodingDepth)"))
+        }
+        let pretty = options.prettyPrinted
+        let escapeSlashes = options.escapeSlashes
+        let escapeHTMLUnsafe = options.escapeHTMLUnsafe
+        // Scalar dispatch mirrors `JSONValue.scalarValue`: an integer-shaped token within
+        // Int64 prints via `appendInteger`, every other number via the shared `writeNumber`.
+        if node.isNull {
+            JSONOutput.appendNull(to: &bytes)
+        } else if let b = node.bool {
+            JSONOutput.appendBool(b, to: &bytes)
+        } else if let i = node.integer(Int64.self) {
+            JSONOutput.appendInteger(i, to: &bytes)
+        } else if node.isNumberKind, let d = node.double {
+            try JSONValue.writeNumber(d, into: &bytes, options: options)
+        } else if let s = node.string {
+            JSONOutput.appendString(
+                s, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
+        } else if node.isArray {
+            emitArray(node.arrayValue, depth: depth, into: &bytes, stack: &stack, pretty: pretty)
+        } else if node.isObject {
+            emitObject(
+                node, depth: depth, into: &bytes, stack: &stack, pretty: pretty,
+                sorted: options.keyOrder == .sorted)
+        } else {
+            JSONOutput.appendNull(to: &bytes)  // missing sentinel → null (matches scalarValue)
+        }
+    }
+
+    /// Emits a `[`-array: pushes the closing `]`, then each element + separator in reverse.
+    private func emitArray(
+        _ elements: [JSON], depth: Int, into bytes: inout [UInt8], stack: inout [WriteOp], pretty: Bool
+    ) {
+        bytes.append(0x5B)
+        if elements.isEmpty {
+            bytes.append(0x5D)
+            return
+        }
+        stack.append(.byte(0x5D))
+        if pretty { stack.append(.indent(level: depth, comma: false)) }
+        var i = elements.count - 1
+        while i >= 0 {
+            stack.append(.value(elements[i], depth: depth + 1))
+            if pretty {
+                stack.append(.indent(level: depth + 1, comma: i > 0))
+            } else if i > 0 {
+                stack.append(.byte(0x2C))
+            }
+            i -= 1
+        }
+    }
+
+    /// Emits a `{`-object (members sorted when `sorted`): pushes the closing `}`, then each
+    /// value + key + separator in reverse.
+    private func emitObject(
+        _ node: JSON, depth: Int, into bytes: inout [UInt8], stack: inout [WriteOp], pretty: Bool,
+        sorted: Bool
+    ) {
+        var pairs: [(String, JSON)] = []
+        pairs.reserveCapacity(node.count)
+        node.forEachMember { pairs.append(($0, $1)) }
+        if sorted { pairs.sort { $0.0 < $1.0 } }
+        bytes.append(0x7B)
+        if pairs.isEmpty {
+            bytes.append(0x7D)
+            return
+        }
+        stack.append(.byte(0x7D))
+        if pretty { stack.append(.indent(level: depth, comma: false)) }
+        var i = pairs.count - 1
+        while i >= 0 {
+            stack.append(.value(pairs[i].1, depth: depth + 1))
+            stack.append(.key(pairs[i].0, pretty: pretty))
+            if pretty {
+                stack.append(.indent(level: depth + 1, comma: i > 0))
+            } else if i > 0 {
+                stack.append(.byte(0x2C))
+            }
+            i -= 1
+        }
+    }
+
     /// Serialize this value to UTF-8 JSON bytes under `options` (number format, key order, pretty
     /// printing, slash / HTML escaping). Walks the tape iteratively, so it serializes any depth and
     /// allocates no intermediate value tree. Integer-shaped numbers within `Int64` keep full
@@ -45,70 +137,7 @@ extension JSON {
                     if comma { bytes.append(0x2C) }
                     JSONOutput.appendNewlineIndent(to: &bytes, level: level, unit: indentUnit)
                 case .value(let node, let depth):
-                    guard depth <= JSONValue.maxEncodingDepth else {
-                        throw EncodingError.invalidValue(
-                            node,
-                            .init(codingPath: [], debugDescription: "Nesting exceeds \(JSONValue.maxEncodingDepth)"))
-                    }
-                    // Scalar dispatch mirrors `JSONValue.scalarValue` exactly: an integer-shaped token
-                    // within Int64 prints via `appendInteger`, every other number via the shared
-                    // `writeNumber` (so a fraction / out-of-Int64 integer collapses identically).
-                    if node.isNull {
-                        JSONOutput.appendNull(to: &bytes)
-                    } else if let b = node.bool {
-                        JSONOutput.appendBool(b, to: &bytes)
-                    } else if let i = node.integer(Int64.self) {
-                        JSONOutput.appendInteger(i, to: &bytes)
-                    } else if node.isNumberKind, let d = node.double {
-                        try JSONValue.writeNumber(d, into: &bytes, options: options)
-                    } else if let s = node.string {
-                        JSONOutput.appendString(
-                            s, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
-                    } else if node.isArray {
-                        let elements = node.arrayValue
-                        bytes.append(0x5B)
-                        if elements.isEmpty {
-                            bytes.append(0x5D)
-                        } else {
-                            stack.append(.byte(0x5D))
-                            if pretty { stack.append(.indent(level: depth, comma: false)) }
-                            var i = elements.count - 1
-                            while i >= 0 {
-                                stack.append(.value(elements[i], depth: depth + 1))
-                                if pretty {
-                                    stack.append(.indent(level: depth + 1, comma: i > 0))
-                                } else if i > 0 {
-                                    stack.append(.byte(0x2C))
-                                }
-                                i -= 1
-                            }
-                        }
-                    } else if node.isObject {
-                        var pairs: [(String, JSON)] = []
-                        pairs.reserveCapacity(node.count)
-                        node.forEachMember { pairs.append(($0, $1)) }
-                        if options.keyOrder == .sorted { pairs.sort { $0.0 < $1.0 } }
-                        bytes.append(0x7B)
-                        if pairs.isEmpty {
-                            bytes.append(0x7D)
-                        } else {
-                            stack.append(.byte(0x7D))
-                            if pretty { stack.append(.indent(level: depth, comma: false)) }
-                            var i = pairs.count - 1
-                            while i >= 0 {
-                                stack.append(.value(pairs[i].1, depth: depth + 1))
-                                stack.append(.key(pairs[i].0, pretty: pretty))
-                                if pretty {
-                                    stack.append(.indent(level: depth + 1, comma: i > 0))
-                                } else if i > 0 {
-                                    stack.append(.byte(0x2C))
-                                }
-                                i -= 1
-                            }
-                        }
-                    } else {
-                        JSONOutput.appendNull(to: &bytes)  // missing sentinel → null (matches scalarValue)
-                    }
+                    try emitValue(node, depth: depth, into: &bytes, stack: &stack, options: options)
             }
         }
         return bytes
