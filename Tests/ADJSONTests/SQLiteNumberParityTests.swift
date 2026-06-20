@@ -9,7 +9,6 @@ import Testing
 // overflows `Int64`, which SQLite accepts as a (lossy) real rather than rejecting. SQLite's own
 // `json_type` LABELS such a literal `integer`, but that shape label is the consumer's mapping; what
 // ADJSON owns is the value model, where an over-large integer can only be a `Double`.
-@Suite("SQLite number/validity parity")
 struct SQLiteNumberParityTests {
     private func kind(_ s: String) throws -> String {
         switch JSONValue(try ADJSON.parse(s).root) {
