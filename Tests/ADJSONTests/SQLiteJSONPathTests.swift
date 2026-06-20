@@ -13,7 +13,6 @@ private func eval(_ path: String, _ json: JSON) throws -> JSON {
 private func spath(_ s: String) -> SQLiteJSONPath { try! SQLiteJSONPath(s) }
 private func jvalue(_ s: String) -> JSONValue { try! JSONValue(parsing: s) }
 
-@Suite("SQLiteJSONPath")
 struct SQLiteJSONPathTests {
     let object = doc(#"{"a":{"b":[10,20,30]},"c":"x","n":null}"#)
 
@@ -63,7 +62,6 @@ struct SQLiteJSONPathTests {
     }
 }
 
-@Suite("SQLiteJSON functions")
 struct SQLiteJSONFunctionTests {
     @Test func typeAndArrayLength() {
         let j = doc(#"{"o":{},"a":[1,2,3],"i":5,"r":5.5,"s":"x","t":true,"f":false,"n":null}"#)
