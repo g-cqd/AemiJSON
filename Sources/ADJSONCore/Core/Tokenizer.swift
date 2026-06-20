@@ -92,13 +92,21 @@ extension JSONNumber {
             }
             guard sawDigits else { return false }
         }
+        guard validateExponent(p, &k, end) else { return false }
+        return k == end
+    }
+
+    /// Validates an optional `[eE][+-]?digits` exponent suffix, advancing `k` past it.
+    /// Returns false only when an `e`/`E` is present but not followed by ≥1 digit.
+    private static func validateExponent(_ p: UnsafePointer<UInt8>, _ k: inout Int, _ end: Int) -> Bool {
+        func digit() -> Bool { k < end && p[k] >= 0x30 && p[k] <= 0x39 }
         if k < end, p[k] == 0x65 || p[k] == 0x45 {
             k += 1
             if k < end, p[k] == 0x2B || p[k] == 0x2D { k += 1 }
             guard digit() else { return false }
             while digit() { k += 1 }
         }
-        return k == end
+        return true
     }
 
     /// Scan a JSON5 number lexeme starting at `start`: optional `+`/`-`, then `Infinity` / `NaN`, a
@@ -137,6 +145,16 @@ extension JSONNumber {
             // No digits yet: a trailing sign or lone `.` at the buffer end might still continue.
             return (i >= count && !complete) ? .incomplete : .invalid
         }
+        if let outcome = scanJSON5Exponent(p, &i, count, complete: complete) { return outcome }
+        return .ok(i)
+    }
+
+    /// Validates a JSON5 `[eE][+-]?digits` exponent suffix, advancing `i`. Returns a
+    /// terminal `.incomplete`/`.invalid` outcome, or nil to continue to `.ok`.
+    private static func scanJSON5Exponent(
+        _ p: UnsafePointer<UInt8>, _ i: inout Int, _ count: Int, complete: Bool
+    ) -> ScanOutcome? {
+        @inline(__always) func digit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
         if i < count, p[i] == 0x65 || p[i] == 0x45 {  // e / E
             i += 1
             if i < count, p[i] == 0x2B || p[i] == 0x2D { i += 1 }
@@ -147,7 +165,7 @@ extension JSONNumber {
         } else if i >= count && !complete {
             return .incomplete  // a digit run touching the end could continue
         }
-        return .ok(i)
+        return nil
     }
 
     // Match a fixed ASCII literal (`Infinity` / `NaN`) at `start`. `.incomplete` if only a prefix is
@@ -259,30 +277,7 @@ extension JSONString {
             if c == 0x22 { return .ok(end: j + 1, hasEscape: hasEscape) }
             if c == 0x5C {  // escape
                 hasEscape = true
-                guard j + 1 < count else { return .incomplete }
-                if strict {
-                    switch p[j + 1] {
-                        case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
-                            j += 2
-                        case 0x75:  // \uXXXX, possibly a surrogate pair
-                            guard j + 6 <= count else { return .incomplete }
-                            guard let high = hex4(p, j + 2) else { return .invalid }
-                            if high >= 0xD800 && high <= 0xDBFF {
-                                guard j + 12 <= count else { return .incomplete }
-                                guard p[j + 6] == 0x5C, p[j + 7] == 0x75 else { return .invalid }
-                                guard let low = hex4(p, j + 8), low >= 0xDC00 && low <= 0xDFFF else { return .invalid }
-                                j += 12
-                            } else if high >= 0xDC00 && high <= 0xDFFF {
-                                return .invalid  // lone low surrogate
-                            } else {
-                                j += 6
-                            }
-                        default:
-                            return .invalid
-                    }
-                } else {
-                    j += 2
-                }
+                if let outcome = scanStringEscape(p, &j, count, strict: strict) { return outcome }
                 continue
             }
             if c < 0x20 { return .invalid }  // unescaped control byte
@@ -295,6 +290,40 @@ extension JSONString {
             }
             j += 1
         }
+    }
+
+    /// Validates the escape sequence at `p[j] == '\\'`, advancing `j` past it. In strict
+    /// mode this enforces the JSON escape set incl. `\uXXXX` surrogate pairs; in lenient
+    /// mode any byte may follow. Returns a terminal `.incomplete`/`.invalid`, or nil to
+    /// continue scanning.
+    private static func scanStringEscape(
+        _ p: UnsafePointer<UInt8>, _ j: inout Int, _ count: Int, strict: Bool
+    ) -> ScanOutcome? {
+        guard j + 1 < count else { return .incomplete }
+        if !strict {
+            j += 2
+            return nil
+        }
+        switch p[j + 1] {
+            case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
+                j += 2
+            case 0x75:  // \uXXXX, possibly a surrogate pair
+                guard j + 6 <= count else { return .incomplete }
+                guard let high = hex4(p, j + 2) else { return .invalid }
+                if high >= 0xD800 && high <= 0xDBFF {
+                    guard j + 12 <= count else { return .incomplete }
+                    guard p[j + 6] == 0x5C, p[j + 7] == 0x75 else { return .invalid }
+                    guard let low = hex4(p, j + 8), low >= 0xDC00 && low <= 0xDFFF else { return .invalid }
+                    j += 12
+                } else if high >= 0xDC00 && high <= 0xDFFF {
+                    return .invalid  // lone low surrogate
+                } else {
+                    j += 6
+                }
+            default:
+                return .invalid
+        }
+        return nil
     }
 
     /// Four hex digits at `at` (caller guarantees `at + 4` in bounds), or `nil` if any byte is not a
