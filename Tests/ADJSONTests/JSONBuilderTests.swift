@@ -9,7 +9,6 @@ private func objectKeys(_ value: JSONValue) -> [String]? {
     return nil
 }
 
-@Suite("JSONValue builders & literals")
 struct JSONBuilderTests {
     @Test func scalarLiteralsMapToCases() {
         #expect((true as JSONValue) == .bool(true))
