@@ -9,7 +9,6 @@ import Testing
 // path is the reference: it reads the original number lexeme, so it matches Foundation on int-vs-double
 // classification and keeps `Decimal` exact. A materialized `JSONValue` is intentionally lossy (it holds
 // `Int64`/`Double`), so its precision limit is asserted explicitly rather than papered over.
-@Suite("Cross-path number parity")
 struct CrossPathNumberParityTests {
     private static let posix = Locale(identifier: "en_US_POSIX")
 
