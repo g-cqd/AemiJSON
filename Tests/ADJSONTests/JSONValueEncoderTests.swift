@@ -1,7 +1,6 @@
 import ADJSON
 import Testing
 
-@Suite("JSONValue(encoding:)")
 struct JSONValueEncoderTests {
     @Test func encodesScalars() throws {
         #expect(try JSONValue(encoding: 42) == .int(42))
