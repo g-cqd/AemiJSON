@@ -4,7 +4,6 @@ import Testing
 
 // Parity of `JSONValue.setting(_:to:mode:)` / `removing(_:)` with SQLite's json_set / json_insert /
 // json_replace / json_remove. Expected outputs were generated from `sqlite3 :memory:` (3.54.0).
-@Suite("SQLite mutation parity")
 struct SQLiteMutationTests {
     private func materialize(_ s: String) throws -> JSONValue { JSONValue(try ADJSON.parse(s).root) }
     private func enc(_ v: JSONValue) throws -> String {
