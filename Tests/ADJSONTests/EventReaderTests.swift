@@ -9,7 +9,6 @@ private func events(_ s: String, options: JSONParseOptions = .strict) throws -> 
     return out
 }
 
-@Suite("JSONEventReader (SAX)")
 struct JSONEventReaderTests {
     @Test func emitsEventsInDocumentOrder() throws {
         let evs = try events(#"{"a":1,"b":[true,null,"x"],"c":{}}"#)
@@ -100,7 +99,6 @@ private func streamEvents(_ bytes: [UInt8], chunkSize: Int) throws -> [JSONEvent
     return out
 }
 
-@Suite("JSONEventStreamReader (chunked)")
 struct JSONEventStreamReaderTests {
     private let documents = [
         #"{"a":1,"b":[true,null,"x\n"],"c":{"d":-12.5e3},"u":"café"}"#,
