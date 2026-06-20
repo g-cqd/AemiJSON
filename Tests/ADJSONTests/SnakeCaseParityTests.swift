@@ -6,7 +6,6 @@ import Testing
 // JSONEncoder/JSONDecoder algorithm. Foundation does not expose the function, so guard against drift by
 // comparing ADJSON's live output to Foundation's own across a representative set of key shapes:
 // acronyms, digits, runs of capitals, existing underscores, and leading/trailing underscores.
-@Suite("snake_case parity with Foundation")
 struct SnakeCaseParityTests {
     private struct Keys: Codable, Equatable {
         var id = 1
