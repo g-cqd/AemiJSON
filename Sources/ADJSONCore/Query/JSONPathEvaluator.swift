@@ -279,36 +279,6 @@ enum JSONPathEvaluator {
         var groupHasUnbounded = [false]  // per open group; index 0 is the top level
         func isDigit(_ u: Unicode.Scalar) -> Bool { (0x30 ... 0x39).contains(u.value) }
 
-        // If a quantifier begins at `i`, consume it and report whether it is unbounded.
-        func takeQuantifier() -> (present: Bool, unbounded: Bool) {
-            guard i < s.count else { return (false, false) }
-            switch s[i] {
-                case "*", "+":
-                    i += 1
-                    return (true, true)
-                case "?":
-                    i += 1
-                    return (true, false)
-                case "{":
-                    var j = i + 1
-                    let lowStart = j
-                    while j < s.count, isDigit(s[j]) { j += 1 }
-                    guard j > lowStart else { return (false, false) }  // `{` not starting a quantity
-                    var unbounded = false
-                    if j < s.count, s[j] == "," {
-                        j += 1
-                        let highStart = j
-                        while j < s.count, isDigit(s[j]) { j += 1 }
-                        if j == highStart { unbounded = true }  // `{n,}` — no upper bound
-                    }
-                    guard j < s.count, s[j] == "}" else { return (false, false) }
-                    i = j + 1
-                    return (true, unbounded)
-                default:
-                    return (false, false)
-            }
-        }
-
         while i < s.count {
             let c = s[i]
             if c == "\\" {
@@ -338,7 +308,7 @@ enum JSONPathEvaluator {
                 case ")":
                     let inner = groupHasUnbounded.count > 1 ? groupHasUnbounded.removeLast() : false
                     i += 1
-                    let q = takeQuantifier()
+                    let q = takeRegexpQuantifier(s, &i)
                     if q.present, q.unbounded {
                         if inner { return "nested unbounded quantifier may cause catastrophic backtracking" }
                         groupHasUnbounded[groupHasUnbounded.count - 1] = true
@@ -347,7 +317,7 @@ enum JSONPathEvaluator {
                     groupHasUnbounded[groupHasUnbounded.count - 1] = true
                     i += 1
                 case "{":
-                    let q = takeQuantifier()
+                    let q = takeRegexpQuantifier(s, &i)
                     if q.present {
                         if q.unbounded { groupHasUnbounded[groupHasUnbounded.count - 1] = true }
                     } else {
@@ -358,5 +328,39 @@ enum JSONPathEvaluator {
             }
         }
         return nil
+    }
+
+    /// Consumes a regex quantifier (`*` `+` `?` `{n,m}`) at `s[i]` if present, advancing
+    /// `i`; reports whether one was consumed and whether it is unbounded (`*`/`+`/`{n,}`).
+    private static func takeRegexpQuantifier(
+        _ s: [Unicode.Scalar], _ i: inout Int
+    ) -> (present: Bool, unbounded: Bool) {
+        func isDigit(_ u: Unicode.Scalar) -> Bool { (0x30 ... 0x39).contains(u.value) }
+        guard i < s.count else { return (false, false) }
+        switch s[i] {
+            case "*", "+":
+                i += 1
+                return (true, true)
+            case "?":
+                i += 1
+                return (true, false)
+            case "{":
+                var j = i + 1
+                let lowStart = j
+                while j < s.count, isDigit(s[j]) { j += 1 }
+                guard j > lowStart else { return (false, false) }  // `{` not starting a quantity
+                var unbounded = false
+                if j < s.count, s[j] == "," {
+                    j += 1
+                    let highStart = j
+                    while j < s.count, isDigit(s[j]) { j += 1 }
+                    if j == highStart { unbounded = true }  // `{n,}` — no upper bound
+                }
+                guard j < s.count, s[j] == "}" else { return (false, false) }
+                i = j + 1
+                return (true, unbounded)
+            default:
+                return (false, false)
+        }
     }
 }

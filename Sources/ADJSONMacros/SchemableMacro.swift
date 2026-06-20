@@ -150,14 +150,23 @@ private func propertyFragment(
     // `@SchemaInfo(description:)` wins over the `///` doc comment; `@SchemaInfo(title:)` adds a title.
     let desc = p.decorators.description ?? p.doc
     return fragment(
-        for: p.type, desc: desc, title: p.decorators.title, dec: p.decorators, enclosing: enclosing,
-        selfRefs: &selfRefs, unresolved: &unresolved)
+        for: p.type, meta: SchemaMeta(desc: desc, title: p.decorators.title), dec: p.decorators,
+        enclosing: enclosing, selfRefs: &selfRefs, unresolved: &unresolved)
+}
+
+/// The optional `description` / `title` annotations a schema fragment carries.
+private struct SchemaMeta {
+    let desc: String?
+    let title: String?
+    static let none = SchemaMeta(desc: nil, title: nil)
 }
 
 private func fragment(
-    for type: TypeSyntax, desc: String?, title: String?, dec: SchemaDecorators,
+    for type: TypeSyntax, meta: SchemaMeta, dec: SchemaDecorators,
     enclosing: String, selfRefs: inout [String], unresolved: inout [String]
 ) -> [Seg] {
+    let desc = meta.desc
+    let title = meta.title
     // `@SchemaEnum` forces a closed `String` set regardless of the declared type (covers bare `String`).
     if let values = dec.enumValues {
         let body =
@@ -168,8 +177,8 @@ private func fragment(
 
     if let wrapped = optionalWrapped(type) {
         return fragment(
-            for: wrapped, desc: desc, title: title, dec: dec, enclosing: enclosing, selfRefs: &selfRefs,
-            unresolved: &unresolved)
+            for: wrapped, meta: SchemaMeta(desc: desc, title: title), dec: dec, enclosing: enclosing,
+            selfRefs: &selfRefs, unresolved: &unresolved)
     }
     if let array = type.as(ArrayTypeSyntax.self) {
         return arrayFragment(
@@ -237,7 +246,7 @@ private func arrayFragment(
 ) -> [Seg] {
     [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"array\",\"items\":")]
         + fragment(
-            for: element, desc: nil, title: nil, dec: SchemaDecorators(), enclosing: enclosing,
+            for: element, meta: .none, dec: SchemaDecorators(), enclosing: enclosing,
             selfRefs: &selfRefs, unresolved: &unresolved)
         + [.lit("}")]
 }
@@ -248,7 +257,7 @@ private func dictFragment(
 ) -> [Seg] {
     [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"object\",\"additionalProperties\":")]
         + fragment(
-            for: value, desc: nil, title: nil, dec: SchemaDecorators(), enclosing: enclosing,
+            for: value, meta: .none, dec: SchemaDecorators(), enclosing: enclosing,
             selfRefs: &selfRefs, unresolved: &unresolved)
         + [.lit("}")]
 }

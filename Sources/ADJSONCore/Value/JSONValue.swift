@@ -340,23 +340,7 @@ extension JSONValue {
                             JSONOutput.appendString(
                                 s, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
                         case .array(let elements):
-                            bytes.append(0x5B)
-                            if elements.isEmpty {
-                                bytes.append(0x5D)
-                            } else {
-                                stack.append(.byte(0x5D))
-                                if pretty { stack.append(.indent(level: depth, comma: false)) }
-                                var i = elements.count - 1
-                                while i >= 0 {
-                                    stack.append(.value(elements[i], depth: depth + 1))
-                                    if pretty {
-                                        stack.append(.indent(level: depth + 1, comma: i > 0))
-                                    } else if i > 0 {
-                                        stack.append(.byte(0x2C))
-                                    }
-                                    i -= 1
-                                }
-                            }
+                            emitArray(elements, depth: depth, into: &bytes, stack: &stack, pretty: pretty)
                         case .object(let members):
                             bytes.append(0x7B)
                             let pairs =
@@ -380,6 +364,30 @@ extension JSONValue {
                             }
                     }
             }
+        }
+    }
+
+    /// Emits a `[`-array: pushes the closing `]`, then each element + separator in reverse
+    /// (the iterative-emission shape, identical output to the recursive path).
+    private func emitArray(
+        _ elements: [JSONValue], depth: Int, into bytes: inout [UInt8], stack: inout [WriteOp], pretty: Bool
+    ) {
+        bytes.append(0x5B)
+        if elements.isEmpty {
+            bytes.append(0x5D)
+            return
+        }
+        stack.append(.byte(0x5D))
+        if pretty { stack.append(.indent(level: depth, comma: false)) }
+        var i = elements.count - 1
+        while i >= 0 {
+            stack.append(.value(elements[i], depth: depth + 1))
+            if pretty {
+                stack.append(.indent(level: depth + 1, comma: i > 0))
+            } else if i > 0 {
+                stack.append(.byte(0x2C))
+            }
+            i -= 1
         }
     }
 
