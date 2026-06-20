@@ -22,7 +22,6 @@ private func deepFastNodeJSON(_ depth: Int) -> String {
     return s
 }
 
-@Suite("Depth safety")
 struct DepthSafetyTests {
     @Test func iterativeParseGoesFarBeyondFoundationCap() throws {
         // 50k nesting — ~100× Foundation's 512 — parses iteratively with no stack overflow.
