@@ -5,7 +5,6 @@ import Testing
 // parser — the lower-covered escape paths: `\x`, `\0`, `\v`, the `\uXXXX` surrogate pair, line
 // continuations (`\` + LF / CRLF / U+2028), identity escapes (ASCII and multi-byte), and raw
 // multi-byte UTF-8 in strings.
-@Suite("JSON5 string escapes")
 struct JSON5StringEscapeTests {
     private func parse5(_ source: String) throws -> String? {
         try ADJSON.parse(source, options: .json5).root.string
