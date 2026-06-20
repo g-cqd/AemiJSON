@@ -22,7 +22,6 @@ private let sqliteFloatCorpus: [(Double, String)] = [
     (1_234_567_890_123_456_789.0, "1.23456789012346e+18"), (99_999_999_999_999_999.0, "1.0e+17")
 ]
 
-@Suite("SQLite encoder parity")
 struct SQLiteEncoderTests {
     @Test(arguments: sqliteFloatCorpus)
     func sqlitePrintfGMatchesSQLite(_ pair: (Double, String)) throws {
