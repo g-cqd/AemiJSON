@@ -3,7 +3,6 @@ import Testing
 
 @testable import ADJSON
 
-@Suite("JSONValue decoder")
 struct JSONValueDecoderTests {
     private struct Sample: Codable, Equatable {
         struct Inner: Codable, Equatable {
