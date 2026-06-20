@@ -50,6 +50,9 @@ jobs:
     uses: g-cqd/ADBuildTools/.github/workflows/swift-quality.yml@v1
     with:
       dev-env-var: ADJSON_DEV
+      enable-sanitizers: true
+      sanitizers: "address thread"
+      enable-coverage: true
       requires-published-siblings: true
 
   changes:
