@@ -7,7 +7,6 @@ import Testing
 // exactly the same language in every mode, or the same bytes would parse on one path and fail on the
 // other. This suite is the contract that lets the grammar live in one place (or stay duplicated)
 // without silent drift: it feeds every short number-ish string to both and asserts they agree.
-@Suite("Number grammar parity (tape vs SAX)")
 struct NumberGrammarParityTests {
     // Does the tape parser accept `s` as a whole document?
     private func tapeAccepts(_ s: String, _ options: JSONParseOptions) -> Bool {
