@@ -2,13 +2,9 @@ import ADFCore
 
 // Number materialization over a byte range.
 public enum JSONNumber {
-    // Exactly-representable powers of ten (10^0 … 10^22). 10^22 = 5^22 · 2^22 and 5^22 < 2^53, so
-    // every entry is an exact `Double`; 10^23 is the first that is not, which fixes the fast-path
-    // exponent bound below.
-    static let pow10: [Double] = [
-        1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11,
-        1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22
-    ]
+    // The power-of-ten tables and the Clinger value assembly now live once in `ADFCore.DecimalFloat`
+    // (shared with `ADFCore.NumberParse`); the scanners below feed it a significand + exponent. The
+    // local `pow10` / `pow10Float` tables and the inline fast-path multiply were a duplicate of it.
 
     // Parse a (scanner-validated) JSON number. The Clinger fast path handles the common case without
     // building a `String`; anything outside its provably-correct domain falls back to the
@@ -30,13 +26,6 @@ public enum JSONNumber {
         let s = String(decoding: UnsafeBufferPointer(start: p + offset, count: length), as: UTF8.self)
         return Double(s) ?? .nan
     }
-
-    // Exactly-representable powers of ten in `Float` (10^0 … 10^10). 10^10 = 5^10 · 2^10 and
-    // 5^10 = 9_765_625 < 2^24, so every entry is an exact `Float`; 10^11 = 5^11 · 2^11 with
-    // 5^11 = 48_828_125 > 2^24 is the first that is not, which fixes the fast-path exponent bound below.
-    static let pow10Float: [Float] = [
-        1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10
-    ]
 
     // Parse a (scanner-validated) JSON number to `Float`, **correctly rounded to the nearest Float**.
     //
@@ -117,18 +106,11 @@ public enum JSONNumber {
             guard sawExpDigit else { return nil }
             exponent += expNegative ? -e : e
         }
-        // The re-scan must have consumed the whole (validated) number, the significand must be exact in
-        // `Float`, and the exponent must keep `pow10Float` exact.
-        guard i == end, digits > 0, significand <= (1 << 24), exponent >= -10, exponent <= 10 else {
-            return nil
-        }
-        var f = Float(significand)
-        if exponent > 0 {
-            f *= pow10Float[exponent]
-        } else if exponent < 0 {
-            f /= pow10Float[-exponent]
-        }
-        return negative ? -f : f
+        // The re-scan must have consumed the whole (validated) number; the exact-domain gate and the
+        // value assembly live in the shared `ADFCore.DecimalFloat` Clinger fast path at `Float` width
+        // (inlined here — no `Double` round-trip, so the result is correctly rounded to nearest `Float`).
+        guard i == end, digits > 0 else { return nil }
+        return DecimalFloat.float(significand: significand, exponent: exponent, negative: negative)
     }
 
     // `parseJSON5Number`, but accumulating the hexadecimal body into `Float` directly so a large hex
@@ -249,18 +231,10 @@ public enum JSONNumber {
             guard sawExpDigit else { return nil }
             exponent += expNegative ? -e : e
         }
-        // The re-scan must have consumed the whole (validated) number, the significand must be
-        // exact, and the exponent must keep `pow10` exact.
-        guard i == end, digits > 0, significand <= (1 << 53), exponent >= -22, exponent <= 22 else {
-            return nil
-        }
-        var d = Double(significand)
-        if exponent > 0 {
-            d *= pow10[exponent]
-        } else if exponent < 0 {
-            d /= pow10[-exponent]
-        }
-        return negative ? -d : d
+        // The re-scan must have consumed the whole (validated) number; the exact-domain gate and the
+        // value assembly live in the shared `ADFCore.DecimalFloat` Clinger fast path (inlined here).
+        guard i == end, digits > 0 else { return nil }
+        return DecimalFloat.double(significand: significand, exponent: exponent, negative: negative)
     }
 
     // Generic integer parse with correct overflow handling for any width, signed or
