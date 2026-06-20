@@ -172,45 +172,40 @@ public enum JSONString {
                 case 0x62: if !emit(0x08) { return false }
                 case 0x66: if !emit(0x0C) { return false }
                 case 0x75:
-                    let hi = readHex4(p, j, end)
-                    j += 4
-                    var scalar = UInt32(hi)
-                    if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
-                        let lo = readHex4(p, j + 2, end)
-                        if lo >= 0xDC00 && lo <= 0xDFFF {
-                            scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
-                            j += 6
-                        }
-                    }
-                    // Emit the scalar's UTF-8 (computed directly), or U+FFFD for an unpaired surrogate /
-                    // out-of-range value — matching `unescape`.
-                    if Unicode.Scalar(scalar) != nil {
-                        if scalar < 0x80 {
-                            if !emit(UInt8(scalar)) { return false }
-                        } else if scalar < 0x800 {
-                            if !emit(UInt8(0xC0 | (scalar >> 6))) || !emit(UInt8(0x80 | (scalar & 0x3F))) {
-                                return false
-                            }
-                        } else if scalar < 0x10000 {
-                            if !emit(UInt8(0xE0 | (scalar >> 12))) || !emit(UInt8(0x80 | ((scalar >> 6) & 0x3F)))
-                                || !emit(UInt8(0x80 | (scalar & 0x3F)))
-                            {
-                                return false
-                            }
-                        } else {
-                            if !emit(UInt8(0xF0 | (scalar >> 18))) || !emit(UInt8(0x80 | ((scalar >> 12) & 0x3F)))
-                                || !emit(UInt8(0x80 | ((scalar >> 6) & 0x3F))) || !emit(UInt8(0x80 | (scalar & 0x3F)))
-                            {
-                                return false
-                            }
-                        }
-                    } else {
-                        if !emit(0xEF) || !emit(0xBF) || !emit(0xBD) { return false }
-                    }
+                    if !decodeUnicodeEscape(p, &j, end, emit) { return false }
                 default: if !emit(e) { return false }
             }
         }
         return t == targetLength
+    }
+
+    /// Decodes a `\uXXXX` escape (with optional surrogate-pair continuation) at `p[j]`,
+    /// advancing `j`, and feeds the scalar's UTF-8 bytes to `emit` — U+FFFD for an
+    /// unpaired / out-of-range surrogate, matching `unescape`. Returns false on a mismatch.
+    private static func decodeUnicodeEscape(
+        _ p: UnsafePointer<UInt8>, _ j: inout Int, _ end: Int, _ emit: (UInt8) -> Bool
+    ) -> Bool {
+        let hi = readHex4(p, j, end)
+        j += 4
+        var scalar = UInt32(hi)
+        if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, p[j] == 0x5C, p[j + 1] == 0x75 {
+            let lo = readHex4(p, j + 2, end)
+            if lo >= 0xDC00 && lo <= 0xDFFF {
+                scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
+                j += 6
+            }
+        }
+        guard Unicode.Scalar(scalar) != nil else { return emit(0xEF) && emit(0xBF) && emit(0xBD) }
+        if scalar < 0x80 {
+            return emit(UInt8(scalar))
+        } else if scalar < 0x800 {
+            return emit(UInt8(0xC0 | (scalar >> 6))) && emit(UInt8(0x80 | (scalar & 0x3F)))
+        } else if scalar < 0x10000 {
+            return emit(UInt8(0xE0 | (scalar >> 12))) && emit(UInt8(0x80 | ((scalar >> 6) & 0x3F)))
+                && emit(UInt8(0x80 | (scalar & 0x3F)))
+        }
+        return emit(UInt8(0xF0 | (scalar >> 18))) && emit(UInt8(0x80 | ((scalar >> 12) & 0x3F)))
+            && emit(UInt8(0x80 | ((scalar >> 6) & 0x3F))) && emit(UInt8(0x80 | (scalar & 0x3F)))
     }
 
     @inline(__always)

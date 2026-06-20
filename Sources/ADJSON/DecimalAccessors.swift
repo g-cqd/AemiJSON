@@ -33,6 +33,30 @@ private let decimalSignificandCeiling: UInt128 = {
 // 2^64, to fold the significand's high/low 64-bit halves into a `Decimal` exactly.
 private let twoToThe64: Decimal = Decimal(UInt64.max) + 1
 
+/// Parses an optional `[eE][+-]?digits` exponent suffix starting at `p[i]`, advancing
+/// `i`. Returns the signed exponent (0 when absent), or nil on a malformed/absurd one.
+private func parseDecimalExponent(_ p: UnsafePointer<UInt8>, _ i: inout Int, _ n: Int) -> Int? {
+    guard i < n, p[i] == 0x65 || p[i] == 0x45 else { return 0 }
+    i += 1
+    var expNegative = false
+    if i < n, p[i] == 0x2B || p[i] == 0x2D {
+        expNegative = p[i] == 0x2D
+        i += 1
+    }
+    var value = 0
+    var sawExpDigit = false
+    while i < n {
+        let b = p[i]
+        guard b >= 0x30, b <= 0x39 else { return nil }
+        sawExpDigit = true
+        value = value &* 10 &+ Int(b - 0x30)
+        if value > 1000 { return nil }  // absurd exponent → fall back
+        i += 1
+    }
+    guard sawExpDigit else { return nil }
+    return expNegative ? -value : value
+}
+
 func fastDecimal(_ buffer: UnsafeBufferPointer<UInt8>) -> Decimal? {
     let n = buffer.count
     guard n > 0, let p = buffer.baseAddress else { return nil }
@@ -67,27 +91,7 @@ func fastDecimal(_ buffer: UnsafeBufferPointer<UInt8>) -> Decimal? {
         i += 1
     }
     guard sawDigit else { return nil }
-    var literalExponent = 0
-    if i < n, p[i] == 0x65 || p[i] == 0x45 {  // 'e' / 'E'
-        i += 1
-        var expNegative = false
-        if i < n, p[i] == 0x2B || p[i] == 0x2D {  // '+' / '-'
-            expNegative = p[i] == 0x2D
-            i += 1
-        }
-        var value = 0
-        var sawExpDigit = false
-        while i < n {
-            let b = p[i]
-            guard b >= 0x30, b <= 0x39 else { return nil }
-            sawExpDigit = true
-            value = value &* 10 &+ Int(b - 0x30)
-            if value > 1000 { return nil }  // absurd exponent → fall back
-            i += 1
-        }
-        guard sawExpDigit else { return nil }
-        literalExponent = expNegative ? -value : value
-    }
+    guard let literalExponent = parseDecimalExponent(p, &i, n) else { return nil }
     guard i == n else { return nil }  // trailing bytes → fall back
     let exponent = fractionExponent + literalExponent
     guard exponent >= -128, exponent <= 127 else { return nil }  // outside Decimal's exponent range
