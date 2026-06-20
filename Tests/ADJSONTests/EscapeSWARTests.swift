@@ -35,7 +35,6 @@ private func produced(_ s: String, escapeSlashes: Bool) -> [UInt8] {
     return buf
 }
 
-@Suite("SWAR escaping")
 struct EscapeSWARTests {
     @Test func matchesReferenceOnEdgeStrings() {
         let cases = [
