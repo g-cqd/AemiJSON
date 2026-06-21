@@ -79,33 +79,12 @@ let adfoundationDependency: Package.Dependency = {
     return .package(url: "https://github.com/g-cqd/ADFoundation.git", branch: "main")
 }()
 
-// ADConcurrency — the zero-dependency, shipped-safe seam the async-heavy `ADJSON` umbrella defaults
-// to (`TaskProvider`/`LiveTaskProvider` in the concurrent parse/decode paths). It previously came from
-// `ADTestKitSeams`, which dragged the whole test-kit package into every ADJSON consumer's PRODUCTION
-// resolution graph; depending on the `ADConcurrency` leaf instead removes that coupling. Resolved from
-// a local checkout via `ADCONCURRENCY_PATH`, otherwise the published `main`. Pure Swift, no
-// swift-syntax/Proto, so a consumer's resolved graph grows only by this one leaf.
-let adconcurrencyDependency: Package.Dependency = {
-    if let path = Context.environment["ADCONCURRENCY_PATH"], !path.isEmpty {
-        return .package(path: path)
-    }
-    return .package(url: "https://github.com/g-cqd/ADConcurrency.git", branch: "main")
-}()
-
-// ADTestKit — the full test-only kit (`TaskProviderSpy`, oracles, SeededRNG). Now a DEV-ONLY
-// dependency wired solely into the test target (below): with the production seam relocated to
-// `ADConcurrency`, the shipped ADJSON library no longer depends on the test kit at all. Resolved from
-// a local checkout via `ADTESTKIT_PATH`, otherwise the published `main`.
-let adtestkitDependency: Package.Dependency = {
-    if let path = Context.environment["ADTESTKIT_PATH"], !path.isEmpty {
-        return .package(path: path)
-    }
-    return .package(url: "https://github.com/g-cqd/ADTestKit.git", branch: "main")
-}()
+// ADConcurrency (the production `TaskProvider`/`Clock` seams the concurrent parse/decode paths use) and
+// ADTestKit (the test-only kit) are now both vended by the ADFoundation umbrella package, so they
+// resolve via `adfoundationDependency` above — there is no separate ADConcurrency / ADTestKit package.
 
 var packageDependencies: [Package.Dependency] = [
     adfoundationDependency,
-    adconcurrencyDependency,
     .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.0"),
     // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
     // with zero transitive package dependencies (measured), so the core stays portable; together with
@@ -129,10 +108,7 @@ if isDev {
     // added only under `ADJSON_DEV`, so consumers never resolve it.
     packageDependencies.append(
         .package(url: "https://github.com/ordo-one/benchmark", from: "1.4.0"))
-    // ADTestKit is now DEV-ONLY: the production seam lives in the `ADConcurrency` leaf (a non-dev
-    // dependency above), so the test-only kit (`TaskProviderSpy`, oracles) is resolved only here and
-    // wired into the test target at the bottom of the manifest.
-    packageDependencies.append(adtestkitDependency)
+    // (ADTestKit is vended by the ADFoundation package now; the test target references it from there.)
 }
 if isNIO {
     // swift-nio (NIOCore) supplies `ByteBuffer`. Resolved only under `ADJSON_NIO`, so default
@@ -201,7 +177,7 @@ let package = Package(
             name: "ADJSON",
             dependencies: [
                 "ADJSONCore", "ADJSONMacros", orderedCollections, adfCore,
-                .product(name: "ADConcurrency", package: "ADConcurrency")
+                .product(name: "ADConcurrency", package: "ADFoundation")
             ],
             swiftSettings: strictSettings, plugins: adjsonBuildPlugins),
         .testTarget(
@@ -260,7 +236,7 @@ if isFuzz {
 if isDev {
     // Wire the dev-only ADTestKit into the test target (downstream consumers never see it).
     if let tests = package.targets.first(where: { $0.name == "ADJSONTests" }) {
-        tests.dependencies.append(.product(name: "ADTestKit", package: "ADTestKit"))
+        tests.dependencies.append(.product(name: "ADTestKit", package: "ADFoundation"))
     }
     // ordo-one package-benchmark suite (ADJSON_DEV-gated): the `swift package benchmark` plugin runs
     // these with statistical rigor and can gate CI on p-percentile thresholds. Lives under
