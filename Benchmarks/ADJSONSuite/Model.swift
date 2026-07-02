@@ -27,7 +27,7 @@ struct User: Codable, Equatable {
 struct LCG {
     var s: UInt64
     @inline(__always) mutating func next() -> UInt64 {
-        s = s &* 6364136223846793005 &+ 1442695040888963407
+        s = s &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
         return s
     }
     @inline(__always) mutating func int(_ n: Int) -> Int {
@@ -39,7 +39,7 @@ struct LCG {
 private let words = [
     "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel",
     "india", "juliet", "kilo", "lima", "mike", "november", "oscar", "papa",
-    "quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey", "xray",
+    "quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey", "xray"
 ]
 
 func makeUsers(_ count: Int) -> [User] {
@@ -47,15 +47,15 @@ func makeUsers(_ count: Int) -> [User] {
     func word() -> String { words[r.int(words.count)] }
     func sentence(_ k: Int) -> String {
         var parts: [String] = []
-        for _ in 0..<k { parts.append(word()) }
+        for _ in 0 ..< k { parts.append(word()) }
         return parts.joined(separator: " ")
     }
     var users: [User] = []
     users.reserveCapacity(count)
-    for k in 0..<count {
+    for k in 0 ..< count {
         let tagN = r.int(5)
         var tags: [String] = []
-        for _ in 0..<tagN { tags.append(word()) }
+        for _ in 0 ..< tagN { tags.append(word()) }
         users.append(
             User(
                 id: k,
@@ -82,6 +82,6 @@ func makeDoubles(_ n: Int) -> [Double] {
     var r = LCG(s: 0x9e37_79b9_7f4a_7c15)
     var a: [Double] = []
     a.reserveCapacity(n)
-    for _ in 0..<n { a.append(Double(r.int(1_000_000_000)) / 997.0) }
+    for _ in 0 ..< n { a.append(Double(r.int(1_000_000_000)) / 997.0) }
     return a
 }
