@@ -199,13 +199,19 @@ struct SQLiteJSONFunctionTests {
         let j = doc(#"{"a":1,"b":{"c":[2,3]}}"#)
         let rows = Array(SQLiteJSON.tree(j))
         // Preorder, root first: $, $.a, $.b, $.b.c, $.b.c[0], $.b.c[1].
-        #expect(rows.map(\.path) == ["$", "$.a", "$.b", "$.b.c", "$.b.c[0]", "$.b.c[1]"])
-        #expect(rows.map(\.type) == ["object", "integer", "object", "array", "integer", "integer"])
-        #expect(rows[0].key == nil && rows[0].index == nil)  // root
-        #expect(rows[1].key == "a")
-        #expect(rows[4].index == 0)
+        let paths: [String] = rows.map(\.path)
+        expectEqual(paths, ["$", "$.a", "$.b", "$.b.c", "$.b.c[0]", "$.b.c[1]"])
+        let types: [String] = rows.map(\.type)
+        expectEqual(types, ["object", "integer", "object", "array", "integer", "integer"])
+        expectNil(rows[0].key)  // root
+        expectNil(rows[0].index)  // root
+        expectEqual(rows[1].key, "a")
+        expectEqual(rows[4].index, 0)
         // Every path resolves back to a present node.
-        for row in rows { #expect(try SQLiteJSONPath(row.path).evaluate(j).exists) }
+        for row in rows {
+            let resolves: Bool = try SQLiteJSONPath(row.path).evaluate(j).exists
+            expectTrue(resolves, row.path)
+        }
     }
 
     @Test func jsonTreeDeepStreamsWithoutOverflow() throws {

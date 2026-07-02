@@ -1,3 +1,4 @@
+import ADTestKit
 import Foundation
 import OrderedCollections
 import Testing
@@ -54,16 +55,18 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
     let doc = try ADJSON.parse(json)
     let root = doc.root
 
-    #expect(root["a"].int == 1)
-    #expect(root.b[index: 0].bool == true)
-    #expect(root.b[index: 1].isNull)
-    #expect(root.b[index: 2].string == "x")
-    #expect(root.c.d.double == 3.5)
-    #expect(root.e.int == -42)
-    #expect(root.f.string == "a\"b")
-    #expect(root.b.count == 3)
-    #expect(root["missing"].exists == false)
-    #expect(root.a.string == nil)
+    // ADTestKit's typed asserts: each `JSON` chain type-checks once as a plain argument, keeping
+    // this body far under the 100ms budget (ten `#expect` macro expansions tipped it past).
+    expectEqual(root["a"].int, 1)
+    expectTrue(root.b[index: 0].bool ?? false)
+    expectTrue(root.b[index: 1].isNull)
+    expectEqual(root.b[index: 2].string, "x")
+    expectEqual(root.c.d.double, 3.5)
+    expectEqual(root.e.int, -42)
+    expectEqual(root.f.string, "a\"b")
+    expectEqual(root.b.count, 3)
+    expectFalse(root["missing"].exists)
+    expectNil(root.a.string)
 }
 
 @Test func materializesContainers() throws {
@@ -239,9 +242,10 @@ private func parse5(_ s: String) throws(JSONError) -> JSON {
 @Test func parseDataAndByteSourcePathsAreCorrect() throws {
     // Default parse(Data) (copy path) navigates correctly.
     let document = try ADJSON.parse(Data(#"{"a":1,"name":"héllo","arr":[1,2,3]}"#.utf8))
-    #expect(document.root.a.int == 1)
-    #expect(document.root.name.string == "héllo")
-    #expect(document.root.arr.arrayValue.compactMap(\.int) == [1, 2, 3])
+    expectEqual(document.root.a.int, 1)
+    expectEqual(document.root.name.string, "héllo")
+    let copiedInts: [Int] = document.root.arr.arrayValue.compactMap(\.int)
+    expectEqual(copiedInts, [1, 2, 3])
 
     // Opt-in zero-copy ByteSource path retains the source and is copy-on-write safe: mutating the
     // caller's Data afterward must not disturb the parsed document (it reads the retained storage).
@@ -250,8 +254,8 @@ private func parse5(_ s: String) throws(JSONError) -> JSON {
     let zeroCopy = try ADJSON.parse(source)
     data.removeAll()
     data.append(contentsOf: Array("garbage".utf8))
-    #expect(zeroCopy.root.k.int == 42)
-    #expect(zeroCopy.root.s.string == "こんにちは")
+    expectEqual(zeroCopy.root.k.int, 42)
+    expectEqual(zeroCopy.root.s.string, "こんにちは")
 
     // Codable decode straight from Data works (decode borrows once, so it is the zero-copy-friendly
     // access pattern).
@@ -261,7 +265,7 @@ private func parse5(_ s: String) throws(JSONError) -> JSON {
         let arr: [Int]
     }
     let decoded = try ADJSON.JSONDecoder().decode(M.self, from: Data(#"{"a":1,"name":"héllo","arr":[1,2,3]}"#.utf8))
-    #expect(decoded == M(a: 1, name: "héllo", arr: [1, 2, 3]))
+    expectEqual(decoded, M(a: 1, name: "héllo", arr: [1, 2, 3]))
 
     // Empty input is rejected cleanly on both paths (never traps on a nil base address).
     #expect(throws: JSONError.self) { try ADJSON.parse(Data()) }
@@ -318,24 +322,24 @@ private func parse5(_ s: String) throws(JSONError) -> JSON {
 private func assertEqual(_ json: JSON, _ any: Any, sourceLocation: SourceLocation = #_sourceLocation) {
     switch any {
         case let dict as [String: Any]:
-            let obj = json.object
-            #expect(obj?.count == dict.count, sourceLocation: sourceLocation)
+            let obj: [String: JSON]? = json.object
+            expectEqual(obj?.count, dict.count, sourceLocation: sourceLocation)
             for (k, v) in dict { assertEqual(json[k], v, sourceLocation: sourceLocation) }
         case let arr as [Any]:
-            #expect(json.count == arr.count, sourceLocation: sourceLocation)
+            expectEqual(json.count, arr.count, sourceLocation: sourceLocation)
             for (i, v) in arr.enumerated() { assertEqual(json[index: i], v, sourceLocation: sourceLocation) }
         case is NSNull:
-            #expect(json.isNull, sourceLocation: sourceLocation)
+            expectTrue(json.isNull, sourceLocation: sourceLocation)
         case let s as String:
-            #expect(json.string == s, sourceLocation: sourceLocation)
+            expectEqual(json.string, s, sourceLocation: sourceLocation)
         case let n as NSNumber:
             // Decide by our own parsed kind to avoid NSNumber bool/int ambiguity.
             if let b = json.bool {
-                #expect(b == n.boolValue, sourceLocation: sourceLocation)
+                expectEqual(b, n.boolValue, sourceLocation: sourceLocation)
             } else if let iv = json.int {
-                #expect(iv == n.intValue, sourceLocation: sourceLocation)
+                expectEqual(iv, n.intValue, sourceLocation: sourceLocation)
             } else {
-                #expect(json.double == n.doubleValue, sourceLocation: sourceLocation)
+                expectEqual(json.double, n.doubleValue, sourceLocation: sourceLocation)
             }
         default:
             break

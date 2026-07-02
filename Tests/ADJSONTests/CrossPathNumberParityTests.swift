@@ -1,3 +1,4 @@
+import ADTestKit
 import Foundation
 import Testing
 
@@ -108,17 +109,20 @@ struct CrossPathNumberParityTests {
 
     @Test func saxCurrentNumberLexemeRecoversExactSource() throws {
         var reader = JSONEventReader(#"[123456789012345678901234567890,9007199254740993,"x",3.5]"#)
-        #expect(try reader.next() == .beginArray)
-        #expect(reader.currentNumberLexeme == nil)  // a container is not a number
+        let begin: JSONEvent? = try reader.next()
+        expectEqual(begin, .beginArray)
+        expectNil(reader.currentNumberLexeme)  // a container is not a number
         _ = try reader.next()  // 30-digit number — beyond Double, exact in the lexeme
-        #expect(reader.currentNumberLexeme == "123456789012345678901234567890")
+        expectEqual(reader.currentNumberLexeme, "123456789012345678901234567890")
         _ = try reader.next()  // 9007199254740993 (> 2^53) — recoverable as an exact Int64
-        #expect(reader.currentNumberLexeme == "9007199254740993")
-        #expect(Int64(reader.currentNumberLexeme ?? "") == 9_007_199_254_740_993)
-        #expect(try reader.next() == .string("x"))
-        #expect(reader.currentNumberLexeme == nil)  // a non-number event clears it
+        expectEqual(reader.currentNumberLexeme, "9007199254740993")
+        let recovered: Int64? = Int64(reader.currentNumberLexeme ?? "")
+        expectEqual(recovered, 9_007_199_254_740_993)
+        let stringEvent: JSONEvent? = try reader.next()
+        expectEqual(stringEvent, .string("x"))
+        expectNil(reader.currentNumberLexeme)  // a non-number event clears it
         _ = try reader.next()  // 3.5
-        #expect(reader.currentNumberLexeme == "3.5")
+        expectEqual(reader.currentNumberLexeme, "3.5")
     }
 
     // MARK: Fixed scratch-buffer bounds — exercised at their widest, so an off-by-one would corrupt.

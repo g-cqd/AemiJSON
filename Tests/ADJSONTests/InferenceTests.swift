@@ -1,3 +1,4 @@
+import ADTestKit
 import Foundation
 import Testing
 
@@ -47,14 +48,17 @@ import Testing
         Person(name: "A", age: 30, nickname: nil, addr: Addr(city: "X", zip: 1), scores: [1.5, 2.0]))
     let s = try ADJSON.parse(text).root
 
-    #expect(s["type"].string == "object")
-    #expect(s["properties"]["name"]["type"].string == "string")
-    #expect(s["properties"]["age"]["type"].string == "integer")
-    #expect(s["properties"]["addr"]["type"].string == "object")
-    #expect(s["properties"]["addr"]["properties"]["zip"]["type"].string == "integer")
-    #expect(s["properties"]["scores"]["type"].string == "array")
+    // ADTestKit's typed asserts: each subscript chain type-checks once as a plain argument,
+    // keeping this body (which also carries two local Codable structs) under the 100ms budget.
+    expectEqual(s["type"].string, "object")
+    expectEqual(s["properties"]["name"]["type"].string, "string")
+    expectEqual(s["properties"]["age"]["type"].string, "integer")
+    expectEqual(s["properties"]["addr"]["type"].string, "object")
+    expectEqual(s["properties"]["addr"]["properties"]["zip"]["type"].string, "integer")
+    expectEqual(s["properties"]["scores"]["type"].string, "array")
 
     let required = Set(s["required"].arrayValue.compactMap(\.string))
-    #expect(required.isSuperset(of: ["name", "age", "addr", "scores"]))
-    #expect(!required.contains("nickname"))  // optional → not required
+    let requiredCovered: Bool = required.isSuperset(of: ["name", "age", "addr", "scores"])
+    expectTrue(requiredCovered)
+    expectFalse(required.contains("nickname"))  // optional → not required
 }

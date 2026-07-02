@@ -1,3 +1,4 @@
+import ADTestKit
 import Testing
 
 @testable import ADJSONCore
@@ -29,27 +30,29 @@ private func significantDigits(_ s: String) -> String {
 
 struct ShortestDoubleTests {
     @Test func canonicalForms() {
-        #expect(shortest(0) == "0.0")
-        #expect(shortest(-0.0) == "-0.0")
-        #expect(shortest(2) == "2.0")
-        #expect(shortest(-2) == "-2.0")
-        #expect(shortest(0.1) == "0.1")
-        #expect(shortest(0.5) == "0.5")
-        #expect(shortest(3.5) == "3.5")
-        #expect(shortest(-0.25) == "-0.25")
-        #expect(shortest(100) == "100.0")
-        #expect(shortest(1234.5678) == "1234.5678")
-        #expect(shortest(0.0001) == "0.0001")
-        #expect(shortest(1e-5) == "1e-05")
-        #expect(shortest(1e15) == "1000000000000000.0")
-        #expect(shortest(1e16) == "1e+16")
-        #expect(shortest(1e20) == "1e+20")
-        #expect(shortest(1.5e300) == "1.5e+300")
-        #expect(shortest(5e-324) == "5e-324")
+        // ADTestKit's typed asserts: nineteen `#expect` macro expansions tipped this body past the
+        // 100ms type-check budget; the plain generic calls keep every check independent and cheap.
+        expectEqual(shortest(0), "0.0")
+        expectEqual(shortest(-0.0), "-0.0")
+        expectEqual(shortest(2), "2.0")
+        expectEqual(shortest(-2), "-2.0")
+        expectEqual(shortest(0.1), "0.1")
+        expectEqual(shortest(0.5), "0.5")
+        expectEqual(shortest(3.5), "3.5")
+        expectEqual(shortest(-0.25), "-0.25")
+        expectEqual(shortest(100), "100.0")
+        expectEqual(shortest(1234.5678), "1234.5678")
+        expectEqual(shortest(0.0001), "0.0001")
+        expectEqual(shortest(1e-5), "1e-05")
+        expectEqual(shortest(1e15), "1000000000000000.0")
+        expectEqual(shortest(1e16), "1e+16")
+        expectEqual(shortest(1e20), "1e+20")
+        expectEqual(shortest(1.5e300), "1.5e+300")
+        expectEqual(shortest(5e-324), "5e-324")
         // The 2^53 region: deterministic fixed form (Swift's `description` flips some of these to
         // scientific — the intended, round-trip-safe divergence).
-        #expect(shortest(9_007_199_254_740_992) == "9007199254740992.0")
-        #expect(shortest(9_999_999_999_999_998) == "9999999999999998.0")
+        expectEqual(shortest(9_007_199_254_740_992), "9007199254740992.0")
+        expectEqual(shortest(9_999_999_999_999_998), "9999999999999998.0")
     }
 
     @Test func roundTripsEdgeCases() {
