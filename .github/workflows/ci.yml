@@ -97,7 +97,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # Dated nightly pins the toolchain for reproducible CI; bump deliberately like a dependency (#14).
-    container: swiftlang/swift:nightly-6.4-2026-06-18-jammy
+    container: swiftlang/swift:nightly-6.4.x-noble@sha256:54970846d48a8255eee5986aa5bbd259b7f73bbf38429cc2428ce6a62a390b47
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
@@ -208,7 +208,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # Dated nightly pins the toolchain for reproducible CI; bump deliberately like a dependency (#14).
-    container: swiftlang/swift:nightly-6.4-2026-06-18-jammy
+    container: swiftlang/swift:nightly-6.4.x-noble@sha256:54970846d48a8255eee5986aa5bbd259b7f73bbf38429cc2428ce6a62a390b47
     continue-on-error: true
     timeout-minutes: 30
     steps:
