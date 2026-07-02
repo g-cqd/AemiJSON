@@ -9,12 +9,14 @@ private func doc(_ s: String) -> JSON { try! ADJSON.parse(s).root }
 
 @Test func jsonPointerResolves() {
     let j = doc(#"{"a":{"b":[10,20,{"c~d":"x","e/f":"y"}]}}"#)
-    #expect(j[pointer: "/a/b/0"].int == 10)
-    #expect(j[pointer: "/a/b/2/c~0d"].string == "x")
-    #expect(j[pointer: "/a/b/2/e~1f"].string == "y")
-    #expect(j[pointer: ""].isObject)
-    #expect(j[pointer: "/a/missing"].exists == false)
-    #expect(j[pointer: "/a/b/9"].exists == false)
+    // ADTestKit's typed asserts: six `#expect` expansions over the `@dynamicMemberLookup` JSON
+    // chains tipped this body toward the type-check budget (same remedy as the slice tests below).
+    expectEqual(j[pointer: "/a/b/0"].int, 10)
+    expectEqual(j[pointer: "/a/b/2/c~0d"].string, "x")
+    expectEqual(j[pointer: "/a/b/2/e~1f"].string, "y")
+    expectTrue(j[pointer: ""].isObject)
+    expectEqual(j[pointer: "/a/missing"].exists, false)
+    expectEqual(j[pointer: "/a/b/9"].exists, false)
 }
 
 @Test func deepDescendantQueryDoesNotOverflow() throws {
