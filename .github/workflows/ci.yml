@@ -4,12 +4,12 @@
 # ASan/TSan pass over the unsafe scanner + concurrency layer, the libFuzzer pass, the ordo-one
 # benchmark suite, the DocC link check, and the DocC Pages deploy.
 #
-# HUMAN REVIEW (see report): ADJSON's test suite fetches conformance/benchmark fixtures via
-# `swift package fetch-fixtures` (network) before `swift test`. The reusable workflow's build/test
-# legs do NOT fetch fixtures, so any conformance test that requires them may fail or skip on the
-# reusable's macOS/Linux legs. The fixture-fetching benchmark/fuzz jobs below keep their own fetch
-# step. If the conformance suite hard-requires fixtures, add a fixtures input to the reusable
-# workflow or keep a bespoke fixture-aware build-test job for ADJSON. The opt-in ADJSONNIO test
+# ADJSON's test suite fetches conformance/benchmark fixtures via `swift package fetch-fixtures`
+# (network) before `swift test`. RESOLVED: the reusable workflow now takes a `fixtures-command` input
+# and the `quality:` job passes the fetch-fixtures command, so the reusable's macOS/Linux build/test
+# legs materialize fixtures before testing (no fixture-dependent test fails/skips on them). The
+# fixture-fetching benchmark/fuzz jobs below keep their own fetch step (they run outside the reusable).
+# The opt-in ADJSONNIO test
 # (`ADJSON_NIO=1 swift test --filter ADJSONNIOTests`) and the `coverage-check --floor` gate that the
 # old bespoke build-test ran are likewise not represented in the reusable.
 name: CI
@@ -54,6 +54,9 @@ jobs:
       sanitizers: "address thread"
       enable-coverage: true
       requires-published-siblings: true
+      # The conformance/benchmark suites need fixtures fetched (network) before `swift test`; the
+      # reusable build/test legs run this first so fixture-dependent tests don't fail/skip on them.
+      fixtures-command: "swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures"
 
   changes:
     name: Detect unsafe / concurrency changes
