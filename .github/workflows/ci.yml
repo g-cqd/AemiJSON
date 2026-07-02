@@ -37,6 +37,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# Type-check-budget calibration for the manifest's env-tunable -warn-long-* flags on the BESPOKE
+# jobs below (the reusable swift-quality workflow exports its own copy for the common legs):
+# 250 ms absorbs shared-runner wall-time noise; local builds keep the strict 100 ms default.
+env:
+  AD_TYPECHECK_BUDGET_MS: "250"
+
 jobs:
   quality:
     # Full-adopt of the reusable workflow for the COMMON gate + build/test (macOS + Linux, debug +
