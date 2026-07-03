@@ -99,7 +99,14 @@ func fastDecimal(_ buffer: UnsafeBufferPointer<UInt8>) -> Decimal? {
     let high = UInt64(truncatingIfNeeded: significand >> 64)
     let low = UInt64(truncatingIfNeeded: significand)
     let significandDecimal = high == 0 ? Decimal(low) : Decimal(high) * twoToThe64 + Decimal(low)
-    return Decimal(sign: negative ? .minus : .plus, exponent: exponent, significand: significandDecimal)
+    // A zero significand must carry a POSITIVE sign: `Decimal` has no negative zero, and the
+    // NSDecimal layout REUSES (length 0, negative) as its NaN encoding — so constructing
+    // `Decimal(sign: .minus, …, significand: 0)` yields NaN on Foundation implementations that
+    // honor that encoding (observed on the macOS 26 CI runners; the macOS 27 Foundation
+    // normalizes it away, which hid the bug locally). JSON `-0` therefore decodes as plain
+    // zero, matching `Decimal(string: "-0")`.
+    let sign: FloatingPointSign = negative && significand != 0 ? .minus : .plus
+    return Decimal(sign: sign, exponent: exponent, significand: significandDecimal)
 }
 
 // Convenience over a `String` lexeme (small JSON numbers are inline, so no heap): the byte fast path,
