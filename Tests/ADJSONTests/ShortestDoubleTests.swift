@@ -62,7 +62,10 @@ struct ShortestDoubleTests {
             0, -0.0, 1, -1, 0.1, 0.2, 0.3, 0.5, 1.5, 3.14, 100, 123_456_789,
             .leastNonzeroMagnitude, .leastNormalMagnitude, .greatestFiniteMagnitude, -.greatestFiniteMagnitude,
             1e15, 1e16, 1e-4, 1e-5, 9_007_199_254_740_992, 9_007_199_254_740_994, 9_999_999_999_999_998,
-            1.797_693_134_862_315_7e308, 5e-324, 2.225_073_858_507_201_4e-308, 0.300_000_000_000_000_04,
+            // `5e-324` (the smallest subnormal) is already covered above as `.leastNonzeroMagnitude`
+            // — the bare decimal literal is omitted here because the x86_64 Linux frontend rejects it
+            // as "underflows and loses precision" under warnings-as-errors (Darwin accepts it).
+            1.797_693_134_862_315_7e308, 2.225_073_858_507_201_4e-308, 0.300_000_000_000_000_04,
             1e20, 1e21, 1.5e300, 1.5e-300, -73.962_660_001
         ]
         for d in edges {
