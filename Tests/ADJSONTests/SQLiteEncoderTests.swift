@@ -14,7 +14,11 @@ private let sqliteFloatCorpus: [(Double, String)] = [
     (1.0 / 3.0, "0.333333333333333"), (2.0 / 3.0, "0.666666666666667"),
     (1e-4, "0.0001"), (1e-5, "1.0e-05"), (1e-6, "1.0e-06"), (1e-7, "1.0e-07"),
     (-0.000001, "-1.0e-06"), (2.5e-8, "2.5e-08"), (1e-300, "1.0e-300"),
-    (1.234_567_890_123_45e-300, "1.23456789012345e-300"), (4.9e-324, "4.94065645841247e-324"),
+    // `Double.leastNonzeroMagnitude` (the 5e-324 denormal) spelled as the named constant: the
+    // x86_64 Linux frontend rejects the `4.9e-324` literal ("underflows and loses precision")
+    // under warnings-as-errors, while arm64 accepts it — the constant is exact on both.
+    (1.234_567_890_123_45e-300, "1.23456789012345e-300"),
+    (Double.leastNonzeroMagnitude, "4.94065645841247e-324"),
     (12345.6789, "12345.6789"), (0.000123, "0.000123"), (1_000_000.0, "1000000.0"),
     (1e15, "1.0e+15"), (1e16, "1.0e+16"), (1e20, "1.0e+20"), (1e21, "1.0e+21"),
     (-1e20, "-1.0e+20"), (1e308, "1.0e+308"),

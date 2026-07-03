@@ -48,7 +48,9 @@ struct ShortestDoubleTests {
         expectEqual(shortest(1e16), "1e+16")
         expectEqual(shortest(1e20), "1e+20")
         expectEqual(shortest(1.5e300), "1.5e+300")
-        expectEqual(shortest(5e-324), "5e-324")
+        // The 5e-324 denormal via its named constant — the x86_64 Linux frontend rejects the
+        // literal ("underflows and loses precision") under warnings-as-errors; arm64 accepts it.
+        expectEqual(shortest(Double.leastNonzeroMagnitude), "5e-324")
         // The 2^53 region: deterministic fixed form (Swift's `description` flips some of these to
         // scientific — the intended, round-trip-safe divergence).
         expectEqual(shortest(9_007_199_254_740_992), "9007199254740992.0")
