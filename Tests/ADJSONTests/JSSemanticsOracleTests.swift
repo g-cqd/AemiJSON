@@ -90,8 +90,10 @@
         let known: [Double] = [
             0, -0.0, 1, -1, 5, 100, 1_000_000, 3.14, 0.1, 0.5, -0.25, 1234.5678, 123_456_789,
             9_007_199_254_740_992, 1e21, 1e-7, 1e-6, 0.000001, 1.5e300, -1.5e-300,
-            1.7976931348623157e308, 5e-324, 2.2250738585072014e-308, 123_456_789_012_345_680,
-            .nan, .infinity, -.infinity
+            // `.leastNonzeroMagnitude` == the smallest subnormal (`5e-324`); the bare decimal literal
+            // is rejected by the x86_64-linux frontend ("underflows and loses precision").
+            1.7976931348623157e308, .leastNonzeroMagnitude, 2.2250738585072014e-308,
+            123_456_789_012_345_680, .nan, .infinity, -.infinity
         ]
         for d in known {
             #expect(JSONOutput.ecmaNumberToString(d) == oracle.numberString(d), "ecma(\(d))")

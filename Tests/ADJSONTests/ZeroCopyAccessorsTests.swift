@@ -180,7 +180,10 @@ import Testing
         JSONOutput.appendECMANumber(d, to: &bytes)
         #expect(JSONOutput.ecmaNumberToString(d) == String(decoding: bytes, as: UTF8.self), "\(d)")
     }
-    for d in [0.0, -0.0, 1.0, -1.0, 42.0, 3.14159, 1e21, 1e-7, 1e308, 5e-324] { check(d) }
+    // `.leastNonzeroMagnitude` == `5e-324` (smallest subnormal); the bare literal is rejected on Linux.
+    for d in [0.0, -0.0, 1.0, -1.0, 42.0, 3.14159, 1e21, 1e-7, 1e308, .leastNonzeroMagnitude] {
+        check(d)
+    }
     for _ in 0 ..< 20_000 {
         let d = Double(bitPattern: UInt64.random(in: 0 ... UInt64.max, using: &rng))
         if d.isFinite { check(d) }
