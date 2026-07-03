@@ -1,3 +1,4 @@
+import ADTestKit
 import Foundation
 import Testing
 
@@ -54,18 +55,26 @@ struct DepthSafetyTests {
             for d in 0 ..< depth { s = #"{"i":\#(d),"child":\#(s),"flag":\#(d % 2 == 0)}"# }
             return s
         }
+        // The materialize/round-trip recurses up to `maxFastDepth` (128) before the iterative fallback
+        // takes over — enough native frames to overflow the ~512 KB swift-testing cooperative-pool
+        // stack under ASan. Run that work on ADTestKit's pinned stack (4 MiB under a sanitizer) and pass
+        // only the Sendable `JSONValue` results back for the assertions on the test thread.
         for depth in [129, 200, 400] {  // all strictly past maxFastDepth so the iterative path runs
             let text = deepObject(depth)
             let opts = JSONParseOptions(maxDepth: depth + 8)
-            let lazy = try ADJSON.parse(text, options: opts).root
-            let materialized = JSONValue(lazy)  // <- buildIteratively / BuildFrame
-            // Byte-identical to a value built straight from the parsed bytes.
-            let viaBytes = try JSONValue(parsing: text, options: opts)
-            #expect(materialized == viaBytes, "depth \(depth): iterative materialize diverged")
-            // Re-encode (also iterative past maxFastDepth) and re-parse: exact round-trip.
-            let encoded = try materialized.encodedBytes()
-            let reparsed = try JSONValue(parsing: String(decoding: encoded, as: UTF8.self), options: opts)
-            #expect(reparsed == materialized, "depth \(depth): round-trip changed the tree")
+            let trees = runOnConstrainedStack(stackSize: DepthSweep.defaultStackSize, name: "materialize.obj") {
+                () -> (materialized: JSONValue, viaBytes: JSONValue, reparsed: JSONValue)? in
+                guard let root = try? ADJSON.parse(text, options: opts).root else { return nil }
+                let materialized = JSONValue(root)  // buildIteratively / BuildFrame
+                guard let viaBytes = try? JSONValue(parsing: text, options: opts),
+                    let encoded = try? materialized.encodedBytes(),  // re-encode is also iterative past maxFastDepth
+                    let reparsed = try? JSONValue(parsing: String(decoding: encoded, as: UTF8.self), options: opts)
+                else { return nil }
+                return (materialized, viaBytes, reparsed)
+            }
+            let got = try #require(trees, "depth \(depth): deep materialize/round-trip threw")
+            #expect(got.materialized == got.viaBytes, "depth \(depth): iterative materialize diverged")
+            #expect(got.reparsed == got.materialized, "depth \(depth): round-trip changed the tree")
         }
         // A deep array spine (>128) with a trailing object leaf — the array branch of BuildFrame.
         let arrDepth = 300
@@ -73,13 +82,23 @@ struct DepthSafetyTests {
             String(repeating: "[", count: arrDepth) + #"{"k":"v","n":7}"#
             + String(repeating: "]", count: arrDepth)
         let opts = JSONParseOptions(maxDepth: arrDepth + 8)
-        let mat = JSONValue(try ADJSON.parse(arrText, options: opts).root)
-        #expect(mat == (try JSONValue(parsing: arrText, options: opts)))
+        let arr = runOnConstrainedStack(stackSize: DepthSweep.defaultStackSize, name: "materialize.arr") {
+            () -> (mat: JSONValue, viaBytes: JSONValue)? in
+            guard let root = try? ADJSON.parse(arrText, options: opts).root,
+                let viaBytes = try? JSONValue(parsing: arrText, options: opts)
+            else { return nil }
+            return (JSONValue(root), viaBytes)
+        }
+        let gotArr = try #require(arr, "arrDepth \(arrDepth): deep materialize threw")
+        #expect(gotArr.mat == gotArr.viaBytes)
     }
 
     @Test func decoderRecursionGuardFailsClosed() throws {
-        // A `Decodable` that recurses per nesting level. With the guard set below the (small) test
-        // thread's capacity, a deeply nested document throws a catchable error instead of crashing.
+        // A `Decodable` that recurses per nesting level. This runs on a swift-testing cooperative-pool
+        // thread (~512 KB), which ASan-inflated frames overflow well before a cap of ~50 — and
+        // `@MainActor` does NOT move the recursion onto the 8 MB main thread under swift-testing. So the
+        // cap is set low (8, as `schemaValidationBoundsDeepRecursion`) to fire while the stack still has
+        // wide margin; a deeply nested document then throws a catchable error instead of crashing.
         struct DeepArray: Decodable {
             init(from decoder: any Decoder) throws {
                 var c = try decoder.unkeyedContainer()
@@ -87,7 +106,7 @@ struct DepthSafetyTests {
             }
         }
         var decoder = ADJSON.JSONDecoder()
-        decoder.maxDecodingDepth = 100  // fire well before the thread stack runs out
+        decoder.maxDecodingDepth = 8  // sanitizer-safe: fires before the ~512 KB pool stack overflows under ASan
         decoder.options = JSONParseOptions(maxDepth: 1000)  // the iterative parser accepts deep input
         let nested = String(repeating: "[", count: 300) + String(repeating: "]", count: 300)
         #expect(throws: DecodingError.self) { try decoder.decode(DeepArray.self, from: Data(nested.utf8)) }
@@ -154,12 +173,15 @@ struct DepthSafetyTests {
         #expect(try schema.validate(ADJSON.parse("[[[]]]").root).isValid)
     }
 
+    // The cap is set low (8) so the guard fires while the ~512 KB cooperative-pool stack still has wide
+    // margin under ASan frame inflation (see `decoderRecursionGuardFailsClosed`; `@MainActor` does not
+    // move the recursion off that stack under swift-testing).
     @Test func fastPathDecodeRecursionFailsClosed() throws {
         // The macro fast path decodes array elements by calling `__adjsonDecode` directly (bypassing
         // the generic container decoder the existing test covers). A deeply nested recursive
         // `@JSONCodable` type must throw, not overflow `fastArray` / `decodeValue`.
         var decoder = ADJSON.JSONDecoder()
-        decoder.maxDecodingDepth = 50
+        decoder.maxDecodingDepth = 8  // sanitizer-safe (see above)
         decoder.options = JSONParseOptions(maxDepth: 1000)
         let deep = deepFastNodeJSON(120)
         #expect(throws: DecodingError.self) { try decoder.decode(FastNode.self, from: Data(deep.utf8)) }
@@ -169,12 +191,13 @@ struct DepthSafetyTests {
     }
 
     @Test func concurrentDecodeHonorsDepthCap() async throws {
-        // The concurrent path runs element decoders on the cooperative pool's small stacks; passing a
-        // low `maxDecodingDepth` must make an over-nested element throw rather than crash a pool thread.
+        // The concurrent path runs element decoders on the cooperative pool's small (~512 KB) stacks,
+        // which ASan-inflated frames overflow well before a cap of 50. A low cap (8) makes the guard,
+        // not the stack, reject the over-nested element on the pool thread (as the sibling guards).
         let arrayText = "[" + deepFastNodeJSON(120) + "]"
         await #expect(throws: DecodingError.self) {
             _ = try await ADJSON.decodeArrayConcurrently(
-                FastNode.self, from: Data(arrayText.utf8), maxDecodingDepth: 50)
+                FastNode.self, from: Data(arrayText.utf8), maxDecodingDepth: 8)
         }
         // A shallow array still decodes concurrently.
         let ok = try await ADJSON.decodeArrayConcurrently(
@@ -182,6 +205,8 @@ struct DepthSafetyTests {
         #expect(ok.count == 2)
     }
 
+    // The cap is set low (8) so the guard fires while the ~512 KB cooperative-pool stack still has wide
+    // margin under ASan (see `decoderRecursionGuardFailsClosed`).
     @Test func encoderRecursionGuardFailsClosed() throws {
         // A self-referential `Encodable` (the encode-side bomb, symmetric with the decoder) is caught
         // by `EncodeState`'s depth guard and throws instead of overflowing the stack.
@@ -192,7 +217,7 @@ struct DepthSafetyTests {
             }
         }
         var encoder = ADJSON.JSONEncoder()
-        encoder.maxEncodingDepth = 100  // fire well before the test thread's stack runs out
+        encoder.maxEncodingDepth = 8  // sanitizer-safe: fires before the ~512 KB pool stack overflows under ASan
         #expect(throws: EncodingError.self) { try encoder.encode(SelfEncode()) }
         // Normal-depth values still encode.
         #expect(try encoder.encode([1, 2, 3]) == Data("[1,2,3]".utf8))

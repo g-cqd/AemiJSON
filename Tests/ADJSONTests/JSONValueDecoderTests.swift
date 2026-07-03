@@ -70,7 +70,9 @@ struct JSONValueDecoderTests {
     }
 
     // The decoder is necessarily recursive; a low cap makes a deeply nested document fail closed
-    // (throws) rather than overflow. 50 frames stay well inside the test thread's stack even under ASan.
+    // (throws) rather than overflow. The cap is set to 8 so the guard fires while the ~512 KB
+    // cooperative-pool stack still has wide margin under ASan frame inflation (`@MainActor` does not
+    // move the recursion onto the main thread under swift-testing; see DepthSafetyTests).
     @Test func deepTreeFailsClosed() throws {
         struct Deep: Decodable {
             init(from decoder: any Decoder) throws {
@@ -79,7 +81,7 @@ struct JSONValueDecoderTests {
             }
         }
         var decoder = ADJSON.JSONDecoder()
-        decoder.maxDecodingDepth = 50
+        decoder.maxDecodingDepth = 8  // sanitizer-safe: fires before the ~512 KB pool stack overflows under ASan
         let nested = String(repeating: "[", count: 200) + String(repeating: "]", count: 200)
         let deep = JSONValue(try ADJSON.parse(nested, options: JSONParseOptions(maxDepth: 1000)).root)
         #expect(throws: DecodingError.self) { try decoder.decode(Deep.self, from: deep) }

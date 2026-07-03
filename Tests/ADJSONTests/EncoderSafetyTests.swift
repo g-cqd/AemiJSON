@@ -39,12 +39,15 @@ struct EncoderSafetyTests {
         }
     }
 
+    // The recursive `JSONValue(encoding:)` fires the guard at the bound. The bound is set low (8) so it
+    // fires while the ~512 KB cooperative-pool stack still has wide margin under ASan frame inflation
+    // (`@MainActor` does not move the recursion onto the main thread under swift-testing; see
+    // DepthSafetyTests). `Chain` is built only 24 deep so its own recursive init stays shallow too.
     @Test func jsonValueEncodingBoundsDepth() throws {
         _ = try JSONValue(encoding: Chain(8))  // shallow nesting round-trips
         // A graph deeper than the bound fails closed (EncodingError) rather than overflowing the
-        // native stack. A small bound fires the guard well before the test thread's stack runs out
-        // (mirrors DepthSafetyTests' `maxEncodingDepth = 100`).
-        #expect(throws: EncodingError.self) { try JSONValue(encoding: Chain(300), maxDepth: 100) }
+        // native stack.
+        #expect(throws: EncodingError.self) { try JSONValue(encoding: Chain(24), maxDepth: 8) }
     }
 
     // MARK: Schema inference is depth-bounded
