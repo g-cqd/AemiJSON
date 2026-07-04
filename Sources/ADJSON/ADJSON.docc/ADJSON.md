@@ -70,13 +70,13 @@ The parsing, value, and query types — ``/ADJSONCore/JSON``, ``/ADJSONCore/JSON
 ``/ADJSONCore/JSONValue``, ``/ADJSONCore/JSONParseOptions``, ``/ADJSONCore/JSONPath``,
 ``/ADJSONCore/JSONPointer``, ``/ADJSONCore/RelativeJSONPointer``, ``/ADJSONCore/JSONPatch``, the
 SQLite-dialect helpers (``/ADJSONCore/SQLiteJSON``, ``/ADJSONCore/SQLiteJSONPath``), and the rest —
-live in the Foundation-free engine and are re-exported here. Browse them in the ``ADJSONCore``
+live in the Foundation-free engine and are re-exported here. Browse them in the ``/ADJSONCore``
 module reference.
 
 ### Codable
 
-- ``/ADJSON/ADJSONCore/ADJSON/JSONDecoder``
-- ``/ADJSON/ADJSONCore/ADJSON/JSONEncoder``
+- ``ADJSON/JSONDecoder``
+- ``ADJSON/JSONEncoder``
 - ``JSONCodable()``
 
 ### Schema

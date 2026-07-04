@@ -5,7 +5,7 @@ path when you want it.
 
 ## Drop-in coders
 
-``/ADJSON/ADJSONCore/ADJSON/JSONDecoder`` and ``/ADJSON/ADJSONCore/ADJSON/JSONEncoder`` mirror Foundation's API surface.
+``ADJSON/JSONDecoder`` and ``ADJSON/JSONEncoder`` mirror Foundation's API surface.
 
 ```swift
 struct User: Codable { var id: Int; var name: String; var tags: [String] }
@@ -70,7 +70,7 @@ for fast types too (the byte-literal fast path can only match unmodified keys).
 ## The `@JSONCodable` fast path
 
 Annotate a `Codable` `struct` with ``JSONCodable()`` to generate a monomorphic decode/encode
-that ``/ADJSON/ADJSONCore/ADJSON/JSONDecoder`` and ``/ADJSON/ADJSONCore/ADJSON/JSONEncoder`` use **automatically**. The type keeps
+that ``ADJSON/JSONDecoder`` and ``ADJSON/JSONEncoder`` use **automatically**. The type keeps
 its normal `Codable` conformance as a fallback.
 
 ```swift

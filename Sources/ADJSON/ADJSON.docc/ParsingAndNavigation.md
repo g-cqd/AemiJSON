@@ -4,7 +4,7 @@ Parse once, then navigate the lazy ``/ADJSONCore/JSON`` view without materializi
 
 ## Parsing
 
-``/ADJSON/ADJSONCore/ADJSON/parse(_:options:)-(Data,_)`` accepts `Data`, `[UInt8]`, or `String` and returns an immutable
+``ADJSON/parse(_:options:)-(Data,_)`` accepts `Data`, `[UInt8]`, or `String` and returns an immutable
 ``/ADJSONCore/JSONDocument``. The `Data` overload copies the input once into the document's owned
 buffer, which keeps repeated lazy reads on the fast inlined path; to parse a `Data` zero-copy
 (borrowing its storage in place), pass it through the ``/ADJSONCore/ByteSource`` overload instead.

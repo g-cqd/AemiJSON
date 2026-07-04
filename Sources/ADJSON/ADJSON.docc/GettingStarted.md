@@ -15,7 +15,7 @@ In `Package.swift`:
 ```
 
 Where Foundation is also imported, reference the namespaced types explicitly —
-``/ADJSON/ADJSONCore/ADJSON/JSONDecoder`` and ``/ADJSON/ADJSONCore/ADJSON/JSONEncoder`` — to avoid colliding with Foundation's
+``ADJSON/JSONDecoder`` and ``ADJSON/JSONEncoder`` — to avoid colliding with Foundation's
 same-named types.
 
 ## Three ways to read JSON

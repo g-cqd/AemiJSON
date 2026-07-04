@@ -111,7 +111,7 @@ extension JSONOutput {
     /// JavaScript `JSON.stringify` emits, which differs from `Double.description` (integral doubles
     /// lose the trailing `.0`, `-0` becomes `0`, exponents aren't zero-padded, and the
     /// decimal↔exponential threshold is `n > 21` / `n ≤ -6`). Reuses Swift's shortest digits via
-    /// ``withShortestDigits(_:_:)`` and only re-renders their placement. Caller handles non-finite.
+    /// `withShortestDigits(_:_:)` (internal) and only re-renders their placement. Caller handles non-finite.
     public static func appendECMANumber(_ v: Double, to bytes: inout [UInt8]) {
         unsafe withShortestDigits(v) { negative, digits, pointPos in
             let k = digits.count

@@ -49,7 +49,7 @@ extension ADJSON {
     ///
     /// Each record is a separate top-level document, so — unlike parsing a single document, where the
     /// tape is one sequential dependency chain — the records have no data dependency and fan out
-    /// cleanly. ``parse(_:options:)`` is a pure function of its bytes, so nothing mutable crosses the
+    /// cleanly. ``ADJSON/parse(_:options:)-([UInt8],_)`` is a pure function of its bytes, so nothing mutable crosses the
     /// task boundary. Records that fail to parse surface the first error (the throwing task group
     /// cancels the rest).
     ///

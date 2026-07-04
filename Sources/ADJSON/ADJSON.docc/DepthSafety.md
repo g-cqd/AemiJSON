@@ -29,8 +29,8 @@ mandates recursion), and it is bounded by an explicit guard that **throws instea
 | ``/ADJSONCore/JSONValue`` materialize (``/ADJSONCore/JSONValue/init(_:)``) | **iterative** build | builds any depth; but see *tree deallocation* below |
 | ``/ADJSONCore/JSONValue`` serialize (``/ADJSONCore/JSONValue/encodedBytes(options:)``) | **iterative** | serializes any holdable tree |
 | ``/ADJSONCore/JSONValue`` equality (`==`) | **iterative** | compares any depth (an explicit work-stack) |
-| **Codable decode** (``/ADJSON/ADJSONCore/ADJSON/JSONDecoder``) | recursive (protocol) | **throws** past `maxDecodingDepth` (default 2048) |
-| **Codable encode** (``/ADJSON/ADJSONCore/ADJSON/JSONEncoder``) | recursive (protocol) | **throws** past `maxEncodingDepth` (default 2048) |
+| **Codable decode** (``ADJSON/JSONDecoder``) | recursive (protocol) | **throws** past `maxDecodingDepth` (default 2048) |
+| **Codable encode** (``ADJSON/JSONEncoder``) | recursive (protocol) | **throws** past `maxEncodingDepth` (default 2048) |
 | Concurrent decode (`ADJSON.decodeArrayConcurrently`) | recursive (per element, on the pool) | **throws** past `maxDecodingDepth` (default 128 — pool stacks are small) |
 | JSON Schema validate | recursive | **fails closed** (records a `ValidationError`) past an independent cap (256) |
 | JSONPath filter parse (`length(length(…))`, `[?…[?…]]`) | recursive | **throws** `JSONPathError` past a cap (64) |
@@ -49,7 +49,7 @@ time (as opposed to a single bulk release) also avoids the recursion.
 ## The decoder guard
 
 The Codable path is unavoidably recursive (each `init(from:)` decodes its children). ADJSON caps
-that native recursion with ``/ADJSON/ADJSONCore/ADJSON/JSONDecoder/maxDecodingDepth`` (default **2048**), independent of
+that native recursion with ``ADJSON/JSONDecoder/maxDecodingDepth`` (default **2048**), independent of
 `maxDepth`: past it, decoding throws a catchable `DecodingError` rather than overflowing. So you can
 raise `maxDepth` to *parse / navigate* very deep documents iteratively, while a deeply nested (or
 self-referential) `Decodable` still **fails closed**.
@@ -77,8 +77,8 @@ for the call site: the recursive frames are heavy where the cap is low.
 | Limit | Default | Applies to | Past it |
 |---|---|---|---|
 | ``/ADJSONCore/JSONParseOptions/maxDepth`` | 512 | iterative parse / lazy / SAX / JSONPath descent | throws `JSONError.depthExceeded` |
-| ``/ADJSON/ADJSONCore/ADJSON/JSONDecoder/maxDecodingDepth`` | 2048 | recursive Codable decode (main thread) | throws `DecodingError` |
-| ``/ADJSON/ADJSONCore/ADJSON/JSONEncoder/maxEncodingDepth`` | 2048 | recursive Codable encode (main thread) | throws `EncodingError` |
+| ``ADJSON/JSONDecoder/maxDecodingDepth`` | 2048 | recursive Codable decode (main thread) | throws `DecodingError` |
+| ``ADJSON/JSONEncoder/maxEncodingDepth`` | 2048 | recursive Codable encode (main thread) | throws `EncodingError` |
 | concurrent-decode `maxDecodingDepth` | 128 | per-element decode on the cooperative pool (~512 KB stacks) | throws `DecodingError` |
 | schema validation cap | 256 | recursive schema + instance walk (heavy frames) | records a `ValidationError` |
 | JSONPath filter-parse cap | 64 | nested `length()` / bracket-filter recursion | throws `JSONPathError` |
@@ -134,7 +134,7 @@ it is bounded by the encode/decode caps above. New engine code is written iterat
   schema-validate it* (all recursive). For pure parse / lazy / SAX / JSONPath workloads you can
   raise it freely — those never touch the call stack.
 - **Decoding on a worker thread** (default stack ~512 KB, ~16× smaller than the 8 MB main thread)?
-  Lower ``/ADJSON/ADJSONCore/ADJSON/JSONDecoder/maxDecodingDepth`` accordingly, or decode on a thread with a known large
+  Lower ``ADJSON/JSONDecoder/maxDecodingDepth`` accordingly, or decode on a thread with a known large
   stack.
 - **Very deep documents?** Use the lazy ``/ADJSONCore/JSON`` view or ``/ADJSONCore/JSONEventReader`` / ``/ADJSONCore/JSONEventStreamReader``
   rather than materializing a ``/ADJSONCore/JSONValue`` (whose deallocation recurses).

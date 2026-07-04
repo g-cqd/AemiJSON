@@ -2,7 +2,7 @@ public import ADJSONCore
 
 extension JSONValue {
     /// Encodes any `Encodable` directly into a `JSONValue` tree — the structural counterpart of
-    /// decoding through ``ADJSON/JSONDecoder``, and the symmetric partner of ``init(parsing:options:)``.
+    /// decoding through ``ADJSON/JSONDecoder``, and the symmetric partner of `init(parsing:options:)`.
     ///
     /// This is a single pass with **no byte serialization** (unlike encode-then-parse). It uses
     /// default `Codable` semantics and does **not** apply `Date` / `Data` / key-name strategies — use
