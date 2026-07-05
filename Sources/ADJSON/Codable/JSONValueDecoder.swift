@@ -153,7 +153,9 @@ struct JSONValueDecoderImpl: Decoder {
         switch value {
             case .int(let i): return Decimal(i)
             case .number(let d):
-                guard let decimal = decimalFromDouble(d) else { throw typeMismatch(Decimal.self, value, codingPath) }
+                guard let decimal = ADJSONDecimal.fromDouble(d) else {
+                    throw typeMismatch(Decimal.self, value, codingPath)
+                }
                 return decimal
             default:
                 throw typeMismatch(Decimal.self, value, codingPath)
@@ -163,7 +165,7 @@ struct JSONValueDecoderImpl: Decoder {
     func applyKeyDecoding(_ key: String) -> String {
         switch strategies.key {
             case .useDefaultKeys: return key
-            case .convertFromSnakeCase: return convertFromSnakeCase(key)
+            case .convertFromSnakeCase: return KeyCoding.fromSnakeCase(key)
             case .custom(let transform): return transform(key)
         }
     }

@@ -1,4 +1,5 @@
 import ADFCore
+import ADFKernels
 
 // Scalar token scanners for `TapeBuilder`: the strict / lenient / JSON5 string and number scanners
 // plus the shared hex, digit, and literal primitives. Split from Scanner.swift to keep the
@@ -16,19 +17,30 @@ extension TapeBuilder {
         var j = start
         var esc: UInt64 = 0
         while j < n {
-            // SWAR fast-forward over a run of plain content bytes — printable ASCII that is neither a
-            // quote, a backslash, a control char, nor a non-ASCII lead. Eight bytes are tested per
-            // step; on a clean word `j` jumps by 8, otherwise to the first byte the scalar tail must
-            // inspect. Only whole words inside the buffer are loaded (`j + 8 <= n`).
-            while j + 8 <= n {
-                let word = UInt64(littleEndian: unsafe UnsafeRawPointer(p + j).loadUnaligned(as: UInt64.self))
-                let mask = Self.stringStopMask(word)
-                if mask == 0 {
-                    j += 8
-                    continue
+            let remaining = n - j
+            if remaining >= Self.kernelStringScanMinBytes {
+                // Long run: SIMD fast-forward (runtime-dispatched — NEON/dotprod on arm64, SSE2/SSE4.2/
+                // AVX2 on x86-64) to the first stop byte. Its stop-set is identical to `stringStopMask`
+                // (control `< 0x20`, non-ASCII `>= 0x80`, quote, backslash), so the accepted grammar is
+                // unchanged; only the fast-forward is wider than the 8-byte SWAR below.
+                j += unsafe ADFKernels.indexOfStringStop(
+                    base: p + j, count: remaining, quote: 0x22, escape: 0x5C)
+            } else {
+                // Short remainder: the inline 8-byte SWAR fast-forward (no call overhead), exactly as
+                // before. This size gate (like `UTF8Validation.simdMinBytes`) keeps short JSON strings —
+                // the common case — on the branch-predictable inline path, so the kernel can never
+                // regress them. Only whole words inside the buffer are loaded (`j + 8 <= n`).
+                while j + 8 <= n {
+                    let word = UInt64(
+                        littleEndian: unsafe UnsafeRawPointer(p + j).loadUnaligned(as: UInt64.self))
+                    let mask = Self.stringStopMask(word)
+                    if mask == 0 {
+                        j += 8
+                        continue
+                    }
+                    j += mask.trailingZeroBitCount >> 3  // first stop byte (its 0x80 bit, /8)
+                    break
                 }
-                j += mask.trailingZeroBitCount >> 3  // first stop byte (its 0x80 bit, /8)
-                break
             }
             guard j < n else { break }
             let c = unsafe p[j]
@@ -68,6 +80,11 @@ extension TapeBuilder {
     // (`"`), or a backslash (`\`). Zero means all eight bytes are plain string content. The set bits
     // are only ever the per-byte `0x80`, so `trailingZeroBitCount >> 3` (little-endian) locates the
     // first stop byte. Uses the classic "bytes < n" / "bytes == c" bit hacks (Bit Twiddling Hacks).
+    // Minimum remaining bytes for the SIMD string-stop kernel to beat the inline SWAR scan; below it
+    // the C-call overhead dominates, so the inline SWAR path is used. Conservative default — tune from
+    // the ADJSONSuite crossover exactly as `UTF8Validation.simdMinBytes` was tuned from its benchmark.
+    @usableFromInline static let kernelStringScanMinBytes = 64
+
     @inline(__always) static func stringStopMask(_ v: UInt64) -> UInt64 {
         // Parse stops on a control, a non-ASCII lead, a quote, or a backslash. (Encode shares the
         // control/quote/backslash terms but omits non-ASCII — UTF-8 is copied verbatim there.)

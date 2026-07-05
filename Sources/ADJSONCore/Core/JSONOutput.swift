@@ -11,6 +11,7 @@
 // must be part of this module's public/inlinable surface — an internal import would make the
 // referenced symbol invisible to inlinable bodies. Mirrors `KeyCompare.swift` (for `ByteCompare`).
 public import ADFCore
+public import ADFKernels
 
 public enum JSONOutput {
     @inlinable
@@ -83,6 +84,10 @@ public enum JSONOutput {
     /// default / `escapeSlashes` profile — a control (`< 0x20`), `"`, `\` (and `/` when escaping
     /// slashes). Non-ASCII is intentionally NOT flagged (well-formed UTF-8 is copied verbatim on
     /// encode), which is the one term that differs from the parser's `stringStopMask`.
+    /// Minimum remaining bytes for the SIMD escape scan to beat the inline SWAR (below it the C-call
+    /// overhead dominates); short string values keep the inline path. Tune from the ADJSONSuite crossover.
+    @usableFromInline static let kernelEscapeMinBytes = 64
+
     @inlinable @inline(__always)
     static func encodeStopMask(_ v: UInt64, escapeSlashes: Bool) -> UInt64 {
         let m = SWAR.lessThan(v, 0x20) | SWAR.equals(v, 0x22) | SWAR.equals(v, 0x5C)
@@ -105,15 +110,26 @@ public enum JSONOutput {
                 // profile, stopping at a control, `"`, `\` (or `/`); non-ASCII is copied verbatim. The
                 // HTML-safe mode skips it — that path also needs the `<`/`>`/`&` and 3-byte sequence checks.
                 if !escapeHTMLUnsafe {
-                    while i + 8 <= n {
-                        let word = UInt64(littleEndian: unsafe UnsafeRawPointer(p + i).loadUnaligned(as: UInt64.self))
-                        let mask = encodeStopMask(word, escapeSlashes: escapeSlashes)
-                        if mask == 0 {
-                            i += 8
-                            continue
+                    let remaining = n - i
+                    if remaining >= JSONOutput.kernelEscapeMinBytes {
+                        // SIMD fast-forward (runtime-dispatched) to the next byte to escape — a control
+                        // (< 0x20), `"`, `\`, or (when escaping slashes) `/`. Same stop-set as
+                        // `encodeStopMask`; non-ASCII is copied verbatim (not a stop).
+                        let slashNeedle: UInt8 = escapeSlashes ? 0x2F : 0x22
+                        i += unsafe ADFKernels.indexOfControlOrAny(
+                            base: p + i, count: remaining, 0x22, 0x5C, slashNeedle, 0x22, 0x22)
+                    } else {
+                        while i + 8 <= n {
+                            let word = UInt64(
+                                littleEndian: unsafe UnsafeRawPointer(p + i).loadUnaligned(as: UInt64.self))
+                            let mask = encodeStopMask(word, escapeSlashes: escapeSlashes)
+                            if mask == 0 {
+                                i += 8
+                                continue
+                            }
+                            i += mask.trailingZeroBitCount >> 3
+                            break
                         }
-                        i += mask.trailingZeroBitCount >> 3
-                        break
                     }
                     guard i < n else { break }
                 }

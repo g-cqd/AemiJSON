@@ -56,7 +56,7 @@ final class EncodeState {
     func transformedKey(_ key: String) -> String {
         switch strategies.key {
             case .useDefaultKeys: return key
-            case .convertToSnakeCase: return convertToSnakeCase(key)
+            case .convertToSnakeCase: return KeyCoding.toSnakeCase(key)
             case .custom(let transform): return transform(key)
         }
     }

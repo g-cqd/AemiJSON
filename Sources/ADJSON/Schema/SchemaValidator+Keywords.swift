@@ -41,8 +41,8 @@ extension SchemaValidator {
         if let types = node.types, !types.contains(where: { instance.matchesSchemaType($0) }) {
             fail("type: expected one of \(types.map(\.rawValue))")
         }
-        if let c = node.constValue, !jsonSemanticEqual(instance, c) { fail("const: value not equal") }
-        if let e = node.enumValues, !e.contains(where: { jsonSemanticEqual(instance, $0) }) {
+        if let c = node.constValue, !JSONValueSemantics.areEqual(instance, c) { fail("const: value not equal") }
+        if let e = node.enumValues, !e.contains(where: { JSONValueSemantics.areEqual(instance, $0) }) {
             fail("enum: value not allowed")
         }
         return ok
@@ -154,7 +154,7 @@ extension SchemaValidator {
         for i in 0 ..< elems.count {
             let h = semanticHash(elems[i])
             if let bucket = seen[h] {
-                for j in bucket where jsonSemanticEqual(elems[i], elems[j]) { return true }
+                for j in bucket where JSONValueSemantics.areEqual(elems[i], elems[j]) { return true }
             }
             seen[h, default: []].append(i)
         }

@@ -1,3 +1,4 @@
+import ADFKernels
 import ADJSONCore
 public import Foundation
 
@@ -110,52 +111,57 @@ struct EncodeStrategies {
 
 // MARK: - snake_case conversion (matches swift-foundation's JSONEncoder/JSONDecoder semantics)
 
-/// `camelCase` → `snake_case`, e.g. `oneTwoThree` → `one_two_three`, `aURL` → `a_url`.
-func convertToSnakeCase(_ key: String) -> String {
-    guard !key.isEmpty else { return key }
-    var words: [Range<String.Index>] = []
-    var wordStart = key.startIndex
-    var searchRange = key.index(after: wordStart) ..< key.endIndex
-    while let upper = key.rangeOfCharacter(from: .uppercaseLetters, options: [], range: searchRange) {
-        words.append(wordStart ..< upper.lowerBound)
-        searchRange = upper.lowerBound ..< searchRange.upperBound
-        guard let lower = key.rangeOfCharacter(from: .lowercaseLetters, options: [], range: searchRange) else {
-            wordStart = searchRange.lowerBound
-            break
+/// Key-name case conversion for the snake_case coding strategies — a caseless-enum namespace, sibling to
+/// the `DateDataDecoding` namespace above.
+enum KeyCoding {
+    /// `camelCase` → `snake_case`, e.g. `oneTwoThree` → `one_two_three`, `aURL` → `a_url`.
+    static func toSnakeCase(_ key: String) -> String {
+        guard !key.isEmpty else { return key }
+        var words: [Range<String.Index>] = []
+        var wordStart = key.startIndex
+        var searchRange = key.index(after: wordStart) ..< key.endIndex
+        while let upper = key.rangeOfCharacter(from: .uppercaseLetters, options: [], range: searchRange) {
+            words.append(wordStart ..< upper.lowerBound)
+            searchRange = upper.lowerBound ..< searchRange.upperBound
+            guard let lower = key.rangeOfCharacter(from: .lowercaseLetters, options: [], range: searchRange)
+            else {
+                wordStart = searchRange.lowerBound
+                break
+            }
+            let afterCapital = key.index(after: upper.lowerBound)
+            if lower.lowerBound == afterCapital {
+                wordStart = upper.lowerBound
+            } else {
+                let beforeLower = key.index(before: lower.lowerBound)
+                words.append(upper.lowerBound ..< beforeLower)
+                wordStart = beforeLower
+            }
+            searchRange = lower.upperBound ..< searchRange.upperBound
         }
-        let afterCapital = key.index(after: upper.lowerBound)
-        if lower.lowerBound == afterCapital {
-            wordStart = upper.lowerBound
-        } else {
-            let beforeLower = key.index(before: lower.lowerBound)
-            words.append(upper.lowerBound ..< beforeLower)
-            wordStart = beforeLower
-        }
-        searchRange = lower.upperBound ..< searchRange.upperBound
+        words.append(wordStart ..< searchRange.upperBound)
+        return words.map { key[$0].lowercased() }.joined(separator: "_")
     }
-    words.append(wordStart ..< searchRange.upperBound)
-    return words.map { key[$0].lowercased() }.joined(separator: "_")
-}
 
-/// `snake_case` → `camelCase`, preserving leading/trailing underscores, e.g. `one_two` → `oneTwo`.
-func convertFromSnakeCase(_ key: String) -> String {
-    guard !key.isEmpty else { return key }
-    guard let firstNonUnderscore = key.firstIndex(where: { $0 != "_" }) else { return key }
-    var lastNonUnderscore = key.index(before: key.endIndex)
-    while lastNonUnderscore > firstNonUnderscore, key[lastNonUnderscore] == "_" {
-        lastNonUnderscore = key.index(before: lastNonUnderscore)
+    /// `snake_case` → `camelCase`, preserving leading/trailing underscores, e.g. `one_two` → `oneTwo`.
+    static func fromSnakeCase(_ key: String) -> String {
+        guard !key.isEmpty else { return key }
+        guard let firstNonUnderscore = key.firstIndex(where: { $0 != "_" }) else { return key }
+        var lastNonUnderscore = key.index(before: key.endIndex)
+        while lastNonUnderscore > firstNonUnderscore, key[lastNonUnderscore] == "_" {
+            lastNonUnderscore = key.index(before: lastNonUnderscore)
+        }
+        let keyRange = firstNonUnderscore ... lastNonUnderscore
+        let leading = key.startIndex ..< firstNonUnderscore
+        let trailing = key.index(after: lastNonUnderscore) ..< key.endIndex
+        let components = key[keyRange].split(separator: "_")
+        let joined: String
+        if components.count == 1 {
+            joined = String(key[keyRange])
+        } else {
+            joined = ([components[0].lowercased()] + components[1...].map { $0.capitalized }).joined()
+        }
+        return String(key[leading]) + joined + String(key[trailing])
     }
-    let keyRange = firstNonUnderscore ... lastNonUnderscore
-    let leading = key.startIndex ..< firstNonUnderscore
-    let trailing = key.index(after: lastNonUnderscore) ..< key.endIndex
-    let components = key[keyRange].split(separator: "_")
-    let joined: String
-    if components.count == 1 {
-        joined = String(key[keyRange])
-    } else {
-        joined = ([components[0].lowercased()] + components[1...].map { $0.capitalized }).joined()
-    }
-    return String(key[leading]) + joined + String(key[trailing])
 }
 
 // MARK: - Decode-side strategy application (intercepted by type in `decodeValue`)
@@ -169,9 +175,29 @@ enum DateDataDecoding {
     static let formattedMismatch = "Date string does not match the expected format"
     static let invalidBase64 = "Invalid Base64 string"
 
-    /// ISO 8601 internet date-time in UTC via the Sendable, value-type `Date.ISO8601FormatStyle`
-    /// (byte-identical to Foundation's `.iso8601` strategy), or nil if `s` isn't valid ISO 8601.
-    static func iso8601(_ s: String) -> Date? { try? Date(s, strategy: .iso8601) }
+    /// ISO 8601 internet date-time in UTC, or nil if `s` isn't valid ISO 8601. Byte-identical to
+    /// Foundation's `.iso8601` strategy: the canonical `YYYY-MM-DDTHH:MM:SSZ` UTC form is parsed directly
+    /// by ``fastISO8601(_:)`` (no `Date.ISO8601FormatStyle` machinery); every other shape — fractional
+    /// seconds, numeric offsets, out-of-range fields — falls through to `Date(_:strategy:)`, which is the
+    /// authority for those. So the fast path can only ever *accelerate* the common case, never change a
+    /// parse result (verified against Foundation in `ISO8601FastTests`).
+    static func iso8601(_ s: String) -> Date? {
+        var s = s
+        if let fast = s.withUTF8({ fastISO8601($0) }) { return fast }
+        return try? Date(s, strategy: .iso8601)
+    }
+
+    /// Parses the canonical UTC ISO 8601 form `YYYY-MM-DDTHH:MM:SSZ` (exactly 20 ASCII bytes) straight
+    /// from `b`, returning the `Date`, or nil for any other shape / out-of-range field / the 1582 reform
+    /// year (the caller then defers to Foundation). Delegates the byte parse and calendar arithmetic to
+    /// the shared, Foundation-free ``ADFKernels`` kernel (`adf_parse_iso8601_utc`) — the one place the
+    /// AD* family's ISO 8601 parsing lives — and only wraps the resulting Unix-seconds in a `Date`.
+    static func fastISO8601(_ b: UnsafeBufferPointer<UInt8>) -> Date? {
+        guard let base = b.baseAddress,
+            let seconds = ADFKernels.parseISO8601UTCSeconds(base, count: b.count)
+        else { return nil }
+        return Date(timeIntervalSince1970: Double(seconds))
+    }
 
     /// Base64 → `Data`, or nil if `s` isn't valid Base64.
     static func base64(_ s: String) -> Data? { Data(base64Encoded: s) }
@@ -217,6 +243,18 @@ extension DecodeContext {
                 guard let d = double(index) else { throw dateMismatch() }
                 return Date(timeIntervalSince1970: d / 1000)
             case .iso8601:
+                // Fast path: parse the canonical `YYYY-MM-DDTHH:MM:SSZ` straight from the tape bytes via
+                // the shared ADFoundation kernel — no `String` allocation. An escaped key/value or a
+                // non-canonical spelling falls through to the String + Foundation path below, unchanged.
+                let dateSlot = slot(index)
+                if Slot.tag(dateSlot) == JSONKind.string.rawValue, Slot.flags(dateSlot) & 1 == 0 {
+                    let off = Slot.low(dateSlot)
+                    let len = Slot.length(dateSlot)
+                    assertBytes(off, len)
+                    if let seconds = ADFKernels.parseISO8601UTCSeconds(bytes + off, count: len) {
+                        return Date(timeIntervalSince1970: Double(seconds))
+                    }
+                }
                 guard let s = string(index) else { throw dateMismatch() }
                 guard let date = DateDataDecoding.iso8601(s) else {
                     throw dateCorrupted(DateDataDecoding.iso8601Mismatch)
@@ -268,7 +306,7 @@ extension DecodeContext {
         let buffer = UnsafeBufferPointer(start: bytes + off, count: len)
         // Fast byte path — no `String`, no Foundation locale scanner. Falls back to `Decimal(string:)`
         // (identical result) only for >38 significant digits or an out-of-range exponent.
-        if let value = fastDecimal(buffer) { return value }
+        if let value = ADJSONDecimal.fast(buffer) { return value }
         guard let value = Decimal(string: String(decoding: buffer, as: UTF8.self), locale: ADJSONDecimal.posixLocale)
         else {
             throw DecodingError.dataCorrupted(
@@ -288,7 +326,7 @@ extension DecodeContext {
     func applyKeyDecoding(_ key: String) -> String {
         switch strategies.key {
             case .useDefaultKeys: return key
-            case .convertFromSnakeCase: return convertFromSnakeCase(key)
+            case .convertFromSnakeCase: return KeyCoding.fromSnakeCase(key)
             case .custom(let transform): return transform(key)
         }
     }

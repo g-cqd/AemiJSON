@@ -40,7 +40,8 @@ func jsonPathComplianceSuite() throws {
             ? test["results"].arrayValue.map(\.arrayValue)
             : [test["result"].arrayValue]
         let matched = expectedLists.contains { expected in
-            expected.count == result.count && zip(expected, result).allSatisfy { jsonSemanticEqual($0, $1) }
+            expected.count == result.count
+                && zip(expected, result).allSatisfy { JSONValueSemantics.areEqual($0, $1) }
         }
         if matched { validOK += 1 }
     }

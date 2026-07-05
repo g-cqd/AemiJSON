@@ -8,44 +8,48 @@ extension JSON {
     package var isStringKind: Bool { tag == JSONKind.string.rawValue }
 }
 
-/// Structural equality used by JSONPath comparisons and JSON Schema `const`/`enum`/`uniqueItems`.
-/// Numerically, 1 and 1.0 compare equal (JSON value equality). Works across documents.
-package func jsonSemanticEqual(_ a: JSON, _ b: JSON) -> Bool {
-    // Iterative: a work-stack of pairs left to compare replaces structural recursion, so equality
-    // of deeply nested values can't overflow the stack. Comparison order doesn't affect the result.
-    var stack: [(JSON, JSON)] = [(a, b)]
-    while let (x, y) = stack.popLast() {
-        if x.isNull {
-            if !y.isNull { return false }
-        } else if let xb = x.bool {
-            if y.bool != xb { return false }
-        } else if x.isNumberKind {
-            guard y.isNumberKind, let av = x.double, let bv = y.double, av == bv else { return false }
-        } else if let xs = x.string {
-            if y.string != xs { return false }
-        } else {
-            guard pushChildren(x, y, &stack) else { return false }
+/// Structural JSON value equality — a caseless-enum namespace (was two free functions), used by JSONPath
+/// comparisons and JSON Schema `const`/`enum`/`uniqueItems`.
+package enum JSONValueSemantics {
+    /// Structural equality. Numerically, 1 and 1.0 compare equal (JSON value equality). Works across
+    /// documents.
+    package static func areEqual(_ a: JSON, _ b: JSON) -> Bool {
+        // Iterative: a work-stack of pairs left to compare replaces structural recursion, so equality
+        // of deeply nested values can't overflow the stack. Comparison order doesn't affect the result.
+        var stack: [(JSON, JSON)] = [(a, b)]
+        while let (x, y) = stack.popLast() {
+            if x.isNull {
+                if !y.isNull { return false }
+            } else if let xb = x.bool {
+                if y.bool != xb { return false }
+            } else if x.isNumberKind {
+                guard y.isNumberKind, let av = x.double, let bv = y.double, av == bv else { return false }
+            } else if let xs = x.string {
+                if y.string != xs { return false }
+            } else {
+                guard pushChildren(x, y, &stack) else { return false }
+            }
         }
+        return true
     }
-    return true
-}
 
-/// Container half of `jsonSemanticEqual`: matches two arrays/objects structurally and
-/// pushes their element/value pairs onto `stack`. Returns false on any structural
-/// mismatch (incl. a non-container `x`, which the scalar checks already excluded).
-private func pushChildren(_ x: JSON, _ y: JSON, _ stack: inout [(JSON, JSON)]) -> Bool {
-    if x.isArray {
-        guard y.isArray, x.count == y.count, let xe = x.array, let ye = y.array else { return false }
-        for i in 0 ..< xe.count { stack.append((xe[i], ye[i])) }
-        return true
-    }
-    if x.isObject {
-        guard y.isObject, let xo = x.object, let yo = y.object, xo.count == yo.count else { return false }
-        for (k, v) in xo {
-            guard let yv = yo[k] else { return false }
-            stack.append((v, yv))
+    /// Container half of `areEqual`: matches two arrays/objects structurally and pushes their
+    /// element/value pairs onto `stack`. Returns false on any structural mismatch (incl. a non-container
+    /// `x`, which the scalar checks already excluded).
+    private static func pushChildren(_ x: JSON, _ y: JSON, _ stack: inout [(JSON, JSON)]) -> Bool {
+        if x.isArray {
+            guard y.isArray, x.count == y.count, let xe = x.array, let ye = y.array else { return false }
+            for i in 0 ..< xe.count { stack.append((xe[i], ye[i])) }
+            return true
         }
-        return true
+        if x.isObject {
+            guard y.isObject, let xo = x.object, let yo = y.object, xo.count == yo.count else { return false }
+            for (k, v) in xo {
+                guard let yv = yo[k] else { return false }
+                stack.append((v, yv))
+            }
+            return true
+        }
+        return false
     }
-    return false
 }

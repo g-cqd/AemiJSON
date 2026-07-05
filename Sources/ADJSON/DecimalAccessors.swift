@@ -7,123 +7,123 @@ public import Foundation
 // fractions such as 0.1. These live in the umbrella because `Decimal` is a Foundation type; the engine
 // stays Foundation-free.
 
-// Parse number lexemes with a fixed POSIX convention (`.` decimal separator) regardless of the process
-// locale — the same locale-independence the core's `Double` parser guarantees.
+/// `Decimal` construction from validated JSON number lexemes — a caseless-enum namespace for what were
+/// free functions. Parses with a fixed POSIX convention (`.` decimal separator) regardless of the process
+/// locale — the same locale-independence the core's `Double` parser guarantees.
 enum ADJSONDecimal {
     static let posixLocale = Locale(identifier: "en_US_POSIX")
-}
 
-// Build a `Decimal` from a validated JSON number lexeme WITHOUT Foundation's locale-aware
-// `Decimal(string:)` scanner, which is the bottleneck (measured ~1.4× faster on 31-digit values, ~2×
-// on short ones). The significand accumulates into a `UInt128` — covering `Decimal`'s full ~38-digit
-// capacity, i.e. the high-precision values `Decimal` exists for, not just `Double`-sized ones — and the
-// net base-10 exponent is tracked from the bytes; the result is `significand × 10^exponent` via
-// `Decimal(sign:exponent:significand:)`. Returns nil — so the caller falls back to `Decimal(string:)`
-// for an identical result — only for >38 significant digits (beyond `Decimal`'s exact range anyway) or
-// an exponent outside `Decimal`'s range. `UInt128` is `SwiftStdlib 6.0` (macOS 15 / iOS 18), exactly the
-// package's deployment floor, so no availability shim is needed.
-
-// 10^38: one past `Decimal`'s exact 38-significant-digit capacity. A significand at or above this can't
-// be represented exactly, so hand it to the string parser rather than risk a divergent rounding.
-private let decimalSignificandCeiling: UInt128 = {
-    var value: UInt128 = 1
-    for _ in 0 ..< 38 { value &*= 10 }
-    return value
-}()
-// 2^64, to fold the significand's high/low 64-bit halves into a `Decimal` exactly.
-private let twoToThe64: Decimal = Decimal(UInt64.max) + 1
-
-/// Parses an optional `[eE][+-]?digits` exponent suffix starting at `p[i]`, advancing
-/// `i`. Returns the signed exponent (0 when absent), or nil on a malformed/absurd one.
-private func parseDecimalExponent(_ p: UnsafePointer<UInt8>, _ i: inout Int, _ n: Int) -> Int? {
-    guard i < n, p[i] == 0x65 || p[i] == 0x45 else { return 0 }
-    i += 1
-    var expNegative = false
-    if i < n, p[i] == 0x2B || p[i] == 0x2D {
-        expNegative = p[i] == 0x2D
-        i += 1
-    }
-    var value = 0
-    var sawExpDigit = false
-    while i < n {
-        let b = p[i]
-        guard b >= 0x30, b <= 0x39 else { return nil }
-        sawExpDigit = true
-        value = value &* 10 &+ Int(b - 0x30)
-        if value > 1000 { return nil }  // absurd exponent → fall back
-        i += 1
-    }
-    guard sawExpDigit else { return nil }
-    return expNegative ? -value : value
-}
-
-func fastDecimal(_ buffer: UnsafeBufferPointer<UInt8>) -> Decimal? {
-    let n = buffer.count
-    guard n > 0, let p = buffer.baseAddress else { return nil }
-    var i = 0
-    var negative = false
-    if p[0] == 0x2D {  // '-'
-        negative = true
-        i = 1
-    }
-    var significand: UInt128 = 0
-    var fractionExponent = 0
-    var sawDigit = false
-    var seenDot = false
-    while i < n {
-        let b = p[i]
-        if b == 0x2E {  // '.'
-            if seenDot { return nil }
-            seenDot = true
-            i += 1
-            continue
-        }
-        if b == 0x65 || b == 0x45 { break }  // 'e' / 'E'
-        guard b >= 0x30, b <= 0x39 else { return nil }
-        sawDigit = true
-        let (m, mo) = significand.multipliedReportingOverflow(by: 10)
-        if mo { return nil }
-        let (a, ao) = m.addingReportingOverflow(UInt128(b - 0x30))
-        if ao { return nil }
-        significand = a
-        if significand >= decimalSignificandCeiling { return nil }  // > 38 digits → beyond exact range
-        if seenDot { fractionExponent -= 1 }
-        i += 1
-    }
-    guard sawDigit else { return nil }
-    guard let literalExponent = parseDecimalExponent(p, &i, n) else { return nil }
-    guard i == n else { return nil }  // trailing bytes → fall back
-    let exponent = fractionExponent + literalExponent
-    guard exponent >= -128, exponent <= 127 else { return nil }  // outside Decimal's exponent range
-    // `Decimal` has no UInt128 init: fold the significand's 64-bit halves (exact — the value is < 10^38).
-    let high = UInt64(truncatingIfNeeded: significand >> 64)
-    let low = UInt64(truncatingIfNeeded: significand)
-    let significandDecimal = high == 0 ? Decimal(low) : Decimal(high) * twoToThe64 + Decimal(low)
-    // A zero significand must carry a POSITIVE sign: `Decimal` has no negative zero, and the
-    // NSDecimal layout REUSES (length 0, negative) as its NaN encoding — so constructing
-    // `Decimal(sign: .minus, …, significand: 0)` yields NaN on Foundation implementations that
-    // honor that encoding (observed on the macOS 26 CI runners; the macOS 27 Foundation
-    // normalizes it away, which hid the bug locally). JSON `-0` therefore decodes as plain
-    // zero, matching `Decimal(string: "-0")`.
-    let sign: FloatingPointSign = negative && significand != 0 ? .minus : .plus
-    return Decimal(sign: sign, exponent: exponent, significand: significandDecimal)
-}
-
-// Convenience over a `String` lexeme (small JSON numbers are inline, so no heap): the byte fast path,
-// else Foundation's parser.
-func decimalFromLexeme(_ lexeme: String) -> Decimal? {
-    if let fast = lexeme.utf8.withContiguousStorageIfAvailable({ fastDecimal($0) }), let value = fast {
+    // 10^38: one past `Decimal`'s exact 38-significant-digit capacity. A significand at or above this
+    // can't be represented exactly, so hand it to the string parser rather than risk a divergent rounding.
+    private static let significandCeiling: UInt128 = {
+        var value: UInt128 = 1
+        for _ in 0 ..< 38 { value &*= 10 }
         return value
-    }
-    return Decimal(string: lexeme, locale: ADJSONDecimal.posixLocale)
-}
+    }()
+    // 2^64, to fold the significand's high/low 64-bit halves into a `Decimal` exactly.
+    private static let twoToThe64: Decimal = Decimal(UInt64.max) + 1
 
-// A `Decimal` carrying only the precision a `Double` retains — its shortest round-trippable decimal
-// text. Used where the source lexeme is gone (a materialized `JSONValue` holds `Double`, not the raw
-// digits); read ``JSON/decimal`` on the parsed document for full source precision. nil for non-finite.
-func decimalFromDouble(_ value: Double) -> Decimal? {
-    guard value.isFinite else { return nil }
-    return decimalFromLexeme(value.description)
+    /// Build a `Decimal` from a validated JSON number lexeme WITHOUT Foundation's locale-aware
+    /// `Decimal(string:)` scanner, which is the bottleneck (measured ~1.4× faster on 31-digit values, ~2×
+    /// on short ones). The significand accumulates into a `UInt128` — covering `Decimal`'s full ~38-digit
+    /// capacity, i.e. the high-precision values `Decimal` exists for, not just `Double`-sized ones — and
+    /// the net base-10 exponent is tracked from the bytes; the result is `significand × 10^exponent` via
+    /// `Decimal(sign:exponent:significand:)`. Returns nil — so the caller falls back to `Decimal(string:)`
+    /// for an identical result — only for >38 significant digits (beyond `Decimal`'s exact range anyway)
+    /// or an exponent outside `Decimal`'s range. `UInt128` is `SwiftStdlib 6.0` (macOS 15 / iOS 18),
+    /// exactly the package's deployment floor, so no availability shim is needed.
+    static func fast(_ buffer: UnsafeBufferPointer<UInt8>) -> Decimal? {
+        let n = buffer.count
+        guard n > 0, let p = buffer.baseAddress else { return nil }
+        var i = 0
+        var negative = false
+        if p[0] == 0x2D {  // '-'
+            negative = true
+            i = 1
+        }
+        var significand: UInt128 = 0
+        var fractionExponent = 0
+        var sawDigit = false
+        var seenDot = false
+        while i < n {
+            let b = p[i]
+            if b == 0x2E {  // '.'
+                if seenDot { return nil }
+                seenDot = true
+                i += 1
+                continue
+            }
+            if b == 0x65 || b == 0x45 { break }  // 'e' / 'E'
+            guard b >= 0x30, b <= 0x39 else { return nil }
+            sawDigit = true
+            let (m, mo) = significand.multipliedReportingOverflow(by: 10)
+            if mo { return nil }
+            let (a, ao) = m.addingReportingOverflow(UInt128(b - 0x30))
+            if ao { return nil }
+            significand = a
+            if significand >= significandCeiling { return nil }  // > 38 digits → beyond exact range
+            if seenDot { fractionExponent -= 1 }
+            i += 1
+        }
+        guard sawDigit else { return nil }
+        guard let literalExponent = parseExponent(p, &i, n) else { return nil }
+        guard i == n else { return nil }  // trailing bytes → fall back
+        let exponent = fractionExponent + literalExponent
+        guard exponent >= -128, exponent <= 127 else { return nil }  // outside Decimal's exponent range
+        // `Decimal` has no UInt128 init: fold the significand's 64-bit halves (exact — the value < 10^38).
+        let high = UInt64(truncatingIfNeeded: significand >> 64)
+        let low = UInt64(truncatingIfNeeded: significand)
+        let significandDecimal = high == 0 ? Decimal(low) : Decimal(high) * twoToThe64 + Decimal(low)
+        // A zero significand must carry a POSITIVE sign: `Decimal` has no negative zero, and the
+        // NSDecimal layout REUSES (length 0, negative) as its NaN encoding — so constructing
+        // `Decimal(sign: .minus, …, significand: 0)` yields NaN on Foundation implementations that
+        // honor that encoding (observed on the macOS 26 CI runners; the macOS 27 Foundation
+        // normalizes it away, which hid the bug locally). JSON `-0` therefore decodes as plain
+        // zero, matching `Decimal(string: "-0")`.
+        let sign: FloatingPointSign = negative && significand != 0 ? .minus : .plus
+        return Decimal(sign: sign, exponent: exponent, significand: significandDecimal)
+    }
+
+    /// Convenience over a `String` lexeme (small JSON numbers are inline, so no heap): the byte fast path,
+    /// else Foundation's parser.
+    static func fromLexeme(_ lexeme: String) -> Decimal? {
+        if let parsed = lexeme.utf8.withContiguousStorageIfAvailable({ Self.fast($0) }), let value = parsed {
+            return value
+        }
+        return Decimal(string: lexeme, locale: posixLocale)
+    }
+
+    /// A `Decimal` carrying only the precision a `Double` retains — its shortest round-trippable decimal
+    /// text. Used where the source lexeme is gone (a materialized `JSONValue` holds `Double`, not the raw
+    /// digits); read ``JSON/decimal`` on the parsed document for full source precision. nil for non-finite.
+    static func fromDouble(_ value: Double) -> Decimal? {
+        guard value.isFinite else { return nil }
+        return fromLexeme(value.description)
+    }
+
+    /// Parses an optional `[eE][+-]?digits` exponent suffix starting at `p[i]`, advancing `i`. Returns the
+    /// signed exponent (0 when absent), or nil on a malformed/absurd one.
+    private static func parseExponent(_ p: UnsafePointer<UInt8>, _ i: inout Int, _ n: Int) -> Int? {
+        guard i < n, p[i] == 0x65 || p[i] == 0x45 else { return 0 }
+        i += 1
+        var expNegative = false
+        if i < n, p[i] == 0x2B || p[i] == 0x2D {
+            expNegative = p[i] == 0x2D
+            i += 1
+        }
+        var value = 0
+        var sawExpDigit = false
+        while i < n {
+            let b = p[i]
+            guard b >= 0x30, b <= 0x39 else { return nil }
+            sawExpDigit = true
+            value = value &* 10 &+ Int(b - 0x30)
+            if value > 1000 { return nil }  // absurd exponent → fall back
+            i += 1
+        }
+        guard sawExpDigit else { return nil }
+        return expNegative ? -value : value
+    }
 }
 
 extension JSON {
@@ -132,7 +132,7 @@ extension JSON {
     /// `double` would round. Returns nil for a non-number node or a value outside `Decimal`'s range.
     public var decimal: Decimal? {
         guard let lexeme = numberLexeme else { return nil }
-        return decimalFromLexeme(lexeme)
+        return ADJSONDecimal.fromLexeme(lexeme)
     }
 }
 
@@ -144,7 +144,7 @@ extension JSONValue {
     public var decimal: Decimal? {
         switch self {
             case .int(let value): return Decimal(value)
-            case .number(let value): return decimalFromDouble(value)
+            case .number(let value): return ADJSONDecimal.fromDouble(value)
             default: return nil
         }
     }

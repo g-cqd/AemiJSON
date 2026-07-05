@@ -5,6 +5,8 @@
 //
 // The platform libc import below is for `vsnprintf` (the SQLite `%!.15g` number format only); it is
 // not Foundation, so the core stays Foundation-free.
+import ADFCore
+
 #if canImport(Darwin)
     import Darwin
 #elseif canImport(Glibc)
@@ -14,96 +16,44 @@
 #endif
 
 extension JSONOutput {
-    /// Parse Swift's shortest decimal (`Double.description`) for a **finite** `v` into its significant
-    /// digits and decimal-point position, then invoke `body` — the one place the encoders source
-    /// shortest digits, shared by ``appendECMANumber(_:to:)`` and ``JSONShortest/appendShortest(_:to:)``
-    /// under different placement rules. `digits` are the significant digits (no leading/trailing zeros);
-    /// `pointPos` is how many of them fall before the decimal point (value = digits × 10^(pointPos −
-    /// count)); `digits.count == 0` signals zero. `description` is the only allocation (Swift's
-    /// correctly-rounded shortest digits, ASCII, locale-independent); the gather uses a 24-byte stack
-    /// span — a finite double prints in ≤ 24 ASCII bytes. `body` is non-escaping (runs inside the span).
+    /// Compute the shortest round-trip decimal for a **finite** `v` and invoke `body` with its significant
+    /// digits and decimal-point position — the one place the encoders source shortest digits, shared by
+    /// ``appendECMANumber(_:to:)`` and ``JSONShortest/appendShortest(_:to:)`` under different placement
+    /// rules. `digits` are the significant digits (no leading/trailing zeros); `pointPos` is how many of
+    /// them fall before the decimal point (value = digits × 10^(pointPos − count)); `digits.count == 0`
+    /// signals zero. Digits come from ``ADFCore/DecimalFloat/shortestDouble(_:)`` (the Ryū shortest-float
+    /// formatter — byte-identical to Swift's `Double.description`), written straight into a 24-byte stack
+    /// span with **no** intermediate `String` allocation. `body` is non-escaping (runs inside the span).
     static func withShortestDigits(
         _ v: Double, _ body: (_ negative: Bool, _ digits: UnsafeBufferPointer<UInt8>, _ pointPos: Int) -> Void
     ) {
-        var desc = v.description
-        desc.withUTF8 { d in
-            let count = d.count
-            var pos = 0
-            let negative = unsafe d.first == 0x2D
-            if negative { pos = 1 }
-
-            // Split off an explicit exponent (`e±NN`), if any.
-            var exp = 0
-            var mantEnd = count
-            var j = pos
-            while j < count {
-                if unsafe d[j] == 0x65 || d[j] == 0x45 {
-                    mantEnd = j
-                    var ei = j + 1
-                    var eNeg = false
-                    if ei < count, unsafe d[ei] == 0x2B || d[ei] == 0x2D {
-                        eNeg = unsafe d[ei] == 0x2D
-                        ei += 1
-                    }
-                    var e = 0
-                    while ei < count {
-                        e = unsafe e * 10 + Int(d[ei] - 0x30)
-                        ei += 1
-                    }
-                    exp = eNeg ? -e : e
-                    break
+        let (negative, significand, exponent) = DecimalFloat.shortestDouble(v)
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 24) { digits in
+            // `capacity: 24 > 0`, so the temporary buffer always has a base address (a finite double's
+            // shortest form has ≤ 17 significant digits).
+            guard let digitsBase = digits.baseAddress else { return }
+            // `significand` has no trailing zeros (and no leading zeros, being a bare integer), so its
+            // decimal digits are exactly the significant digits; `significand == 0` is the zero sentinel.
+            var count = 0
+            if significand != 0 {
+                var tmp = significand
+                while tmp > 0 {
+                    tmp /= 10
+                    count += 1
                 }
-                j += 1
+                var w = significand
+                var idx = count - 1
+                while idx >= 0 {
+                    unsafe digits[idx] = 0x30 &+ UInt8(w % 10)
+                    w /= 10
+                    idx -= 1
+                }
             }
-
-            // Locate the decimal point within the mantissa.
-            var dotAt = -1
-            var t = pos
-            while t < mantEnd {
-                if unsafe d[t] == 0x2E {
-                    dotAt = t
-                    break
-                }
-                t += 1
-            }
-
-            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 24) { digits in
-                // `capacity: 24 > 0`, so the temporary buffer always has a base address.
-                guard let digitsBase = digits.baseAddress else { return }
-                // Gather the significant digits and the decimal-point position `pointPos`.
-                var dc = 0
-                var pointPos: Int
-                if dotAt >= 0 {
-                    for x in pos ..< dotAt {
-                        unsafe digits[dc] = unsafe d[x]
-                        dc += 1
-                    }
-                    for x in (dotAt + 1) ..< mantEnd {
-                        unsafe digits[dc] = unsafe d[x]
-                        dc += 1
-                    }
-                    pointPos = dotAt - pos
-                } else {
-                    for x in pos ..< mantEnd {
-                        unsafe digits[dc] = unsafe d[x]
-                        dc += 1
-                    }
-                    pointPos = mantEnd - pos
-                }
-                pointPos += exp
-
-                // Normalize to shortest significant digits `[start, end)`, adjusting `pointPos`.
-                var start = 0
-                while start < dc, unsafe digits[start] == 0x30 {
-                    start += 1
-                    pointPos -= 1
-                }
-                var end = dc
-                while end > start, unsafe digits[end - 1] == 0x30 { end -= 1 }
-                // The buffer addresses the stack `digits` allocation, valid only for this `body` call —
-                // `body` must consume it inline and must not store or return it (it dangles after).
-                unsafe body(negative, UnsafeBufferPointer(start: digitsBase + start, count: end - start), pointPos)
-            }
+            // value = significand × 10^exponent = digits × 10^(pointPos − count) ⇒ pointPos = exponent + count.
+            let pointPos = significand == 0 ? 0 : exponent + count
+            // The buffer addresses the stack `digits` allocation, valid only for this `body` call —
+            // `body` must consume it inline and must not store or return it (it dangles after).
+            unsafe body(negative, UnsafeBufferPointer(start: digitsBase, count: count), pointPos)
         }
     }
 

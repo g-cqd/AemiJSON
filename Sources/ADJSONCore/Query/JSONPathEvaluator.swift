@@ -199,7 +199,7 @@ enum JSONPathEvaluator {
             case (.bool(let a), .bool(let b)): return a == b
             case (.number(let a), .number(let b)): return a == b
             case (.string(let a), .string(let b)): return a == b
-            case (.structural(let a), .structural(let b)): return jsonSemanticEqual(a, b)
+            case (.structural(let a), .structural(let b)): return JSONValueSemantics.areEqual(a, b)
             default: return false
         }
     }

@@ -231,10 +231,16 @@ public enum JSONNumber {
             guard sawExpDigit else { return nil }
             exponent += expNegative ? -e : e
         }
-        // The re-scan must have consumed the whole (validated) number; the exact-domain gate and the
-        // value assembly live in the shared `ADFCore.DecimalFloat` Clinger fast path (inlined here).
+        // The re-scan must have consumed the whole (validated) number. The exact-domain Clinger gate and
+        // the value assembly live in `ADFCore.DecimalFloat`; when Clinger rejects (significand > 2^53 or
+        // |exponent| > 22) the Eisel-Lemire fast path resolves the correctly-rounded Double without a
+        // `String` + `Double(_:)` round-trip, returning nil only for the rare case it cannot prove
+        // correct — then the caller's stdlib fallback rounds it.
         guard i == end, digits > 0 else { return nil }
-        return DecimalFloat.double(significand: significand, exponent: exponent, negative: negative)
+        if let clinger = DecimalFloat.double(significand: significand, exponent: exponent, negative: negative) {
+            return clinger
+        }
+        return DecimalFloat.eiselLemire(significand: significand, exponent: exponent, negative: negative)
     }
 
     // Generic integer parse with correct overflow handling for any width, signed or

@@ -30,16 +30,16 @@ struct SchemableMacro: ExtensionMacro {
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
         guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-            context.diagnose(note(node, "Schemable", "@Schemable only supports structs; no schema generated"))
+            context.diagnose(SyntaxExtract.note(node, "Schemable", "@Schemable only supports structs; no schema generated"))
             return []
         }
-        if declaresCodingKeys(structDecl) {
+        if SyntaxExtract.declaresCodingKeys(structDecl) {
             context.diagnose(
-                note(node, "Schemable", "@Schemable skips types with custom CodingKeys; no schema generated"))
+                SyntaxExtract.note(node, "Schemable", "@Schemable skips types with custom CodingKeys; no schema generated"))
             return []
         }
         guard let props = schemaProperties(structDecl) else {
-            context.diagnose(note(node, "Schemable", "@Schemable needs explicit property types; no schema generated"))
+            context.diagnose(SyntaxExtract.note(node, "Schemable", "@Schemable needs explicit property types; no schema generated"))
             return []
         }
 
@@ -49,14 +49,14 @@ struct SchemableMacro: ExtensionMacro {
         let body = schemaTextBody(props, enclosing: enclosing, selfRefs: &selfRefs, unresolved: &unresolved)
         if !selfRefs.isEmpty {
             context.diagnose(
-                note(
+                SyntaxExtract.note(
                     node, "Schemable",
                     "@Schemable does not yet support self-referential types; describing "
                         + "\(selfRefs.joined(separator: ", ")) as an open object"))
         }
         if !unresolved.isEmpty {
             context.diagnose(
-                note(
+                SyntaxExtract.note(
                     node, "Schemable",
                     "@Schemable can't resolve \(unresolved.joined(separator: ", ")) to a JSON type "
                         + "(type matching is syntactic) — describing as an open object. Spell scalar types "
@@ -67,8 +67,8 @@ struct SchemableMacro: ExtensionMacro {
         // spliced in at runtime so the dialect literal stays byte-exact.
         let rootText: String
         if let url = dialectSchemaURL(node) {
-            let member = jsonString("$schema") + ":" + jsonString(url)
-            rootText = "__adjsonInsertingFirstMember(__adjsonSchemaText, \(rawJSONLiteral(member)))"
+            let member = JSONLiteral.string("$schema") + ":" + JSONLiteral.string(url)
+            rootText = "__adjsonInsertingFirstMember(__adjsonSchemaText, \(JSONLiteral.rawLiteral(member)))"
         } else {
             rootText = "__adjsonSchemaText"
         }
@@ -103,10 +103,10 @@ private func schemaProperties(_ decl: StructDeclSyntax) -> [SchemaProperty]? {
         guard let varDecl = member.decl.as(VariableDeclSyntax.self) else { continue }
         let modifiers = varDecl.modifiers.map(\.name.text)
         if modifiers.contains("static") || modifiers.contains("lazy") { continue }
-        let doc = docComment(varDecl)
-        let decorators = parseSchemaDecorators(varDecl)
+        let doc = SyntaxExtract.docComment(varDecl)
+        let decorators = SchemaDecorators.parse(varDecl)
         for binding in varDecl.bindings {
-            if isComputed(binding.accessorBlock) { continue }
+            if SyntaxExtract.isComputed(binding.accessorBlock) { continue }
             guard let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text else { continue }
             guard let type = binding.typeAnnotation?.type else { return nil }
             props.append(SchemaProperty(name: name, type: type, doc: doc, decorators: decorators))
@@ -132,13 +132,13 @@ private func schemaTextBody(
     var segs: [Seg] = [.lit("{\"type\":\"object\",\"properties\":{")]
     for (index, p) in props.enumerated() {
         let prefix = index == 0 ? "" : ","
-        segs.append(.lit(prefix + jsonString(p.name) + ":"))
+        segs.append(.lit(prefix + JSONLiteral.string(p.name) + ":"))
         segs.append(contentsOf: propertyFragment(p, enclosing: enclosing, selfRefs: &selfRefs, unresolved: &unresolved))
     }
     segs.append(.lit("}"))
     let required = props.filter { !isOptionalType($0.type) }.map(\.name)
     if !required.isEmpty {
-        segs.append(.lit(",\"required\":[" + required.map(jsonString).joined(separator: ",") + "]"))
+        segs.append(.lit(",\"required\":[" + required.map(JSONLiteral.string).joined(separator: ",") + "]"))
     }
     segs.append(.lit("}"))
     return emit(merge(segs))
@@ -171,7 +171,7 @@ private func fragment(
     if let values = dec.enumValues {
         let body =
             "{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"string\",\"enum\":["
-            + values.map(jsonString).joined(separator: ",") + "]" + stringConstraints(dec) + "}"
+            + values.map(JSONLiteral.string).joined(separator: ",") + "]" + stringConstraints(dec) + "}"
         return [.lit(body)]
     }
 
@@ -270,8 +270,8 @@ private func scalarObject(_ type: String, desc: String?, title: String?, constra
 
 private func annotationPrefix(desc: String?, title: String?) -> String {
     var s = ""
-    if let title { s += "\"title\":" + jsonString(title) + "," }
-    if let desc { s += "\"description\":" + jsonString(desc) + "," }
+    if let title { s += "\"title\":" + JSONLiteral.string(title) + "," }
+    if let desc { s += "\"description\":" + JSONLiteral.string(desc) + "," }
     return s
 }
 
@@ -297,15 +297,15 @@ private func stringConstraints(_ d: SchemaDecorators) -> String {
     var s = ""
     if let v = d.minLength { s += ",\"minLength\":" + v }
     if let v = d.maxLength { s += ",\"maxLength\":" + v }
-    if let v = d.pattern { s += ",\"pattern\":" + jsonString(v) }
-    if let v = d.format { s += ",\"format\":" + jsonString(v) }
+    if let v = d.pattern { s += ",\"pattern\":" + JSONLiteral.string(v) }
+    if let v = d.format { s += ",\"format\":" + JSONLiteral.string(v) }
     return s
 }
 
 private func dialectSchemaURL(_ node: AttributeSyntax) -> String? {
     guard let args = node.arguments?.as(LabeledExprListSyntax.self) else { return nil }
     for arg in args where arg.label?.text == "dialect" {
-        switch memberAccessName(arg.expression) {
+        switch SyntaxExtract.memberAccessName(arg.expression) {
             case "draft7": return "http://json-schema.org/draft-07/schema#"
             case "draft2020_12": return "https://json-schema.org/draft/2020-12/schema"
             default: return nil
@@ -348,10 +348,10 @@ private func emit(_ segs: [Seg]) -> String {
     let pieces = segs.map { seg -> String in
         switch seg {
             case .lit(let s):
-                return rawJSONLiteral(s)
+                return JSONLiteral.rawLiteral(s)
             case .refCall(let type, let desc, let title):
-                let d = desc.map(swiftStringLiteral) ?? "nil"
-                let t = title.map(swiftStringLiteral) ?? "nil"
+                let d = desc.map(SwiftSource.stringLiteral) ?? "nil"
+                let t = title.map(SwiftSource.stringLiteral) ?? "nil"
                 return "__adjsonSchemaFragment(for: \(type).self, description: \(d), title: \(t))"
         }
     }

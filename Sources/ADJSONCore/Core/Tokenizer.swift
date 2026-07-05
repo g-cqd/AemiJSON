@@ -1,4 +1,5 @@
 import ADFCore
+import ADFKernels
 
 // Shared, resumability-aware RFC 8259 / lenient token grammar — the single source of truth for the
 // SAX readers (pull `JSONEventReader` and push `JSONEventStreamReader`). The tape `Scanner` keeps a
@@ -250,6 +251,10 @@ enum JSONToken {
 }
 
 extension JSONString {
+    /// Minimum remaining bytes for the SIMD string scan to beat the scalar loop (below it the C-call
+    /// overhead dominates); short strings keep the scalar path. Matches the tape's gate.
+    @usableFromInline static let kernelStringScanMinBytes = 64
+
     /// Outcome of scanning one `"…"` string lexeme. `.ok(end, hasEscape)` gives the index just past
     /// the closing quote and whether the body contained a backslash (so the caller can skip a second
     /// escape scan). `.incomplete` means the buffer ended mid-string / mid-escape / mid-sequence
@@ -273,6 +278,16 @@ extension JSONString {
         var hasEscape = false
         while true {
             guard j < count else { return .incomplete }
+            // SIMD fast-forward over plain content to the next stop byte — control (< 0x20), non-ASCII
+            // (>= 0x80), `"`, or `\` — the same stop-set as the tape's `scanString`. Short remainders
+            // keep the scalar loop. In lenient mode the kernel over-stops on non-ASCII, which the
+            // per-byte checks below simply skip (identical to the original scalar behavior).
+            let remaining = count - j
+            if remaining >= JSONString.kernelStringScanMinBytes {
+                j += unsafe ADFKernels.indexOfStringStop(
+                    base: p + j, count: remaining, quote: 0x22, escape: 0x5C)
+                guard j < count else { return .incomplete }
+            }
             let c = unsafe p[j]
             if c == 0x22 { return .ok(end: j + 1, hasEscape: hasEscape) }
             if c == 0x5C {  // escape

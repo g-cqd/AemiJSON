@@ -126,6 +126,8 @@ if isNIO {
 let orderedCollections: Target.Dependency = .product(name: "OrderedCollections", package: "swift-collections")
 // Shared low-level byte/number primitives. Only the engine (`ADJSONCore`) links it.
 let adfCore: Target.Dependency = .product(name: "ADFCore", package: "ADFoundation")
+// Runtime-dispatched SIMD byte kernels (the string-stop scan accelerates the tape parser's hot loop).
+let adfKernels: Target.Dependency = .product(name: "ADFKernels", package: "ADFoundation")
 
 // Build-time formatting enforcement attaches to the library only in dev/CI. A build-tool plugin on
 // a library target would otherwise run for everyone who depends on ADJSON, so it stays gated.
@@ -173,7 +175,8 @@ let package = Package(
         // OrderedCollections (order-preserving eager objects) and ADFCore (shared byte/number
         // primitives) — both Foundation-free with no transitive package deps, so the core stays portable.
         .target(
-            name: "ADJSONCore", dependencies: [orderedCollections, adfCore], swiftSettings: kernelSettings),
+            name: "ADJSONCore", dependencies: [orderedCollections, adfCore, adfKernels],
+            swiftSettings: kernelSettings),
         .target(
             // `adfCore` is declared directly (not only transitively via `ADJSONCore`) because the
             // umbrella links it itself — `EncoderBufferPool` uses `ADFCore.ByteBufferPool`.
@@ -182,7 +185,7 @@ let package = Package(
             // `TaskProviderSpy` (from the dev-only `ADTestKit`, which re-exports the same seam).
             name: "ADJSON",
             dependencies: [
-                "ADJSONCore", "ADJSONMacros", orderedCollections, adfCore,
+                "ADJSONCore", "ADJSONMacros", orderedCollections, adfCore, adfKernels,
                 .product(name: "ADConcurrency", package: "ADFoundation")
             ],
             swiftSettings: strictSettings, plugins: adjsonBuildPlugins),

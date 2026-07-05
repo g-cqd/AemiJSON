@@ -99,16 +99,16 @@ private func fastCodableProps(
     in context: some MacroExpansionContext
 ) -> [Property]? {
     guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-        context.diagnose(note(node, macroName, "@\(macroName) only supports structs; the type keeps standard Codable"))
+        context.diagnose(SyntaxExtract.note(node, macroName, "@\(macroName) only supports structs; the type keeps standard Codable"))
         return nil
     }
-    if declaresCodingKeys(structDecl) {
+    if SyntaxExtract.declaresCodingKeys(structDecl) {
         context.diagnose(
-            note(node, macroName, "@\(macroName) skips types with custom CodingKeys; keeping standard Codable"))
+            SyntaxExtract.note(node, macroName, "@\(macroName) skips types with custom CodingKeys; keeping standard Codable"))
         return nil
     }
     guard let props = storedProperties(structDecl) else {
-        context.diagnose(note(node, macroName, "@\(macroName) needs explicit property types; keeping standard Codable"))
+        context.diagnose(SyntaxExtract.note(node, macroName, "@\(macroName) needs explicit property types; keeping standard Codable"))
         return nil
     }
     return props
@@ -141,7 +141,7 @@ private func storedProperties(_ decl: StructDeclSyntax) -> [Property]? {
         let modifiers = varDecl.modifiers.map(\.name.text)
         if modifiers.contains("static") || modifiers.contains("lazy") { continue }
         for binding in varDecl.bindings {
-            if isComputed(binding.accessorBlock) { continue }
+            if SyntaxExtract.isComputed(binding.accessorBlock) { continue }
             guard let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text else { continue }
             guard let typeSyntax = binding.typeAnnotation?.type else { return nil }
             if let optional = typeSyntax.as(OptionalTypeSyntax.self) {
