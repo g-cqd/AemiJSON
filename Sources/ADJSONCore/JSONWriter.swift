@@ -22,7 +22,15 @@ package final class JSONWriter {
 
     package init(adopting buffer: [UInt8]) {
         bytes = buffer
-        bytes.reserveCapacity(max(bytes.capacity, 1024))
+        // Pre-size only a FRESH (empty) buffer. A NON-empty buffer handed in here is a
+        // caller's live output being moved through the generic<->fast bridge
+        // (`_JSONByteWriter.encodeGeneric`), which still holds its own reference at this
+        // point. `reserveCapacity` forces UNIQUE storage, so on that shared buffer it
+        // COW-copies the ENTIRE accumulated output — an O(n) copy per bridged value, i.e.
+        // O(n^2) over a stream (e.g. an `OptionSet`/`Set` field on every element of a large
+        // array). The caller drops its reference before it writes, so appends into this
+        // (already-sufficient) storage stay copy-free; only a fresh buffer needs sizing.
+        if bytes.isEmpty { bytes.reserveCapacity(max(bytes.capacity, 1024)) }
     }
 
     @inline(__always) package func byte(_ b: UInt8) { bytes.append(b) }
