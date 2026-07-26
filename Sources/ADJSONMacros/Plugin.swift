@@ -99,16 +99,20 @@ private func fastCodableProps(
     in context: some MacroExpansionContext
 ) -> [Property]? {
     guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-        context.diagnose(SyntaxExtract.note(node, macroName, "@\(macroName) only supports structs; the type keeps standard Codable"))
+        context.diagnose(
+            SyntaxExtract.note(node, macroName, "@\(macroName) only supports structs; the type keeps standard Codable"))
         return nil
     }
     if SyntaxExtract.declaresCodingKeys(structDecl) {
         context.diagnose(
-            SyntaxExtract.note(node, macroName, "@\(macroName) skips types with custom CodingKeys; keeping standard Codable"))
+            SyntaxExtract.note(
+                node, macroName, "@\(macroName) skips types with custom CodingKeys; keeping standard Codable"))
         return nil
     }
     guard let props = storedProperties(structDecl) else {
-        context.diagnose(SyntaxExtract.note(node, macroName, "@\(macroName) needs explicit property types; keeping standard Codable"))
+        context.diagnose(
+            SyntaxExtract.note(node, macroName, "@\(macroName) needs explicit property types; keeping standard Codable")
+        )
         return nil
     }
     return props

@@ -30,16 +30,19 @@ struct SchemableMacro: ExtensionMacro {
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
         guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-            context.diagnose(SyntaxExtract.note(node, "Schemable", "@Schemable only supports structs; no schema generated"))
+            context.diagnose(
+                SyntaxExtract.note(node, "Schemable", "@Schemable only supports structs; no schema generated"))
             return []
         }
         if SyntaxExtract.declaresCodingKeys(structDecl) {
             context.diagnose(
-                SyntaxExtract.note(node, "Schemable", "@Schemable skips types with custom CodingKeys; no schema generated"))
+                SyntaxExtract.note(
+                    node, "Schemable", "@Schemable skips types with custom CodingKeys; no schema generated"))
             return []
         }
         guard let props = schemaProperties(structDecl) else {
-            context.diagnose(SyntaxExtract.note(node, "Schemable", "@Schemable needs explicit property types; no schema generated"))
+            context.diagnose(
+                SyntaxExtract.note(node, "Schemable", "@Schemable needs explicit property types; no schema generated"))
             return []
         }
 

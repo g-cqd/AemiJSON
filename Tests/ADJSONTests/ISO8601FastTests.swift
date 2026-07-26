@@ -15,7 +15,7 @@ struct ISO8601FastTests {
         switch (ours, foundation) {
             case (nil, nil):
                 return true
-            case let (o?, f?):
+            case (let o?, let f?):
                 return o.timeIntervalSinceReferenceDate == f.timeIntervalSinceReferenceDate
             default:
                 return false
@@ -58,7 +58,7 @@ struct ISO8601FastTests {
             "2020-1-1T0:0:0Z",  // not zero-padded
             "2020-01-01t00:00:00z",  // lowercase separators
             "not a date", "", "2020-01-01", "2020-01-01T00:00:00ZZ",
-            "9999-12-31T23:59:59Z", "0001-01-01T00:00:00Z", "0000-01-01T00:00:00Z",
+            "9999-12-31T23:59:59Z", "0001-01-01T00:00:00Z", "0000-01-01T00:00:00Z"
         ]
         for s in cases {
             #expect(agrees(s), "disagreement for \(s)")
@@ -88,8 +88,8 @@ struct ISO8601FastTests {
         let style = Date.ISO8601FormatStyle()
         var rng = SystemRandomNumberGenerator()
         var mismatches: [String] = []
-        for _ in 0..<200_000 {
-            let t = Int.random(in: -62_135_596_800...253_402_300_799, using: &rng)
+        for _ in 0 ..< 200_000 {
+            let t = Int.random(in: -62_135_596_800 ... 253_402_300_799, using: &rng)
             let s = Date(timeIntervalSince1970: Double(t)).formatted(style)
             if !agrees(s) {
                 mismatches.append(s)
@@ -102,7 +102,7 @@ struct ISO8601FastTests {
     /// End-to-end: decoding `[Date]` through the public ADJSON decoder must equal Foundation's decoder.
     @Test func endToEndDecodeMatchesFoundation() throws {
         var strings: [String] = []
-        for i in 0..<500 {
+        for i in 0 ..< 500 {
             let t = Double(1_500_000_000 + i * 86_401)
             let iso: String = Date(timeIntervalSince1970: t).formatted(.iso8601)
             strings.append("\"\(iso)\"")
@@ -121,6 +121,11 @@ struct ISO8601FastTests {
 
         let oursDates = try ours.decode([Date].self, from: data)
         let fDates = try f.decode([Date].self, from: data)
-        #expect(oursDates.map(\.timeIntervalSinceReferenceDate) == fDates.map(\.timeIntervalSinceReferenceDate))
+        // Not a wall-clock assertion: `timeIntervalSinceReferenceDate` is only the value accessor
+        // used to compare two decoded `[Date]` arrays. Nothing here measures elapsed time, so the
+        // comparison is fully deterministic.
+        let oursValues = oursDates.map(\.timeIntervalSinceReferenceDate)  // lint:allow
+        let foundationValues = fDates.map(\.timeIntervalSinceReferenceDate)  // lint:allow
+        #expect(oursValues == foundationValues)
     }
 }
