@@ -7,7 +7,7 @@ import Foundation
 // ordo-one suite reports per-benchmark percentiles; this puts ADJSON and Foundation side by side per
 // operation and answers "how much memory does each representation cost". Markdown to stdout.
 //
-//   ADFOUNDATION_PATH=… ADJSON_DEV=1 swift run -c release ADJSONProbe
+//   ADJSON_DEV=1 swift run -c release ADJSONProbe
 
 // Keep a produced value "used" so the optimizer can't elide the work being measured.
 @inline(never) func blackHole<T>(_ value: T) {}

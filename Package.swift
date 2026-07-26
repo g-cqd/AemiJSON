@@ -74,16 +74,10 @@ let isFuzz = Context.environment["ADJSON_FUZZ"] != nil
 // `ADJSONNIO` product, which re-exports `ADJSONCore`. Same opt-in model as `ADJSON_DEV` / `ADJSON_FUZZ`.
 let isNIO = Context.environment["ADJSON_NIO"] != nil
 
-// ADFoundation supplies the shared low-level primitives (the `ADFCore` byte/number kernel). Resolve
-// it from a local checkout when `ADFOUNDATION_PATH` is set — an absolute or relative path of the
-// caller's choice, so the repos need not be siblings — otherwise from the published package. There
-// is no hardcoded relative default; in-development builds set `ADFOUNDATION_PATH`.
-let adfoundationDependency: Package.Dependency = {
-    if let path = Context.environment["ADFOUNDATION_PATH"], !path.isEmpty {
-        return .package(path: path)
-    }
-    return .package(url: "https://github.com/g-cqd/ADFoundation.git", branch: "main")
-}()
+// ADFoundation supplies the shared low-level primitives (the `ADFCore` byte/number kernel),
+// resolved from the published package.
+let adfoundationDependency: Package.Dependency = .package(
+    url: "https://github.com/g-cqd/ADFoundation.git", branch: "main")
 
 // ADConcurrency (the production `TaskProvider`/`Clock` seams the concurrent parse/decode paths use) and
 // ADTestKit (the test-only kit) are now both vended by the ADFoundation umbrella package, so they
@@ -98,14 +92,10 @@ var packageDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0")
 ]
 if isDev {
-    // Shared lint/format tooling (Format/Lint/LintBuild plugins + canonical `.swift-format`). Dev-only,
-    // resolved from a local checkout via `ADBUILDTOOLS_PATH`, otherwise the published `main` branch.
-    if let path = Context.environment["ADBUILDTOOLS_PATH"], !path.isEmpty {
-        packageDependencies.append(.package(path: path))
-    } else {
-        packageDependencies.append(
-            .package(url: "https://github.com/g-cqd/ADBuildTools.git", branch: "main"))
-    }
+    // Shared lint/format tooling (Format/Lint/LintBuild plugins + canonical `.swift-format`).
+    // Dev-only, resolved from the published `main` branch.
+    packageDependencies.append(
+        .package(url: "https://github.com/g-cqd/ADBuildTools.git", branch: "main"))
     packageDependencies.append(
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.0.0"))
     // ordo-one's statistically-rigorous benchmark framework (p-percentile latencies, malloc /
@@ -193,6 +183,10 @@ let package = Package(
             name: "ADJSONTests",
             dependencies: [
                 "ADJSON",
+                // Unconditional: 13 test files import ADTestKit with no `#if canImport` guard, so
+                // gating this behind ADJSON_DEV made a plain `swift test` a hard compile failure.
+                // ADFoundation is already a non-dev dependency, so this costs consumers nothing.
+                .product(name: "ADTestKit", package: "ADFoundation"),
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax")
             ],
             resources: [.copy("Resources")],
@@ -243,10 +237,6 @@ if isFuzz {
 }
 
 if isDev {
-    // Wire the dev-only ADTestKit into the test target (downstream consumers never see it).
-    if let tests = package.targets.first(where: { $0.name == "ADJSONTests" }) {
-        tests.dependencies.append(.product(name: "ADTestKit", package: "ADFoundation"))
-    }
     // ordo-one package-benchmark suite (ADJSON_DEV-gated): the `swift package benchmark` plugin runs
     // these with statistical rigor and can gate CI on p-percentile thresholds. Lives under
     // `Benchmarks/` per the framework's convention.
