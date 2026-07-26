@@ -1,5 +1,9 @@
 import ADJSONCore
-import Foundation
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 // Accumulates observed shape across samples. `required` = keys present in every
 // object sample; arrays merge their element shapes; integer is widened to number

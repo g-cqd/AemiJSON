@@ -1,5 +1,9 @@
 import ADJSONCore
-public import Foundation
+#if canImport(FoundationEssentials)
+    public import FoundationEssentials
+#else
+    public import Foundation
+#endif
 
 extension ADJSON {
     /// Drop-in replacement for `Foundation.JSONEncoder`. Reference as

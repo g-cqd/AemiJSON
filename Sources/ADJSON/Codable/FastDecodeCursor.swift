@@ -1,5 +1,9 @@
 import ADJSONCore
-import Foundation
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 // The fast-path object reader handed to `@JSONCodable`-generated `__adjsonDecode`.
 // Reads fields by statically-known key directly off the tape — no `KeyedDecodingContainer`,

@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 // Compiles a schema JSON document into a flat `[SchemaNode]` table. Each subschema gets an index;
 // recursive references are indices. The registry maps each subschema's JSON-Pointer-from-root to

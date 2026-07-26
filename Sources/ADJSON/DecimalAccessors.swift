@@ -1,5 +1,9 @@
 import ADJSONCore
-public import Foundation
+#if canImport(FoundationEssentials)
+    public import FoundationEssentials
+#else
+    public import Foundation
+#endif
 
 // `Decimal` accessors layered on the Foundation-free engine. The tape keeps each number's raw source
 // lexeme (see `JSON.numberLexeme`), so a number can be read as an exact base-10 `Decimal` (~38

@@ -1,6 +1,10 @@
 import ADFKernels
 import ADJSONCore
-public import Foundation
+#if canImport(FoundationEssentials)
+    public import FoundationEssentials
+#else
+    public import Foundation
+#endif
 
 // Foundation-parity coding strategies for `Date`, `Data`, and non-conforming floats. These live in
 // the umbrella (Foundation) layer — the Foundation-free `ADJSONCore` engine can't reference `Date`
@@ -27,7 +31,9 @@ extension ADJSON.JSONEncoder {
         case millisecondsSince1970
         /// ISO 8601 internet date-time (`withInternetDateTime`).
         case iso8601
-        case formatted(DateFormatter)
+        #if !canImport(FoundationEssentials)  // DateFormatter is corelibs-only
+            case formatted(DateFormatter)
+        #endif
         case custom((Date, any Encoder) throws -> Void)
     }
 
@@ -61,7 +67,9 @@ extension ADJSON.JSONDecoder {
         case secondsSince1970
         case millisecondsSince1970
         case iso8601
-        case formatted(DateFormatter)
+        #if !canImport(FoundationEssentials)  // DateFormatter is corelibs-only
+            case formatted(DateFormatter)
+        #endif
         case custom((any Decoder) throws -> Date)
     }
 
@@ -120,10 +128,19 @@ enum KeyCoding {
         var words: [Range<String.Index>] = []
         var wordStart = key.startIndex
         var searchRange = key.index(after: wordStart) ..< key.endIndex
-        while let upper = key.rangeOfCharacter(from: .uppercaseLetters, options: [], range: searchRange) {
+        // Standard-library scans rather than CharacterSet, which is corelibs-only.
+        // `.uppercaseLetters` / `.lowercaseLetters` are Unicode general categories
+        // Lu / Ll, which is exactly what isUppercase / isLowercase test.
+        func firstIndex(in range: Range<String.Index>, where predicate: (Character) -> Bool)
+            -> Range<String.Index>?
+        {
+            guard let i = key[range].firstIndex(where: predicate) else { return nil }
+            return i ..< key.index(after: i)
+        }
+        while let upper = firstIndex(in: searchRange, where: { $0.isUppercase }) {
             words.append(wordStart ..< upper.lowerBound)
             searchRange = upper.lowerBound ..< searchRange.upperBound
-            guard let lower = key.rangeOfCharacter(from: .lowercaseLetters, options: [], range: searchRange)
+            guard let lower = firstIndex(in: searchRange, where: { $0.isLowercase })
             else {
                 wordStart = searchRange.lowerBound
                 break
@@ -260,12 +277,14 @@ extension DecodeContext {
                     throw dateCorrupted(DateDataDecoding.iso8601Mismatch)
                 }
                 return date
-            case .formatted(let formatter):
-                guard let s = string(index) else { throw dateMismatch() }
-                guard let date = formatter.date(from: s) else {
-                    throw dateCorrupted(DateDataDecoding.formattedMismatch)
-                }
-                return date
+            #if !canImport(FoundationEssentials)
+                case .formatted(let formatter):
+                    guard let s = string(index) else { throw dateMismatch() }
+                    guard let date = formatter.date(from: s) else {
+                        throw dateCorrupted(DateDataDecoding.formattedMismatch)
+                    }
+                    return date
+            #endif
             case .custom(let body):
                 return try body(TapeDecoder(ctx: self, index: index, codingPath: []))
         }

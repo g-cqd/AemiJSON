@@ -1,5 +1,9 @@
 import ADJSONCore
-public import Foundation
+#if canImport(FoundationEssentials)
+    public import FoundationEssentials
+#else
+    public import Foundation
+#endif
 
 // Foundation interop: the `Data`-based conveniences that mirror Foundation's JSON API, layered on
 // top of the Foundation-free `ADJSONCore` engine. Keeping these here is what lets the core stay

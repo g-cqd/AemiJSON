@@ -1,5 +1,9 @@
 import ADJSONCore
-import Foundation
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 // Direct-streaming Encoder: writes JSON straight into one shared JSONWriter as
 // `encode(to:)` runs — no reference tree, no value tree. Containers are closed
@@ -102,8 +106,10 @@ final class EncodeState {
                 // `Date.ISO8601FormatStyle` (Sendable, allocation-free) replaces the non-Sendable
                 // `ISO8601DateFormatter`; its default output is byte-identical to Foundation's `.iso8601`.
                 w.writeString(date.formatted(.iso8601))
-            case .formatted(let formatter):
-                w.writeString(formatter.string(from: date))
+            #if !canImport(FoundationEssentials)  // DateFormatter is corelibs-only
+                case .formatted(let formatter):
+                    w.writeString(formatter.string(from: date))
+            #endif
             case .custom(let body):
                 try body(date, TapeEncoder(state: self))
         }

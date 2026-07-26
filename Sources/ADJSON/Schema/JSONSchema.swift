@@ -1,5 +1,9 @@
 import ADJSONCore
-public import Foundation
+#if canImport(FoundationEssentials)
+    public import FoundationEssentials
+#else
+    public import Foundation
+#endif
 
 /// A single validation failure, located by JSON Pointer into the instance.
 public struct ValidationError: Sendable, Equatable {

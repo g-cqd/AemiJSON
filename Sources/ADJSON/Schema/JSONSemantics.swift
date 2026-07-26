@@ -1,5 +1,9 @@
 import ADJSONCore
-import Foundation
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 /// JSON Schema instance types.
 public enum SchemaType: String, Sendable, CaseIterable {
@@ -23,8 +27,8 @@ extension JSON {
 }
 
 func jsonPointerEscape(_ s: String) -> String {
-    // Most keys contain neither `~` nor `/`, so skip the Foundation `replacingOccurrences` calls
-    // (which bridge through NSString) and return the key unchanged.
+    // Most keys contain neither `~` nor `/`, so skip the replacement work entirely
+    // and return the key unchanged.
     guard s.utf8.contains(where: { $0 == 0x7E || $0 == 0x2F }) else { return s }
-    return s.replacingOccurrences(of: "~", with: "~0").replacingOccurrences(of: "/", with: "~1")
+    return s.replacing("~", with: "~0").replacing("/", with: "~1")
 }

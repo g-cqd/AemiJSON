@@ -1,6 +1,10 @@
 public import ADConcurrency
 import ADJSONCore
-public import Foundation
+#if canImport(FoundationEssentials)
+    public import FoundationEssentials
+#else
+    public import Foundation
+#endif
 
 extension ADJSON {
     /// Split newline-delimited JSON (NDJSON / JSON Lines) into one `[UInt8]` per record, dropping

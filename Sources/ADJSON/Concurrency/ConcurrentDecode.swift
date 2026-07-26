@@ -1,6 +1,10 @@
 public import ADConcurrency
 import ADJSONCore
-public import Foundation
+#if canImport(FoundationEssentials)
+    public import FoundationEssentials
+#else
+    public import Foundation
+#endif
 
 extension JSONDocument {
     /// Tape indices of each top-level array element (single pass), or nil if the

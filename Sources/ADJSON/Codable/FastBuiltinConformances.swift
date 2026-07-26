@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 // Built-in `ADJSONFast{Decodable,Encodable}` conformances for the standard scalar types,
 // `Array`, `Optional`, and string-keyed `Dictionary`. These make `[User]`, `User?`, and

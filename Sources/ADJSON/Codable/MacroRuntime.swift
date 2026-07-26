@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 // ============================================================================
 // MACRO RUNTIME — SPI (not API). The public-underscored symbols here

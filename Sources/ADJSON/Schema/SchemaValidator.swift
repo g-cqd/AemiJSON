@@ -1,5 +1,9 @@
 import ADJSONCore
-import Foundation
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 // The per-frame recursion state threaded through validation: the set of active `$ref` targets (to
 // break a → b → a cycles) and the current nesting `depth` (bounded by `maxValidationDepth`). Bundled

@@ -1,5 +1,9 @@
 import ADJSONCore
-import Foundation
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 // A value-type `Decoder` over the tape. No eager dictionary, no key-String
 // allocation, no per-node class/ARC churn: keyed lookups match `CodingKey`

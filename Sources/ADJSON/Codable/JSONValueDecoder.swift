@@ -1,5 +1,9 @@
 import ADJSONCore
-import Foundation
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 // A `Decoder` over an already-materialized `JSONValue` tree, backing
 // `ADJSON.JSONDecoder.decode(_:from: JSONValue)`. It lets a caller that already holds a `JSONValue`
@@ -122,12 +126,14 @@ struct JSONValueDecoderImpl: Decoder {
                     throw dataCorrupted(DateDataDecoding.iso8601Mismatch, codingPath)
                 }
                 return date
-            case .formatted(let formatter):
-                let s = try unboxString(value, codingPath)
-                guard let date = formatter.date(from: s) else {
-                    throw dataCorrupted(DateDataDecoding.formattedMismatch, codingPath)
-                }
-                return date
+            #if !canImport(FoundationEssentials)  // DateFormatter is corelibs-only
+                case .formatted(let formatter):
+                    let s = try unboxString(value, codingPath)
+                    guard let date = formatter.date(from: s) else {
+                        throw dataCorrupted(DateDataDecoding.formattedMismatch, codingPath)
+                    }
+                    return date
+            #endif
             case .custom(let body): return try body(child(value, codingPath))
         }
     }
