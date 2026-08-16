@@ -77,7 +77,7 @@ let isNIO = Context.environment["ADJSON_NIO"] != nil
 // ADFoundation supplies the shared low-level primitives (the `ADFCore` byte/number kernel),
 // resolved from the published package.
 let adfoundationDependency: Package.Dependency = .package(
-    url: "https://github.com/g-cqd/ADFoundation.git", from: "0.1.0")
+    url: "https://github.com/Aemi-Studio/aemi.git", branch: "main")
 
 // ADConcurrency (the production `TaskProvider`/`Clock` seams the concurrent parse/decode paths use) and
 // ADTestKit (the test-only kit) are now both vended by the ADFoundation umbrella package, so they
@@ -94,8 +94,6 @@ var packageDependencies: [Package.Dependency] = [
 if isDev {
     // Shared lint/format tooling (Format/Lint/LintBuild plugins + canonical `.swift-format`).
     // Dev-only, resolved from the published `main` branch.
-    packageDependencies.append(
-        .package(url: "https://github.com/g-cqd/ADBuildTools.git", branch: "main"))
     packageDependencies.append(
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.0.0"))
     // ordo-one's statistically-rigorous benchmark framework (p-percentile latencies, malloc /
@@ -115,14 +113,14 @@ if isNIO {
 
 let orderedCollections: Target.Dependency = .product(name: "OrderedCollections", package: "swift-collections")
 // Shared low-level byte/number primitives. Only the engine (`ADJSONCore`) links it.
-let adfCore: Target.Dependency = .product(name: "ADFCore", package: "ADFoundation")
+let adfCore: Target.Dependency = .product(name: "AemiKernel", package: "aemi")
 // Runtime-dispatched SIMD byte kernels (the string-stop scan accelerates the tape parser's hot loop).
-let adfKernels: Target.Dependency = .product(name: "ADFKernels", package: "ADFoundation")
+let adfKernels: Target.Dependency = .product(name: "AemiKernels", package: "aemi")
 
 // Build-time formatting enforcement attaches to the library only in dev/CI. A build-tool plugin on
 // a library target would otherwise run for everyone who depends on ADJSON, so it stays gated.
 let adjsonBuildPlugins: [Target.PluginUsage] =
-    isDev ? [.plugin(name: "LintBuild", package: "ADBuildTools")] : []
+    isDev ? [.plugin(name: "LintBuild", package: "aemi")] : []
 
 let package = Package(
     name: "ADJSON",
@@ -156,7 +154,7 @@ let package = Package(
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
-                .product(name: "ADFMacroSupport", package: "ADFoundation")
+                .product(name: "AemiMacroSupport", package: "aemi")
             ],
             swiftSettings: strictSettings
         ),
@@ -176,7 +174,7 @@ let package = Package(
             name: "ADJSON",
             dependencies: [
                 "ADJSONCore", "ADJSONMacros", orderedCollections, adfCore, adfKernels,
-                .product(name: "ADConcurrency", package: "ADFoundation")
+                .product(name: "AemiRuntime", package: "aemi")
             ],
             swiftSettings: strictSettings, plugins: adjsonBuildPlugins),
         .testTarget(
@@ -186,7 +184,7 @@ let package = Package(
                 // Unconditional: 13 test files import ADTestKit with no `#if canImport` guard, so
                 // gating this behind ADJSON_DEV made a plain `swift test` a hard compile failure.
                 // ADFoundation is already a non-dev dependency, so this costs consumers nothing.
-                .product(name: "ADTestKit", package: "ADFoundation"),
+                .product(name: "AemiTestKit", package: "aemi"),
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax")
             ],
             resources: [.copy("Resources")],
@@ -258,7 +256,7 @@ if isDev {
     package.targets.append(
         .executableTarget(
             name: "ADJSONProbe",
-            dependencies: ["ADJSON", .product(name: "ADFMetrics", package: "ADFoundation")],
+            dependencies: ["ADJSON", .product(name: "AemiMetrics", package: "aemi")],
             path: "Benchmarks/ADJSONProbe",
             swiftSettings: strictSettings
         ))

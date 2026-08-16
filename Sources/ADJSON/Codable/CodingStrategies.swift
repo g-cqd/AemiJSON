@@ -1,5 +1,6 @@
-import ADFKernels
 import ADJSONCore
+import AemiKernels
+
 #if canImport(FoundationEssentials)
     public import FoundationEssentials
 #else
@@ -207,11 +208,11 @@ enum DateDataDecoding {
     /// Parses the canonical UTC ISO 8601 form `YYYY-MM-DDTHH:MM:SSZ` (exactly 20 ASCII bytes) straight
     /// from `b`, returning the `Date`, or nil for any other shape / out-of-range field / the 1582 reform
     /// year (the caller then defers to Foundation). Delegates the byte parse and calendar arithmetic to
-    /// the shared, Foundation-free ``ADFKernels`` kernel (`adf_parse_iso8601_utc`) — the one place the
+    /// the shared, Foundation-free ``AemiKernels`` kernel (`adf_parse_iso8601_utc`) — the one place the
     /// AD* family's ISO 8601 parsing lives — and only wraps the resulting Unix-seconds in a `Date`.
     static func fastISO8601(_ b: UnsafeBufferPointer<UInt8>) -> Date? {
         guard let base = b.baseAddress,
-            let seconds = ADFKernels.parseISO8601UTCSeconds(base, count: b.count)
+            let seconds = AemiKernels.parseISO8601UTCSeconds(base, count: b.count)
         else { return nil }
         return Date(timeIntervalSince1970: Double(seconds))
     }
@@ -261,14 +262,14 @@ extension DecodeContext {
                 return Date(timeIntervalSince1970: d / 1000)
             case .iso8601:
                 // Fast path: parse the canonical `YYYY-MM-DDTHH:MM:SSZ` straight from the tape bytes via
-                // the shared ADFoundation kernel — no `String` allocation. An escaped key/value or a
+                // the shared AemiFoundation kernel — no `String` allocation. An escaped key/value or a
                 // non-canonical spelling falls through to the String + Foundation path below, unchanged.
                 let dateSlot = slot(index)
                 if Slot.tag(dateSlot) == JSONKind.string.rawValue, Slot.flags(dateSlot) & 1 == 0 {
                     let off = Slot.low(dateSlot)
                     let len = Slot.length(dateSlot)
                     assertBytes(off, len)
-                    if let seconds = ADFKernels.parseISO8601UTCSeconds(bytes + off, count: len) {
+                    if let seconds = AemiKernels.parseISO8601UTCSeconds(bytes + off, count: len) {
                         return Date(timeIntervalSince1970: Double(seconds))
                     }
                 }

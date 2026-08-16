@@ -1,4 +1,4 @@
-import ADTestKit
+import AemiTestKit
 import Testing
 
 @testable import ADJSON
@@ -11,7 +11,7 @@ import Testing
 // and checks every encoding round-trips to a value equal to the original — so the paths can't
 // silently drift.
 
-// Deterministic generator (shared `ADTestKit.SeededRNG`) so a failure reproduces from the
+// Deterministic generator (shared `AemiTestKit.SeededRNG`) so a failure reproduces from the
 // seed. Used purely as a `RandomNumberGenerator` via the stdlib `.random(in:using:)`, whose
 // `next()` stream is byte-for-byte the old local `SeededRNG` — so the corpus is unchanged.
 

@@ -1,4 +1,4 @@
-import ADTestKit
+import AemiTestKit
 import Testing
 
 @testable import ADJSONCore
@@ -30,7 +30,7 @@ private func significantDigits(_ s: String) -> String {
 
 struct ShortestDoubleTests {
     @Test func canonicalForms() {
-        // ADTestKit's typed asserts: nineteen `#expect` macro expansions tipped this body past the
+        // AemiTestKit's typed asserts: nineteen `#expect` macro expansions tipped this body past the
         // 100ms type-check budget; the plain generic calls keep every check independent and cheap.
         expectEqual(shortest(0), "0.0")
         expectEqual(shortest(-0.0), "-0.0")

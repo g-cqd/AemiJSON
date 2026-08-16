@@ -1,6 +1,6 @@
-import ADFCore
+import AemiKernel
 
-// RFC 3629 UTF-8 well-formedness, delegating to ``ADFCore/UTF8Validation`` (the single
+// RFC 3629 UTF-8 well-formedness, delegating to ``AemiKernel/UTF8Validation`` (the single
 // implementation). This thin wrapper keeps the scanner/tokenizer hot path's throwing API:
 // a malformed sequence maps to `JSONError.invalidUTF8(at:)`.
 enum JSONUTF8 {

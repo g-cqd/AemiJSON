@@ -1,4 +1,4 @@
-import ADTestKit
+import AemiTestKit
 import Testing
 
 @testable import ADJSON

@@ -1,4 +1,4 @@
-import ADFMacroSupport
+import AemiMacroSupport
 import SwiftDiagnostics
 import SwiftParser
 import SwiftSyntax
@@ -107,7 +107,7 @@ enum SyntaxExtract {
 
     /// A `.warning` anchored on the macro attribute, in the shared "ADJSON" diagnostic domain. Both
     /// macros degrade gracefully (return no extension) rather than erroring, so warnings — not errors —
-    /// are emitted. (Backed by ADFMacroSupport's shared `SimpleDiagnostic` + builder.)
+    /// are emitted. (Backed by AemiMacroSupport's shared `SimpleDiagnostic` + builder.)
     static func note(_ node: AttributeSyntax, _ id: String, _ message: String) -> Diagnostic {
         MacroDiagnostics.make(node, domain: "ADJSON", id: id, message)
     }

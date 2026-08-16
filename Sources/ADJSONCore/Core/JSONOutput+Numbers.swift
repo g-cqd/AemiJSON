@@ -5,7 +5,7 @@
 //
 // The platform libc import below is for `vsnprintf` (the SQLite `%!.15g` number format only); it is
 // not Foundation, so the core stays Foundation-free.
-import ADFCore
+import AemiKernel
 
 #if canImport(Darwin)
     import Darwin
@@ -21,7 +21,7 @@ extension JSONOutput {
     /// ``appendECMANumber(_:to:)`` and ``JSONShortest/appendShortest(_:to:)`` under different placement
     /// rules. `digits` are the significant digits (no leading/trailing zeros); `pointPos` is how many of
     /// them fall before the decimal point (value = digits × 10^(pointPos − count)); `digits.count == 0`
-    /// signals zero. Digits come from ``ADFCore/DecimalFloat/shortestDouble(_:)`` (the Ryū shortest-float
+    /// signals zero. Digits come from ``AemiKernel/DecimalFloat/shortestDouble(_:)`` (the Ryū shortest-float
     /// formatter — byte-identical to Swift's `Double.description`), written straight into a 24-byte stack
     /// span with **no** intermediate `String` allocation. `body` is non-escaping (runs inside the span).
     static func withShortestDigits(

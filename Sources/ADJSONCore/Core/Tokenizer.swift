@@ -1,5 +1,5 @@
-import ADFCore
-import ADFKernels
+import AemiKernel
+import AemiKernels
 
 // Shared, resumability-aware RFC 8259 / lenient token grammar — the single source of truth for the
 // SAX readers (pull `JSONEventReader` and push `JSONEventStreamReader`). The tape `Scanner` keeps a
@@ -284,7 +284,7 @@ extension JSONString {
             // per-byte checks below simply skip (identical to the original scalar behavior).
             let remaining = count - j
             if remaining >= JSONString.kernelStringScanMinBytes {
-                j += unsafe ADFKernels.indexOfStringStop(
+                j += unsafe AemiKernels.indexOfStringStop(
                     base: p + j, count: remaining, quote: 0x22, escape: 0x5C)
                 guard j < count else { return .incomplete }
             }
@@ -352,7 +352,7 @@ extension JSONString {
         return value
     }
 
-    // One hex-digit definition for the whole engine: ADFCore's `Hex.value` table (nil = not a hex digit).
+    // One hex-digit definition for the whole engine: AemiKernel's `Hex.value` table (nil = not a hex digit).
     static func isHexDigit(_ b: UInt8) -> Bool { Hex.value(b) != nil }
 
     /// Scan a JSON5 string starting at the opening quote `open` (a `'` or `"`); the terminator matches

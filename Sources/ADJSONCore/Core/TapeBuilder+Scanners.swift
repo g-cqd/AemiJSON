@@ -1,5 +1,5 @@
-import ADFCore
-import ADFKernels
+import AemiKernel
+import AemiKernels
 
 // Scalar token scanners for `TapeBuilder`: the strict / lenient / JSON5 string and number scanners
 // plus the shared hex, digit, and literal primitives. Split from Scanner.swift to keep the
@@ -23,7 +23,7 @@ extension TapeBuilder {
                 // AVX2 on x86-64) to the first stop byte. Its stop-set is identical to `stringStopMask`
                 // (control `< 0x20`, non-ASCII `>= 0x80`, quote, backslash), so the accepted grammar is
                 // unchanged; only the fast-forward is wider than the 8-byte SWAR below.
-                j += unsafe ADFKernels.indexOfStringStop(
+                j += unsafe AemiKernels.indexOfStringStop(
                     base: p + j, count: remaining, quote: 0x22, escape: 0x5C)
             } else {
                 // Short remainder: the inline 8-byte SWAR fast-forward (no call overhead), exactly as

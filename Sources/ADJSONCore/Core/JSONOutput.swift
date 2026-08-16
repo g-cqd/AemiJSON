@@ -7,11 +7,11 @@
 // Number formatting (ECMA-262 / Swift-shortest / SQLite `%!.15g`) lives in the sibling
 // `JSONOutput+Numbers.swift` extension to keep this type body inside the size gate.
 //
-// `public import`: `encodeStopMask` below is `@inlinable` and references `ADFCore.SWAR`, so ADFCore
+// `public import`: `encodeStopMask` below is `@inlinable` and references `AemiKernel.SWAR`, so AemiKernel
 // must be part of this module's public/inlinable surface — an internal import would make the
 // referenced symbol invisible to inlinable bodies. Mirrors `KeyCompare.swift` (for `ByteCompare`).
-public import ADFCore
-public import ADFKernels
+public import AemiKernel
+public import AemiKernels
 
 public enum JSONOutput {
     @inlinable
@@ -116,7 +116,7 @@ public enum JSONOutput {
                         // (< 0x20), `"`, `\`, or (when escaping slashes) `/`. Same stop-set as
                         // `encodeStopMask`; non-ASCII is copied verbatim (not a stop).
                         let slashNeedle: UInt8 = escapeSlashes ? 0x2F : 0x22
-                        i += unsafe ADFKernels.indexOfControlOrAny(
+                        i += unsafe AemiKernels.indexOfControlOrAny(
                             base: p + i, count: remaining, 0x22, 0x5C, slashNeedle, 0x22, 0x22)
                     } else {
                         while i + 8 <= n {

@@ -1,8 +1,8 @@
-import ADFMetrics
 import ADJSON
+import AemiMetrics
 import Foundation
 
-// ADJSON vs Foundation, measured in-process with `ADFMetrics.ProcessProbe`: mean thread CPU and
+// ADJSON vs Foundation, measured in-process with `AemiMetrics.ProcessProbe`: mean thread CPU and
 // retired instructions per operation, plus the resident memory each parsed representation holds. The
 // ordo-one suite reports per-benchmark percentiles; this puts ADJSON and Foundation side by side per
 // operation and answers "how much memory does each representation cost". Markdown to stdout.
@@ -78,7 +78,7 @@ let files: [(name: String, query: String)] = [
     ("canada.json", "$.features[*].geometry.type")
 ]
 
-print("# ADJSON vs Foundation — measured with ADFMetrics.ProcessProbe (Apple Silicon, release)\n")
+print("# ADJSON vs Foundation — measured with AemiMetrics.ProcessProbe (Apple Silicon, release)\n")
 
 for file in files {
     guard let data = try? Data(contentsOf: corpusURL(file.name)) else {

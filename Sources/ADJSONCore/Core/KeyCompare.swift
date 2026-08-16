@@ -1,11 +1,11 @@
-// `public import`: the `@inlinable` members below reference `ADFCore.ByteCompare`, so ADFCore must
+// `public import`: the `@inlinable` members below reference `AemiKernel.ByteCompare`, so AemiKernel must
 // be part of this module's public/inlinable surface (an internal import would make the referenced
 // symbol invisible to inlinable bodies).
-public import ADFCore
+public import AemiKernel
 
 // Byte equality + escape-aware key matching for JSON object keys — the single source of truth for
 // the three key-compare sites (lazy navigation, generic decode, and the `@JSONCodable` fast path).
-// The word-at-a-time byte compare lives in ``ADFCore/ByteCompare``; this layer adds the JSON
+// The word-at-a-time byte compare lives in ``AemiKernel/ByteCompare``; this layer adds the JSON
 // escape-aware variants. Pure stdlib, so it stays `@inlinable` under `InternalImportsByDefault`.
 public enum JSONKey {
     @inlinable

@@ -1,9 +1,9 @@
-import ADFCore
+import AemiKernel
 
 // Number materialization over a byte range.
 public enum JSONNumber {
-    // The power-of-ten tables and the Clinger value assembly now live once in `ADFCore.DecimalFloat`
-    // (shared with `ADFCore.NumberParse`); the scanners below feed it a significand + exponent. The
+    // The power-of-ten tables and the Clinger value assembly now live once in `AemiKernel.DecimalFloat`
+    // (shared with `AemiKernel.NumberParse`); the scanners below feed it a significand + exponent. The
     // local `pow10` / `pow10Float` tables and the inline fast-path multiply were a duplicate of it.
 
     // Parse a (scanner-validated) JSON number. The Clinger fast path handles the common case without
@@ -107,7 +107,7 @@ public enum JSONNumber {
             exponent += expNegative ? -e : e
         }
         // The re-scan must have consumed the whole (validated) number; the exact-domain gate and the
-        // value assembly live in the shared `ADFCore.DecimalFloat` Clinger fast path at `Float` width
+        // value assembly live in the shared `AemiKernel.DecimalFloat` Clinger fast path at `Float` width
         // (inlined here — no `Double` round-trip, so the result is correctly rounded to nearest `Float`).
         guard i == end, digits > 0 else { return nil }
         return DecimalFloat.float(significand: significand, exponent: exponent, negative: negative)
@@ -232,7 +232,7 @@ public enum JSONNumber {
             exponent += expNegative ? -e : e
         }
         // The re-scan must have consumed the whole (validated) number. The exact-domain Clinger gate and
-        // the value assembly live in `ADFCore.DecimalFloat`; when Clinger rejects (significand > 2^53 or
+        // the value assembly live in `AemiKernel.DecimalFloat`; when Clinger rejects (significand > 2^53 or
         // |exponent| > 22) the Eisel-Lemire fast path resolves the correctly-rounded Double without a
         // `String` + `Double(_:)` round-trip, returning nil only for the rare case it cannot prove
         // correct — then the caller's stdlib fallback rounds it.

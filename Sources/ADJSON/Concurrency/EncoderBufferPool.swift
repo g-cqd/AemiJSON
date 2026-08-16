@@ -1,6 +1,6 @@
-import ADFCore
+import AemiKernel
 
-/// Reusable scratch buffers for the encoder, backed by a shared ``ADFCore/ByteBufferPool``.
+/// Reusable scratch buffers for the encoder, backed by a shared ``AemiKernel/ByteBufferPool``.
 /// Cuts allocation churn when many values are encoded (e.g. a server hot path).
 enum EncoderBufferPool {
     // Cap on a recycled buffer's retained capacity (1 MiB) and on the pool size (32): without them a

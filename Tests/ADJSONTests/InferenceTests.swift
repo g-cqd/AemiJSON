@@ -1,4 +1,4 @@
-import ADTestKit
+import AemiTestKit
 import Foundation
 import Testing
 
@@ -48,7 +48,7 @@ import Testing
         Person(name: "A", age: 30, nickname: nil, addr: Addr(city: "X", zip: 1), scores: [1.5, 2.0]))
     let s = try ADJSON.parse(text).root
 
-    // ADTestKit's typed asserts: each subscript chain type-checks once as a plain argument,
+    // AemiTestKit's typed asserts: each subscript chain type-checks once as a plain argument,
     // keeping this body (which also carries two local Codable structs) under the 100ms budget.
     expectEqual(s["type"].string, "object")
     expectEqual(s["properties"]["name"]["type"].string, "string")

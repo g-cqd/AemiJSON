@@ -1,4 +1,4 @@
-import ADTestKit
+import AemiTestKit
 import Foundation
 import Testing
 
@@ -9,7 +9,7 @@ private func doc(_ s: String) -> JSON { try! ADJSON.parse(s).root }
 
 @Test func jsonPointerResolves() {
     let j = doc(#"{"a":{"b":[10,20,{"c~d":"x","e/f":"y"}]}}"#)
-    // ADTestKit's typed asserts: six `#expect` expansions over the `@dynamicMemberLookup` JSON
+    // AemiTestKit's typed asserts: six `#expect` expansions over the `@dynamicMemberLookup` JSON
     // chains tipped this body toward the type-check budget (same remedy as the slice tests below).
     expectEqual(j[pointer: "/a/b/0"].int, 10)
     expectEqual(j[pointer: "/a/b/2/c~0d"].string, "x")
@@ -45,7 +45,7 @@ private let store = doc(
 @Test func jsonPathSliceSemantics() throws {
     let a = doc("[0,1,2,3,4,5,6,7,8,9]")
     func slice(_ q: String) throws -> [Int] { try a.query(q).compactMap(\.int) }
-    // ADTestKit's typed asserts: fifteen `#expect` macro expansions (each a throwing call compared
+    // AemiTestKit's typed asserts: fifteen `#expect` macro expansions (each a throwing call compared
     // against an array literal) tipped this body past the 100ms type-check budget.
     // Positive step.
     expectEqual(try slice("$[1:4]"), [1, 2, 3])

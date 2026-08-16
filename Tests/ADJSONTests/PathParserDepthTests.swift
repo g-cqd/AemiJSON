@@ -1,4 +1,4 @@
-import ADTestKit
+import AemiTestKit
 import Testing
 
 @testable import ADJSON
@@ -38,7 +38,7 @@ struct PathParserDepthTests {
     // per-level frame cost that the 8 MB test thread would absorb is forced to overflow here instead.
     private static let workerStackSize = 512 * 1024
 
-    /// Parse `path` on a fresh 512 KiB constrained stack (via the shared `ADTestKit
+    /// Parse `path` on a fresh 512 KiB constrained stack (via the shared `AemiTestKit
     /// .runOnConstrainedStack`) and block until it joins. The outcome (parsed vs threw a clean
     /// `JSONPathError`) is irrelevant to safety — only that the worker returns at all (no overflow).
     /// When `evaluate` is set and the parse succeeds, the compiled path is also run against a tiny

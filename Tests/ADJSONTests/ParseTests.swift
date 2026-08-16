@@ -1,4 +1,4 @@
-import ADTestKit
+import AemiTestKit
 import Foundation
 import OrderedCollections
 import Testing
@@ -55,7 +55,7 @@ private func insertPoint(_ digits: String, fromEnd places: Int) -> String {
     let doc = try ADJSON.parse(json)
     let root = doc.root
 
-    // ADTestKit's typed asserts: each `JSON` chain type-checks once as a plain argument, keeping
+    // AemiTestKit's typed asserts: each `JSON` chain type-checks once as a plain argument, keeping
     // this body far under the 100ms budget (ten `#expect` macro expansions tipped it past).
     expectEqual(root["a"].int, 1)
     expectTrue(root.b[index: 0].bool ?? false)

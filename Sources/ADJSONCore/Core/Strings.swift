@@ -1,5 +1,5 @@
-import ADFCore
-import ADFKernels
+import AemiKernel
+import AemiKernels
 
 public enum JSONString {
     // Decode a JSON string body (between quotes) that contains escape sequences.
@@ -16,7 +16,7 @@ public enum JSONString {
             // Bulk-copy the run of plain (non-backslash) bytes up to the next escape via the SIMD byte
             // search (memchr-backed) instead of appending one byte at a time — a win on the long plain
             // runs between sparse escapes; escape-dense strings just see cheap short searches.
-            let run = unsafe ADFKernels.firstIndexOfByte(base: p + j, count: end - j, needle: 0x5C)
+            let run = unsafe AemiKernels.firstIndexOfByte(base: p + j, count: end - j, needle: 0x5C)
             if run > 0 {
                 unsafe out.append(contentsOf: UnsafeBufferPointer(start: p + j, count: run))
                 j += run

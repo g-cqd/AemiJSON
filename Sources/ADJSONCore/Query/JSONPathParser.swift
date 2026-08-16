@@ -1,5 +1,5 @@
 /// An error from parsing an RFC 9535 JSONPath expression, located by UTF-8 byte `position`.
-import ADFCore
+import AemiKernel
 
 public struct JSONPathError: Error, Sendable, Equatable {
     public let message: String

@@ -1,4 +1,4 @@
-import ADTestKit
+import AemiTestKit
 import Foundation
 import Testing
 
@@ -57,7 +57,7 @@ struct DepthSafetyTests {
         }
         // The materialize/round-trip recurses up to `maxFastDepth` (128) before the iterative fallback
         // takes over — enough native frames to overflow the ~512 KB swift-testing cooperative-pool
-        // stack under ASan. Run that work on ADTestKit's pinned stack (4 MiB under a sanitizer) and pass
+        // stack under ASan. Run that work on AemiTestKit's pinned stack (4 MiB under a sanitizer) and pass
         // only the Sendable `JSONValue` results back for the assertions on the test thread.
         for depth in [129, 200, 400] {  // all strictly past maxFastDepth so the iterative path runs
             let text = deepObject(depth)

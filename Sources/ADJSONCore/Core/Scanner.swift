@@ -1,4 +1,4 @@
-import ADFCore
+import AemiKernel
 
 // Single-pass, iterative (explicit-stack, non-recursive) scanner that builds the tape
 // WITHOUT materializing any value. In strict mode it enforces the RFC 8259 grammar (number
