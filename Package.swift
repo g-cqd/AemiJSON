@@ -77,7 +77,7 @@ let isNIO = Context.environment["ADJSON_NIO"] != nil
 // ADFoundation supplies the shared low-level primitives (the `ADFCore` byte/number kernel),
 // resolved from the published package.
 let adfoundationDependency: Package.Dependency = .package(
-    url: "https://github.com/g-cqd/ADFoundation.git", branch: "main")
+    url: "https://github.com/g-cqd/ADFoundation.git", from: "0.1.0")
 
 // ADConcurrency (the production `TaskProvider`/`Clock` seams the concurrent parse/decode paths use) and
 // ADTestKit (the test-only kit) are now both vended by the ADFoundation umbrella package, so they
