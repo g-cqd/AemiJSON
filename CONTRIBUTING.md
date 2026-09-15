@@ -179,3 +179,11 @@ the gate passes:
 - **`docs`**: builds the DocC site and deploys it to GitHub Pages on `main` —
   <https://g-cqd.github.io/ADJSON/>. Requires Pages source = "GitHub Actions" in the repo
   settings (a one-time manual step).
+
+### Apple-platform builds
+
+CI uses the pinned Swift toolchain's `swift build --sdk ... --triple ...` to build
+for iOS 18, tvOS 18, watchOS 11 (both device architectures), and visionOS 2.
+This keeps manifest resolution on
+Swift 6.4 while using the SDKs from the selected Xcode. A failed platform build
+fails the CI workflow. Xcode's embedded older SwiftPM does not resolve the package.
