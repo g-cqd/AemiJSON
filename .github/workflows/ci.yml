@@ -147,41 +147,36 @@ jobs:
     # (the macOS leg in the reusable `quality` job already covers compilation for PRs).
     if: github.event_name != 'pull_request'
     runs-on: macos-26
-    # ADVISORY until an Xcode with SwiftPM >= 6.4 ships on runner images: xcodebuild resolves
-    # packages with ITS OWN embedded SwiftPM (Xcode 26.6 = Swift 6.3.x), which cannot parse this
-    # package's swift-tools-version 6.4 manifest — the installed 6.4 snapshot (TOOLCHAINS) swaps
-    # compilers but not xcodebuild's package resolution, so every leg dies at "Could not resolve
-    # package dependencies". Structural: the matrix has never been able to pass on this image
-    # generation. Re-promote when Xcode 27 lands on runner images.
-    continue-on-error: true
+    # Use the installed SwiftPM for manifest resolution; Xcode embeds an older SwiftPM.
     strategy:
       fail-fast: false
       matrix:
-        platform: [iOS, tvOS, watchOS, visionOS]
+        include:
+          - { platform: iOS, sdk: iphoneos, triple: arm64-apple-ios18.0 }
+          - { platform: tvOS, sdk: appletvos, triple: arm64-apple-tvos18.0 }
+          - { platform: "watchOS (arm64_32)", sdk: watchos, triple: arm64_32-apple-watchos11.0 }
+          - { platform: "watchOS (arm64)", sdk: watchos, triple: arm64-apple-watchos11.0 }
+          - { platform: visionOS, sdk: xros, triple: arm64-apple-xros2.0 }
     steps:
       - uses: actions/checkout@v6
       - name: Select latest Xcode
         run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
       - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
         uses: g-cqd/ADBuildTools/.github/actions/setup-swift@v1
-      - name: Cache SwiftPM + DerivedData
+      - name: Cache SwiftPM platform build
         uses: actions/cache@v5
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
-            .derivedData
-          key: spm-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
+            .build
+          key: platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
           restore-keys: |
-            spm-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('Package.swift') }}-
-            spm-${{ runner.os }}-${{ matrix.platform }}-
+            platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-${{ hashFiles('Package.swift') }}-
+            platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-
       - name: Build for ${{ matrix.platform }}
-        run: >-
-          xcodebuild build
-          -scheme ADJSON
-          -destination "generic/platform=${{ matrix.platform }}"
-          -derivedDataPath .derivedData
-          -skipMacroValidation
-          -skipPackagePluginValidation
+        run: |
+          sdk_path="$(xcrun --sdk '${{ matrix.sdk }}' --show-sdk-path)"
+          swift build --sdk "$sdk_path" --triple '${{ matrix.triple }}' --target ADJSON
 
   sanitizers:
     name: Sanitize (${{ matrix.name }})
