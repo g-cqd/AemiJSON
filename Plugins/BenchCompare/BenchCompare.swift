@@ -2,12 +2,12 @@ import Foundation
 import PackagePlugin
 
 /// `swift package bench-compare [--filter REGEX] [--input FILE] [--config release] [--bin-path PATH]`
-/// — render the ADJSON-vs-Foundation comparison table (Markdown) from the standalone "Debug results"
-/// output of the `ADJSONSuite` benchmark binary (ordo-one/benchmark). Replaces the shell + awk pair
+/// — render the AemiJSON-vs-Foundation comparison table (Markdown) from the standalone "Debug results"
+/// output of the `AemiJSONSuite` benchmark binary (ordo-one/benchmark). Replaces the shell + awk pair
 /// `Scripts/bench-compare.{sh,awk}` with one Swift plugin.
 ///
 /// It reuses an already-built suite binary (the benchmark CI step builds it; locally run
-/// `ADJSON_DEV=1 swift build -c release --product ADJSONSuite` first) rather than building — so it
+/// `AEMIJSON_DEV=1 swift build -c release --product AemiJSONSuite` first) rather than building — so it
 /// never nests a `swift build` inside the plugin invocation. `--input FILE` re-renders a previously
 /// captured run without executing anything. Only the Markdown table goes to stdout, so it pipes
 /// cleanly into a CI job summary.
@@ -36,11 +36,11 @@ struct BenchComparePlugin: CommandPlugin {
             let binDir =
                 binPathOverride.map { URL(fileURLWithPath: $0) }
                 ?? context.package.directoryURL.appending(path: ".build/\(config)")
-            let binary = binDir.appending(path: "ADJSONSuite")
+            let binary = binDir.appending(path: "AemiJSONSuite")
             guard FileManager.default.isExecutableFile(atPath: binary.path) else {
                 Diagnostics.error(
-                    "no ADJSONSuite binary at \(binary.path); build it first: "
-                        + "ADJSON_DEV=1 swift build -c \(config) --product ADJSONSuite")
+                    "no AemiJSONSuite binary at \(binary.path); build it first: "
+                        + "AEMIJSON_DEV=1 swift build -c \(config) --product AemiJSONSuite")
                 throw BenchCompareError.noBinary
             }
             var runArguments = ["--quiet", "true"]
@@ -73,8 +73,8 @@ enum BenchCompareError: Error {
 /// Parses the suite's "Debug results" sections and renders the comparison table. The suite names
 /// benchmarks `<workload>/<variant>` and registers the Foundation baseline first in each workload; the
 /// `corpus` workload prefixes the variant with the file name (`corpus/twitter Foundation`), so each
-/// file is its own group. Every ADJSON variant is paired with the Foundation baseline in its group;
-/// the speedup is `Foundation ÷ ADJSON` (>1 means ADJSON is faster). p50 wall-clock is printed in
+/// file is its own group. Every AemiJSON variant is paired with the Foundation baseline in its group;
+/// the speedup is `Foundation ÷ AemiJSON` (>1 means AemiJSON is faster). p50 wall-clock is printed in
 /// nanoseconds by the runner in standalone debug mode, so it is divided by 1e6 for milliseconds.
 enum BenchComparison {
     static func render(rawOutput: String) -> String {
@@ -146,7 +146,7 @@ enum BenchComparison {
         }
 
         var lines = [
-            "| Workload | Foundation | ADJSON | p50 (F) | p50 (A) | Speedup | Mallocs (F→A) |",
+            "| Workload | Foundation | AemiJSON | p50 (F) | p50 (A) | Speedup | Mallocs (F→A) |",
             "|---|---|---|--:|--:|--:|--:|"
         ]
         var rows = 0
@@ -164,10 +164,10 @@ enum BenchComparison {
 
         lines.append("")
         lines.append(
-            "_\(rows) comparisons · p50 wall-clock · Speedup = Foundation ÷ ADJSON "
-                + "(higher = ADJSON faster; ⚠︎ = ADJSON slower)._")
+            "_\(rows) comparisons · p50 wall-clock · Speedup = Foundation ÷ AemiJSON "
+                + "(higher = AemiJSON faster; ⚠︎ = AemiJSON slower)._")
         lines.append(
-            "_Lazy/partial ADJSON variants (`tape`, `read 2 fields`, `lazy sum`, `walk`) do less work than a "
+            "_Lazy/partial AemiJSON variants (`tape`, `read 2 fields`, `lazy sum`, `walk`) do less work than a "
                 + "full typed decode — read them as upper bounds, not like-for-like._")
         lines.append("_Mallocs = total allocations per op; requires jemalloc, shown as “—” when unavailable._")
         return lines.joined(separator: "\n")
@@ -187,7 +187,7 @@ enum BenchComparison {
         ratio >= 1.0 ? String(format: "**%.2f×**", ratio) : String(format: "%.2f× ⚠︎", ratio)
     }
 
-    private static func mallocs(_ foundation: Double, _ adjson: Double) -> String {
-        (foundation == 0 && adjson == 0) ? "—" : String(format: "%d → %d", Int(foundation), Int(adjson))
+    private static func mallocs(_ foundation: Double, _ aemijson: Double) -> String {
+        (foundation == 0 && aemijson == 0) ? "—" : String(format: "%d → %d", Int(foundation), Int(aemijson))
     }
 }

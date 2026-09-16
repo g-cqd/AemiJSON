@@ -1,0 +1,82 @@
+# Querying and Mutation
+
+Address, search, and transform JSON with the standard pointer, path, and patch formats.
+
+## JSON Pointer (RFC 6901)
+
+A ``/AemiJSONCore/JSONPointer`` addresses one location. Resolve it against a lazy ``/AemiJSONCore/JSON``…
+
+```swift
+let title = doc.root[pointer: "/store/book/0/title"].string
+```
+
+…or against a ``/AemiJSONCore/JSONValue``:
+
+```swift
+let value = JSONValue(doc.root)
+let found = value.value(at: try JSONPointer("/store/book/0/title"))
+```
+
+Pointer parsing throws a typed ``/AemiJSONCore/JSONPointerError``. Array-index tokens follow RFC 6901 §4
+exactly (`0` or `[1-9][0-9]*`; no leading `+`, sign, or zero-padding).
+
+## JSONPath (RFC 9535)
+
+A ``/AemiJSONCore/JSONPath`` is compiled once to an AST and returns a nodelist in document order.
+
+```swift
+let titles = try doc.root.query("$.store.book[?(@.price < 10)].title")
+```
+
+Supported: root `$`, child and descendant (`..`) segments; name, wildcard `*`, index
+(including negative), slice `start:end:step`, and filter `?(…)` selectors; filter logic
+`&&`/`||`/`!` with parentheses; comparisons against literals and singular relative/absolute
+queries; existence tests; the `length()`, `count()`, `value()`, `match()`, and `search()`
+functions; and the RFC 9535 well-typedness rules (singular-query operands, function argument
+types). The parser bounds nesting depth to reject pathological expressions. Against the JSONPath
+Compliance Test Suite it **rejects every invalid selector** (247/247) and returns the expected
+result for **99%** of valid queries; the remainder are I-Regexp (RFC 9485) edge cases, because
+`match()`/`search()` run on Swift's standard regex engine, whose `.` diverges from I-Regexp on
+the U+2028/U+2029 line separators. Parse errors are typed ``/AemiJSONCore/JSONPathError``.
+
+## JSON Patch (RFC 6902)
+
+A ``/AemiJSONCore/JSONPatch`` is an ordered sequence of `add` / `remove` / `replace` / `move` / `copy` /
+`test` operations applied to a ``/AemiJSONCore/JSONValue``.
+
+```swift
+let patch  = try JSONPatch(patchData)              // from a JSON array of ops
+let result = try patch.apply(to: JSONValue(parsing: targetData))
+// or, bytes in / bytes out:
+let out = try JSONPatch(patchData).apply(toData: targetData)
+```
+
+`move` into one's own child is rejected per §4.4, and `test` failures throw — all via the
+typed ``/AemiJSONCore/JSONPatchError``.
+
+## JSON Merge Patch (RFC 7396)
+
+``/AemiJSONCore/JSONMergePatch`` recursively merges an object patch into a target; a `null` member removes a
+key; a non-object patch replaces outright.
+
+```swift
+let merged = JSONMergePatch.apply(patch, to: target)        // JSONValue
+let out    = try JSONMergePatch.apply(patchData, toData: targetData)
+```
+
+## Relative JSON Pointer
+
+``/AemiJSONCore/RelativeJSONPointer`` ascends a number of levels (with an optional `+N`/`-N` index
+adjustment) and then either yields the key/index name (`#`) or follows a JSON Pointer,
+resolved from a base location.
+
+```swift
+let rel = try RelativeJSONPointer("1/sibling")
+let value = try rel.resolve(from: base, in: document)
+```
+
+## Layering
+
+JSON Pointer access, the ``/AemiJSONCore/JSONValue`` mutation primitives, and ``/AemiJSONCore/JSONPatchError`` live
+together in the query/addressing layer, separate from the value model — so the data type stays
+pure data plus (de)serialization. See <doc:Architecture>.

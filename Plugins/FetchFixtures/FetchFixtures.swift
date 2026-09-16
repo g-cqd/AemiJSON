@@ -46,10 +46,10 @@ struct FetchFixturesPlugin: CommandPlugin {
         }
         try await download(
             "https://raw.githubusercontent.com/jsonpath-standard/jsonpath-compliance-test-suite/main/cts.json",
-            to: "Tests/ADJSONTests/Resources/JSONPathCTS/cts.json")
+            to: "Tests/AemiJSONTests/Resources/JSONPathCTS/cts.json")
 
         // nst/JSONTestSuite: download the tarball, then expand it with `tar` and copy the parsing cases.
-        let suite = root.appending(path: "Tests/ADJSONTests/Resources/JSONTestSuite")
+        let suite = root.appending(path: "Tests/AemiJSONTests/Resources/JSONTestSuite")
         try fm.createDirectory(at: suite, withIntermediateDirectories: true)
         let tmp = root.appending(path: ".build/_fixtures-tmp")
         try? fm.removeItem(at: tmp)
@@ -77,6 +77,6 @@ struct FetchFixturesPlugin: CommandPlugin {
             }
         }
 
-        print("Fixtures fetched into Benchmarks/Corpus and Tests/ADJSONTests/Resources.")
+        print("Fixtures fetched into Benchmarks/Corpus and Tests/AemiJSONTests/Resources.")
     }
 }

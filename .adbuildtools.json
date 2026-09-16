@@ -1,6 +1,6 @@
 {
-    "devEnv": "ADJSON_DEV",
-    "shippedTargets": ["Sources/ADJSON", "Sources/ADJSONCore"],
+    "devEnv": "AEMIJSON_DEV",
+    "shippedTargets": ["Sources/AemiJSON", "Sources/AemiJSONCore"],
     "strtodBan": true,
     "forceUnwrapBan": true,
     "prngBan": true,

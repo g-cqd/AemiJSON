@@ -1,0 +1,117 @@
+import AemiJSONCore
+public import AemiRuntime
+
+#if canImport(FoundationEssentials)
+    public import FoundationEssentials
+#else
+    public import Foundation
+#endif
+
+extension JSONDocument {
+    /// Tape indices of each top-level array element (single pass), or nil if the
+    /// root isn't an array.
+    func topLevelArrayElementStarts() -> [Int]? {
+        guard !tape.isEmpty, Slot.tag(tape[0]) == JSONKind.array.rawValue else { return nil }
+        let count = Slot.count(tape[0])
+        var out: [Int] = []
+        out.reserveCapacity(count)
+        var i = 1
+        for _ in 0 ..< count {
+            out.append(i)
+            let s = tape[i]
+            let t = Slot.tag(s)
+            i = (t == JSONKind.object.rawValue || t == JSONKind.array.rawValue) ? Slot.low(s) : i + 1
+        }
+        return out
+    }
+
+    /// Decode a contiguous range of array elements. Each call binds its own base
+    /// pointer over the shared immutable storage, so it is safe to run from many
+    /// tasks at once.
+    func decodeElementRange<T: Decodable>(
+        _ type: T.Type, _ lo: Int, _ hi: Int, _ starts: [Int], maxDecodingDepth: Int
+    ) throws -> [T] {
+        try withBuffers { byteBase, byteCount, tapeBase, tapeCount in
+            let ctx = DecodeContext(
+                doc: self, bytes: byteBase, byteCount: byteCount,
+                tape: tapeBase, tapeCount: tapeCount, userInfo: [:], strategies: DecodeStrategies(),
+                maxDecodeDepth: maxDecodingDepth)
+            var out: [T] = []
+            out.reserveCapacity(hi - lo)
+            for k in lo ..< hi { out.append(try ctx.decodeValue(T.self, at: starts[k])) }
+            return out
+        }
+    }
+}
+
+extension AemiJSON {
+    /// Default per-element native-recursion cap for the concurrent path. The element decoders run on
+    /// the Swift cooperative pool, whose threads carry far smaller stacks (~512 KB) than the main
+    /// thread (~8 MB) — so the keyed-object decode that the main-thread default (2048) targets would
+    /// overflow ~16× shallower here. 128 (≈ 2048 / 16) throws a catchable `DecodingError` on an
+    /// over-nested element instead of crashing the pool thread; raise it via the `maxDecodingDepth`
+    /// parameter when elements are legitimately deeper and the data is trusted.
+    public static let concurrentDecodeDefaultDepth = 128
+
+    /// Decode a top-level JSON array, scanning once on the calling task then
+    /// decoding element batches in parallel across cores. Off the main actor.
+    /// Static (no decoder instance) so nothing non-Sendable crosses isolation.
+    ///
+    /// - Important: This path uses the **default** decoding configuration — `.useDefaultKeys`,
+    ///   `.deferredToDate`, `.base64`, and an empty `userInfo`. It deliberately takes no
+    ///   ``AemiJSON/JSONDecoder`` instance so nothing non-`Sendable` (e.g. a `.custom` strategy
+    ///   closure or arbitrary `userInfo`) crosses the task boundary. If you need snake_case keys, a
+    ///   date strategy, or `userInfo`, decode serially with a configured ``AemiJSON/JSONDecoder``, or
+    ///   pre-transform the element types so the default mapping suffices.
+    public static func decodeArrayConcurrently<T: Decodable & Sendable>(
+        _ type: T.Type, from data: Data, minimumBatch: Int = 512,
+        maxDecodingDepth: Int = concurrentDecodeDefaultDepth,
+        taskProvider: any TaskProvider = LiveTaskProvider()
+    ) async throws -> [T] {
+        try await decodeArrayConcurrently(
+            type, from: try AemiJSON.parse(data), minimumBatch: minimumBatch,
+            maxDecodingDepth: maxDecodingDepth, taskProvider: taskProvider)
+    }
+
+    public static func decodeArrayConcurrently<T: Decodable & Sendable>(
+        _ type: T.Type, from document: JSONDocument, minimumBatch: Int = 512,
+        maxDecodingDepth: Int = concurrentDecodeDefaultDepth,
+        taskProvider: any TaskProvider = LiveTaskProvider()
+    ) async throws -> [T] {
+        guard let starts = document.topLevelArrayElementStarts() else {
+            return try JSONDecoder().decode([T].self, from: document)
+        }
+        let n = starts.count
+        if n <= minimumBatch {
+            return try document.decodeElementRange(T.self, 0, n, starts, maxDecodingDepth: maxDecodingDepth)
+        }
+        let cores = max(1, ProcessInfo.processInfo.activeProcessorCount)
+        let chunkCount = min(cores, max(1, n / minimumBatch))
+        let chunkSize = (n + chunkCount - 1) / chunkCount
+
+        // One `.work` task per element batch via the injected provider (live = `Task.init`); handles are
+        // kept in chunk order and gathered in order, preserving the input order the former `(index, part)`
+        // collection produced. A test injects `TaskProviderSpy` + `waitForAllTasks()` to settle deterministically.
+        var handles: [Task<[T], any Error>] = []
+        handles.reserveCapacity(chunkCount)
+        var lo = 0
+        while lo < n {
+            let hi = min(lo + chunkSize, n)
+            let lo0 = lo
+            handles.append(
+                taskProvider.task(role: .work) {
+                    try document.decodeElementRange(T.self, lo0, hi, starts, maxDecodingDepth: maxDecodingDepth)
+                })
+            lo = hi
+        }
+        var out: [T] = []
+        out.reserveCapacity(n)
+        do {
+            for handle in handles { out.append(contentsOf: try await handle.value) }
+        } catch {
+            for handle in handles { handle.cancel() }
+            throw error
+        }
+        return out
+    }
+}
