@@ -9,7 +9,7 @@ AemiJSON ships as two layers. **`AemiJSONCore`** is the engine — the tape pars
 ``/AemiJSONCore/JSONPatch``, ``/AemiJSONCore/JSONMergePatch``) — and is **Foundation-free and swift-syntax-free**. It
 depends on two Foundation-free packages with zero transitive package dependencies (measured):
 **swift-collections' `OrderedCollections`**, which backs the order-preserving eager
-``/AemiJSONCore/JSONValue`` object, and **ADFoundation's `ADFCore`**, the shared byte / number / UTF-8
+``/AemiJSONCore/JSONValue`` object, and **Aemi's `AemiKernel`**, the shared byte / number / UTF-8
 primitives the engine builds on — so the core stays lean and portable. **`AemiJSON`** is the umbrella that re-exports the
 core (`@_exported import`) and layers the `Data` conveniences, the Codable coders, JSON Schema, and
 the `@JSONCodable` / `@Schemable` macros on top.
@@ -138,7 +138,7 @@ exploits this — it scans once, then hands disjoint element ranges to a task gr
 binds **its own** base pointer over the shared read-only storage, so there is no shared mutable
 state and the work is data-race free under Swift 6's strict checking. Process-wide
 ``/AemiJSONCore/AemiJSON/Metrics`` use `Atomic` from the Synchronization framework; the encoder's
-scratch-buffer pool (`ADFCore.ByteBufferPool`) uses a `Mutex`.
+scratch-buffer pool (`AemiKernel.ByteBufferPool`) uses a `Mutex`.
 
 ## The `@JSONCodable` fast path
 
@@ -182,7 +182,7 @@ for another reason. (`Package.swift` carries the same note next to the `platform
 ## Dependencies evaluated but not adopted
 
 The dependency surface is kept deliberately small — the core ships only `OrderedCollections` and
-`ADFCore` (both Foundation-free, no transitive deps). Other Apple / swift-server packages were
+`AemiKernel` (both Foundation-free, no transitive deps). Other Apple / swift-server packages were
 considered and **not** adopted:
 
 - **swift-algorithms** — the hot loops (the SWAR scanner, the explicit-stack walks) are hand-tuned

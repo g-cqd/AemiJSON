@@ -7,7 +7,7 @@ Install AemiJSON, parse your first document, and choose the access style that fi
 In `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/g-cqd/ADJSON.git", branch: "main")
+.package(url: "https://github.com/g-cqd/AemiJSON.git", branch: "main")
 ```
 
 ```swift

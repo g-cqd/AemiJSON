@@ -39,7 +39,7 @@ passes the full nst/JSONTestSuite (318/318).
   (RFC 6901), Patch (RFC 6902), Merge Patch (RFC 7396), Relative Pointer.
 - **Concurrency-safe.** Immutable documents; parallel array decode across cores.
 - **Lean.** The engine ships as a separate, Foundation-free `AemiJSONCore` product — no Foundation,
-  no swift-syntax; its dependencies, `OrderedCollections` and `ADFCore`, are themselves
+  no swift-syntax; its dependencies, `OrderedCollections` and `AemiKernel`, are themselves
   Foundation-free with no transitive deps — for consumers that want a minimal JSON core. See <doc:Architecture>.
 
 ## Topics
