@@ -162,10 +162,10 @@ jobs:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             .build
-          key: platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
+          key: ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
           restore-keys: |
-            platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-${{ hashFiles('Package.swift') }}-
-            platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-
+            ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-${{ hashFiles('Package.swift') }}-
+            ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-
       - name: Build for ${{ matrix.platform }}
         run: |
           sdk_path="$(xcrun --sdk '${{ matrix.sdk }}' --show-sdk-path)"
@@ -206,10 +206,10 @@ jobs:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Tests/**', 'Plugins/**') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Tests/**', 'Plugins/**') }}
           restore-keys: |
-            spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-
-            spm-${{ runner.os }}-san-${{ matrix.name }}-
+            ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-
+            ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-
       - name: Fetch conformance & benchmark fixtures
         run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
       - name: Test under ${{ matrix.name }} sanitizer
@@ -302,10 +302,10 @@ jobs:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Benchmarks/AemiJSONSuite/**') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Benchmarks/AemiJSONSuite/**') }}
           restore-keys: |
-            spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-
-            spm-${{ runner.os }}-bench-
+            ${{ github.repository }}-spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-
+            ${{ github.repository }}-spm-${{ runner.os }}-bench-
       - name: Install jemalloc (package-benchmark malloc metrics)
         run: brew install jemalloc
       - name: Fetch conformance & benchmark fixtures
@@ -408,10 +408,10 @@ jobs:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
           restore-keys: |
-            spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
-            spm-${{ runner.os }}-docs-
+            ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
+            ${{ github.repository }}-spm-${{ runner.os }}-docs-
       - name: Build DocC (warnings as errors)
         run: |
           swift package --allow-writing-to-directory "$PWD/_docs_check" \
@@ -451,10 +451,10 @@ jobs:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
           restore-keys: |
-            spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
-            spm-${{ runner.os }}-docs-
+            ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
+            ${{ github.repository }}-spm-${{ runner.os }}-docs-
       - name: Build DocC site (static hosting)
         # Combined documentation covers both products — the umbrella `AemiJSON` and the Foundation-free
         # `AemiJSONCore` engine (where `JSON`/`JSONDocument`/`JSONValue`/query types live and are
