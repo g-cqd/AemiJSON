@@ -45,14 +45,8 @@ env:
 
 jobs:
   quality:
-    # Full-adopt of the reusable workflow for the COMMON gate + build/test (macOS + Linux, debug +
-    # release; coverage on the debug macOS leg). AemiJSON depends on the first-party siblings
-    # ADFoundation and ADConcurrency (resolved from branch: main — Package.swift lines 73 & 86, in the
-    # always-on dependency array; ADTestKit is DEV-only and not counted), so the resolution-dependent
-    # jobs stay gated on AD_SWIFT_SIBLINGS_PUBLISHED; the file-based gates (format/metrics/drift)
-    # always run. Sanitizers/docs are NOT enabled here: the `sanitizers` job below is path-gated to the
-    # unsafe scanner / concurrency layer and combines flags per pass, and the DocC legs below are a
-    # stricter `--warnings-as-errors` link check plus a Pages DEPLOY — none covered by the reusable.
+    # Shared build/test and quality checks resolve the published Aemi dependency.
+    # Additional jobs below cover platform builds, fuzzing, benchmarks, and Pages.
     uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@main
     with:
       # arcleak and dolly GATE (arcleak measured 0 findings family-wide; dolly runs the token

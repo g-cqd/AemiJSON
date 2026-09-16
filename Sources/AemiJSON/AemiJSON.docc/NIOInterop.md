@@ -15,7 +15,7 @@ it. Build or resolve with `AEMIJSON_NIO=1` and depend on the `AemiJSONNIO` produ
 
 ```swift
 // Build/resolve with AEMIJSON_NIO=1, then:
-.target(name: "MyServer", dependencies: [.product(name: "AemiJSONNIO", package: "ADJSON")])
+.target(name: "MyServer", dependencies: [.product(name: "AemiJSONNIO", package: "AemiJSON")])
 ```
 
 ## Zero-copy parsing

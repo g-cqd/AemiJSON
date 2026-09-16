@@ -36,19 +36,19 @@ The implementation modules are now `AemiJSON` and `AemiJSONCore`. Existing
 re-export targets, and `ADJSON.parse`, codec names, and protocol conformances
 retain compatibility aliases. There is one implementation behind both names.
 
-The remote repository still uses the `g-cqd/ADJSON` URL during this migration,
-so SwiftPM's package identity remains `ADJSON`. The new products require this
-revision to be published; older tags do not contain them.
+The repository is `g-cqd/AemiJSON`; use `AemiJSON` as the package name in product
+dependencies. The former `g-cqd/ADJSON` URL redirects to it. The new products are
+available on `main`; older tags do not contain them.
 
 ## Install
 
 ```swift
 // Package.swift
-.package(url: "https://github.com/g-cqd/ADJSON.git", branch: "main")
+.package(url: "https://github.com/g-cqd/AemiJSON.git", branch: "main")
 ```
 
 ```swift
-.target(name: "MyApp", dependencies: [.product(name: "AemiJSON", package: "ADJSON")])
+.target(name: "MyApp", dependencies: [.product(name: "AemiJSON", package: "AemiJSON")])
 ```
 
 Reference the namespaced types as `AemiJSON.JSONDecoder` etc. where Foundation is also imported.
@@ -57,10 +57,10 @@ Reference the namespaced types as `AemiJSON.JSONDecoder` etc. where Foundation i
 
 Want only the engine — tape parsing, lazy navigation, `JSONValue`, and JSONPath/Pointer/Patch —
 with **no Foundation and no swift-syntax** in your dependency graph (just `OrderedCollections` and
-`ADFCore`, both Foundation-free with no transitive deps)? Depend on the `AemiJSONCore` product instead:
+`AemiKernel`, both Foundation-free with no transitive deps)? Depend on the `AemiJSONCore` product instead:
 
 ```swift
-.target(name: "MyEngine", dependencies: [.product(name: "AemiJSONCore", package: "ADJSON")])
+.target(name: "MyEngine", dependencies: [.product(name: "AemiJSONCore", package: "AemiJSON")])
 ```
 
 `import AemiJSON` re-exports `AemiJSONCore`, so the full library is a strict superset: the `Data`
@@ -75,7 +75,7 @@ default resolution graph; enable it when resolving/building:
 
 ```swift
 // Build/resolve with AEMIJSON_NIO=1, then:
-.target(name: "MyServer", dependencies: [.product(name: "AemiJSONNIO", package: "ADJSON")])
+.target(name: "MyServer", dependencies: [.product(name: "AemiJSONNIO", package: "AemiJSON")])
 ```
 
 ```swift
