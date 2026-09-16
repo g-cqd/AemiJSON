@@ -1,0 +1,122 @@
+# Codable Interop
+
+Decode and encode your own types with a Foundation-compatible API — and opt into a faster
+path when you want it.
+
+## Drop-in coders
+
+``AemiJSON/JSONDecoder`` and ``AemiJSON/JSONEncoder`` mirror Foundation's API surface.
+
+```swift
+struct User: Codable { var id: Int; var name: String; var tags: [String] }
+
+let user  = try AemiJSON.JSONDecoder().decode(User.self, from: data)
+let bytes = try AemiJSON.JSONEncoder().encode(user)
+```
+
+The decoder reads the tape directly: keyed lookups match `CodingKey` bytes against the tape
+and skip unread subtrees in O(1) — no eager dictionary, no per-key `String` allocation, no
+per-node reference-count churn. The encoder streams straight into one byte buffer with no
+intermediate object tree.
+
+### Decoding from an already-parsed document
+
+If you already have a ``/AemiJSONCore/JSONDocument`` (e.g. from lazy inspection), decode from it directly to
+skip re-scanning:
+
+```swift
+let doc = try AemiJSON.parse(data)
+if doc.root.kind.string == "user" {
+    let user = try AemiJSON.JSONDecoder().decode(User.self, from: doc)
+}
+```
+
+### Options
+
+The decoder exposes ``/AemiJSONCore/JSONParseOptions`` via its `options` property; the encoder exposes
+``/AemiJSONCore/JSONEncodingOptions``. See <doc:EncodingAndNumbers>.
+
+```swift
+var decoder = AemiJSON.JSONDecoder()
+decoder.options = .iJSON                 // reject duplicate keys (RFC 7493)
+
+var encoder = AemiJSON.JSONEncoder()
+encoder.options = .javaScript            // JSON.stringify number/non-finite parity
+```
+
+`Date`, `Data`, and `Decimal` are intercepted by type at the central encode/decode dispatch, matching
+Foundation: `Date`/`Data` follow their configured strategies, and a `Decimal` decodes from the raw
+number lexeme (exact, ~38 digits — not via `Double`) and encodes back as a JSON number. See
+*Exact decimals* in <doc:EncodingAndNumbers>.
+
+### Key strategies
+
+Map between Swift property names and JSON keys with `keyEncodingStrategy` / `keyDecodingStrategy`:
+
+```swift
+var encoder = AemiJSON.JSONEncoder()
+encoder.keyEncodingStrategy = .convertToSnakeCase            // userID → user_id
+encoder.keyEncodingStrategy = .custom { $0.uppercased() }    // any (String) -> String
+
+var decoder = AemiJSON.JSONDecoder()
+decoder.keyDecodingStrategy = .convertFromSnakeCase          // user_id → userID
+```
+
+AemiJSON's `.custom` takes a plain `(String) -> String` transform — not Foundation's
+`([CodingKey]) -> CodingKey` form — because the streaming coders track no coding-key path. Setting any
+key strategy also routes ``JSONCodable()`` types through the generic path, so the transform is honored
+for fast types too (the byte-literal fast path can only match unmodified keys).
+
+## The `@JSONCodable` fast path
+
+Annotate a `Codable` `struct` with ``JSONCodable()`` to generate a monomorphic decode/encode
+that ``AemiJSON/JSONDecoder`` and ``AemiJSON/JSONEncoder`` use **automatically**. The type keeps
+its normal `Codable` conformance as a fallback.
+
+```swift
+@JSONCodable
+struct User: Codable {
+    var id: Int
+    var name: String
+    var tags: [String]
+}
+
+// Nothing else changes at the call site:
+let users = try AemiJSON.JSONDecoder().decode([User].self, from: data)
+```
+
+The generated code reads each field by its statically-known key directly off the tape (no
+`KeyedDecodingContainer`, no per-field `String` key) and writes into a value-type buffer with
+no class indirection. Built-in conformances make `[User]`, `User?`, and `[String: User]`
+themselves fast, so a top-level array or a nested field skips Codable's collection machinery
+too. Measurably faster in both directions than the generic Codable path — see <doc:Benchmarking>.
+
+### Scope and fallbacks
+
+- Supports `struct`s whose stored properties have explicit type annotations.
+- A type declaring custom `CodingKeys` is left on the generic path (a compile-time note
+  explains why), so the fast path can't use the wrong keys.
+- Anything not opted in still decodes/encodes through the standard generic path.
+
+## Concurrent array decode
+
+For a large top-level JSON array, scan once on the calling task and decode element batches in
+parallel across cores, off the main actor:
+
+```swift
+let rows = try await AemiJSON.decodeArrayConcurrently(Row.self, from: data)
+```
+
+Each worker binds its own pointer over the shared immutable document, so the work is data-race
+free. `Row` must be `Decodable & Sendable`. The batch size is tunable
+(`minimumBatch:`); below the threshold it decodes serially to avoid task overhead. See
+<doc:Architecture> for the concurrency model.
+
+## Process-wide metrics
+
+``/AemiJSONCore/AemiJSON/Metrics`` exposes lock-free counters (via `Atomic`) for documents and bytes parsed:
+
+```swift
+let m = AemiJSON.Metrics.snapshot()
+print(m.documents, m.bytes)
+```

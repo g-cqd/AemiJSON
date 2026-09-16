@@ -4,13 +4,13 @@
 # ASan/TSan pass over the unsafe scanner + concurrency layer, the libFuzzer pass, the ordo-one
 # benchmark suite, the DocC link check, and the DocC Pages deploy.
 #
-# ADJSON's test suite fetches conformance/benchmark fixtures via `swift package fetch-fixtures`
+# AemiJSON's test suite fetches conformance/benchmark fixtures via `swift package fetch-fixtures`
 # (network) before `swift test`. RESOLVED: the reusable workflow now takes a `fixtures-command` input
 # and the `quality:` job passes the fetch-fixtures command, so the reusable's macOS/Linux build/test
 # legs materialize fixtures before testing (no fixture-dependent test fails/skips on them). The
 # fixture-fetching benchmark/fuzz jobs below keep their own fetch step (they run outside the reusable).
-# The opt-in ADJSONNIO test
-# (`ADJSON_NIO=1 swift test --filter ADJSONNIOTests`) and the `coverage-check --floor` gate that the
+# The opt-in AemiJSONNIO test
+# (`AEMIJSON_NIO=1 swift test --filter AemiJSONNIOTests`) and the `coverage-check --floor` gate that the
 # old bespoke build-test ran are likewise not represented in the reusable.
 name: CI
 
@@ -46,7 +46,7 @@ env:
 jobs:
   quality:
     # Full-adopt of the reusable workflow for the COMMON gate + build/test (macOS + Linux, debug +
-    # release; coverage on the debug macOS leg). ADJSON depends on the first-party siblings
+    # release; coverage on the debug macOS leg). AemiJSON depends on the first-party siblings
     # ADFoundation and ADConcurrency (resolved from branch: main — Package.swift lines 73 & 86, in the
     # always-on dependency array; ADTestKit is DEV-only and not counted), so the resolution-dependent
     # jobs stay gated on AD_SWIFT_SIBLINGS_PUBLISHED; the file-based gates (format/metrics/drift)
@@ -59,13 +59,13 @@ jobs:
       # pass against .dolly-baseline.json, so only NEW clones fail). deadwood is report-only —
       # its syntax-mode dataflow cannot see writes through closures or mutating methods.
       enable-static-analysis: true
-      dev-env-var: ADJSON_DEV
+      dev-env-var: AEMIJSON_DEV
       enable-sanitizers: true
       sanitizers: "address thread"
       enable-coverage: true
       requires-published-siblings: true
       # The Linux release-mode test leg segfaults on process EXIT (all tests pass first) under the
-      # dated nightly-6.4.x Linux container — a nightly-toolchain teardown crash, not an ADJSON bug
+      # dated nightly-6.4.x Linux container — a nightly-toolchain teardown crash, not an AemiJSON bug
       # (macOS release + Linux debug are clean; the parse/decode fan-out is structured concurrency and
       # the buffer pool holds managed arrays). Advisory until a stable 6.4 Linux toolchain ships,
       # matching the standalone `linux` job below; the Linux DEBUG leg stays required.
@@ -78,10 +78,10 @@ jobs:
     name: Detect unsafe / concurrency changes
     needs: quality
     # Path gate for the sanitizer passes. Two risk surfaces warrant the (otherwise main-only)
-    # ASan/TSan runs on a PR: the unsafe raw-pointer scanner (`Sources/ADJSONCore/Core/**`) for
+    # ASan/TSan runs on a PR: the unsafe raw-pointer scanner (`Sources/AemiJSONCore/Core/**`) for
     # OOB/UAF under ASan, and the shared-state concurrency layer — the encoder buffer pool and the
-    # concurrent decoder — under TSan. The latter lives in `Sources/ADJSON/Concurrency/**` and
-    # `Sources/ADJSON/Codable/**`, so a PR touching either must trip the sanitizers too. On push the
+    # concurrent decoder — under TSan. The latter lives in `Sources/AemiJSON/Concurrency/**` and
+    # `Sources/AemiJSON/Codable/**`, so a PR touching either must trip the sanitizers too. On push the
     # filter compares against the prior commit; on a PR, against the merge base.
     runs-on: ubuntu-latest
     permissions:
@@ -96,14 +96,14 @@ jobs:
         with:
           filters: |
             core:
-              - 'Sources/ADJSONCore/Core/**'
-              - 'Sources/ADJSON/Concurrency/**'
-              - 'Sources/ADJSON/Codable/**'
+              - 'Sources/AemiJSONCore/Core/**'
+              - 'Sources/AemiJSON/Concurrency/**'
+              - 'Sources/AemiJSON/Codable/**'
 
   linux:
     name: Build & test (Linux, Foundation-free core)
     needs: quality
-    # ADJSONCore is Foundation-free; building it in isolation on Linux guards portability for
+    # AemiJSONCore is Foundation-free; building it in isolation on Linux guards portability for
     # zero-dependency consumers — a check the reusable's whole-package Linux leg doesn't make. The
     # full package is exercised by the reusable test-linux leg.
     #
@@ -120,7 +120,7 @@ jobs:
       - name: Show toolchain
         run: swift --version
       - name: Build Foundation-free core
-        run: swift build --target ADJSONCore
+        run: swift build --target AemiJSONCore
 
   api-stability:
     name: API breaking changes
@@ -134,7 +134,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Select latest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+        run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
       - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
         uses: g-cqd/ADBuildTools/.github/actions/setup-swift@v1
       - name: Diagnose API breaking changes vs base
@@ -160,7 +160,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Select latest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+        run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
       - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
         uses: g-cqd/ADBuildTools/.github/actions/setup-swift@v1
       - name: Cache SwiftPM platform build
@@ -176,15 +176,15 @@ jobs:
       - name: Build for ${{ matrix.platform }}
         run: |
           sdk_path="$(xcrun --sdk '${{ matrix.sdk }}' --show-sdk-path)"
-          swift build --sdk "$sdk_path" --triple '${{ matrix.triple }}' --target ADJSON
+          swift build --sdk "$sdk_path" --triple '${{ matrix.triple }}' --target AemiJSON
 
   sanitizers:
     name: Sanitize (${{ matrix.name }})
     needs: [quality, changes]
     # Sanitizers are slow (TSan ~5-15x, ASan ~2x) and rebuild the whole graph under instrumentation,
     # so run them on main / on demand — and, additionally, on any PR that touches the unsafe scanner
-    # OR the concurrency layer (`Sources/ADJSONCore/Core/**`, `Sources/ADJSON/Concurrency/**`,
-    # `Sources/ADJSON/Codable/**` — gated by the `changes` job), where a memory or data-race bug is
+    # OR the concurrency layer (`Sources/AemiJSONCore/Core/**`, `Sources/AemiJSON/Concurrency/**`,
+    # `Sources/AemiJSON/Codable/**` — gated by the `changes` job), where a memory or data-race bug is
     # most likely to be introduced. Other PRs skip them. The conformance + simdjson corpora double as
     # the stress input that trips data races (TSan) and OOB / use-after-free (ASan) in the unsafe
     # scanner and the shared-state concurrency layer. These find what `-enable-actor-data-race-checks`
@@ -202,7 +202,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Select latest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+        run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
       - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
         uses: g-cqd/ADBuildTools/.github/actions/setup-swift@v1
       - name: Show toolchain
@@ -226,7 +226,7 @@ jobs:
     name: Fuzz (libFuzzer, Linux)
     needs: quality
     # libFuzzer (`-sanitize=fuzzer`) is a Linux capability of the Swift toolchain — the Darwin SDK
-    # rejects the flag — so the gated `ADJSONFuzz` target builds and runs here, time-boxed, on
+    # rejects the flag — so the gated `AemiJSONFuzz` target builds and runs here, time-boxed, on
     # main / manual dispatch. Advisory (nightly toolchain), like the Linux build job. A crash fails
     # the job and uploads the reproducer; commit any reproducer as a regression test.
     if: github.event_name != 'pull_request'
@@ -243,11 +243,11 @@ jobs:
         run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
       - name: Build fuzz target
         env:
-          ADJSON_FUZZ: "1"
-        # Build the executable PRODUCT, not the target: `ADJSONFuzz` is `-parse-as-library` (its
+          AEMIJSON_FUZZ: "1"
+        # Build the executable PRODUCT, not the target: `AemiJSONFuzz` is `-parse-as-library` (its
         # `main` is supplied by the libFuzzer runtime at link time), so `swift build --target` only
         # compiles the module and never links the binary. `--product` forces the executable link.
-        run: swift build --product ADJSONFuzz
+        run: swift build --product AemiJSONFuzz
       - name: Assemble seed corpus from vendored corpora + CTS
         run: |
           mkdir -p corpus
@@ -259,19 +259,19 @@ jobs:
           if [ -z "$(ls -A corpus 2>/dev/null)" ]; then printf '{"a":[1,2,3],"b":"x"}' > corpus/seed.json; fi
       - name: Run fuzzer (time-boxed)
         env:
-          ADJSON_FUZZ: "1"
+          AEMIJSON_FUZZ: "1"
         run: |
-          BINDIR="$(swift build --product ADJSONFuzz --show-bin-path)"
-          BIN="$BINDIR/ADJSONFuzz"
+          BINDIR="$(swift build --product AemiJSONFuzz --show-bin-path)"
+          BIN="$BINDIR/AemiJSONFuzz"
           # Resilient locate: if the binary isn't at the reported bin path, search the build tree.
           if [ ! -x "$BIN" ]; then
             echo "::warning::fuzz binary not at $BIN; searching .build"
             ls -la "$BINDIR" 2>/dev/null || true
-            BIN="$(find .build -type f -name ADJSONFuzz -perm -u+x 2>/dev/null | head -1)"
+            BIN="$(find .build -type f -name AemiJSONFuzz -perm -u+x 2>/dev/null | head -1)"
           fi
           if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
-            echo "::error::ADJSONFuzz executable not found after build"
-            find .build -name 'ADJSONFuzz*' 2>/dev/null || true
+            echo "::error::AemiJSONFuzz executable not found after build"
+            find .build -name 'AemiJSONFuzz*' 2>/dev/null || true
             exit 1
           fi
           echo "Running fuzz binary: $BIN"
@@ -298,7 +298,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Select latest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+        run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
       - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
         uses: g-cqd/ADBuildTools/.github/actions/setup-swift@v1
       - name: Show toolchain
@@ -309,7 +309,7 @@ jobs:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Benchmarks/ADJSONSuite/**') }}
+          key: spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Benchmarks/AemiJSONSuite/**') }}
           restore-keys: |
             spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-
             spm-${{ runner.os }}-bench-
@@ -319,7 +319,7 @@ jobs:
         run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
       - name: Run the benchmark suite (ordo-one/benchmark)
         env:
-          ADJSON_DEV: "1"
+          AEMIJSON_DEV: "1"
         run: |
           set -o pipefail
           swift package --allow-writing-to-package-directory benchmark --format markdown | tee bench-output.md
@@ -331,7 +331,7 @@ jobs:
         # proves stable, drop that step's `continue-on-error` to make it a hard gate.
         if: github.event_name == 'workflow_dispatch' && inputs.update_baseline
         env:
-          ADJSON_DEV: "1"
+          AEMIJSON_DEV: "1"
         run: swift package --allow-writing-to-package-directory benchmark baseline update main
       - name: Upload benchmark baseline artifact
         if: github.event_name == 'workflow_dispatch' && inputs.update_baseline
@@ -352,7 +352,7 @@ jobs:
         if: always()
         continue-on-error: true
         env:
-          ADJSON_DEV: "1"
+          AEMIJSON_DEV: "1"
         run: |
           # ordo-one stores baselines at `.benchmarkBaselines/<target>/<name>/`, so probe the glob
           # rather than a fixed `.benchmarkBaselines/main` path (which never matches).
@@ -367,19 +367,19 @@ jobs:
             echo "_No committed \`main\` baseline (.benchmarkBaselines/*/main); skipping advisory regression check._" \
               >> "$GITHUB_STEP_SUMMARY"
           fi
-      - name: ADJSON-vs-Foundation comparison table
-        # Pairs each Foundation baseline with the ADJSON variant(s) in its workload and reports the
+      - name: AemiJSON-vs-Foundation comparison table
+        # Pairs each Foundation baseline with the AemiJSON variant(s) in its workload and reports the
         # speedup — the at-a-glance headline the flat per-benchmark table above doesn't give. The
         # `bench-compare` command plugin reuses the jemalloc-instrumented suite binary the step above
         # already built (so the malloc column is populated; no rebuild), re-running only the comparison
         # workloads standalone to capture the debug histograms it parses.
         env:
-          ADJSON_DEV: "1"
+          AEMIJSON_DEV: "1"
         run: |
           {
-            echo "## ADJSON vs Foundation (speedup)"
+            echo "## AemiJSON vs Foundation (speedup)"
             echo ""
-            echo "Release · runner \`${{ runner.os }}\` · commit \`${GITHUB_SHA:0:7}\` · p50 wall-clock, higher speedup = ADJSON faster"
+            echo "Release · runner \`${{ runner.os }}\` · commit \`${GITHUB_SHA:0:7}\` · p50 wall-clock, higher speedup = AemiJSON faster"
             echo ""
             swift package bench-compare --filter '(parse|decode|encode|numbers|corpus)/.*'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -387,7 +387,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## ADJSON benchmarks (ordo-one/benchmark)"
+            echo "## AemiJSON benchmarks (ordo-one/benchmark)"
             echo ""
             echo "Release · runner \`${{ runner.os }}\` · commit \`${GITHUB_SHA:0:7}\` · p50/p90/p99 wall-clock + throughput + malloc"
             echo ""
@@ -402,11 +402,11 @@ jobs:
     # first to surface it. `--warnings-as-errors` turns unresolved links into a build failure.
     runs-on: macos-26
     env:
-      ADJSON_DEV: "1"
+      AEMIJSON_DEV: "1"
     steps:
       - uses: actions/checkout@v6
       - name: Select latest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+        run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
       - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
         uses: g-cqd/ADBuildTools/.github/actions/setup-swift@v1
       - name: Cache SwiftPM
@@ -424,7 +424,7 @@ jobs:
           swift package --allow-writing-to-directory "$PWD/_docs_check" \
             generate-documentation \
             --enable-experimental-combined-documentation \
-            --target ADJSONCore --target ADJSON \
+            --target AemiJSONCore --target AemiJSON \
             --disable-indexing --warnings-as-errors \
             --output-path "$PWD/_docs_check"
 
@@ -445,11 +445,11 @@ jobs:
       group: pages
       cancel-in-progress: false
     env:
-      ADJSON_DEV: "1"
+      AEMIJSON_DEV: "1"
     steps:
       - uses: actions/checkout@v6
       - name: Select latest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+        run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
       - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
         uses: g-cqd/ADBuildTools/.github/actions/setup-swift@v1
       - name: Cache SwiftPM
@@ -463,27 +463,27 @@ jobs:
             spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
             spm-${{ runner.os }}-docs-
       - name: Build DocC site (static hosting)
-        # Combined documentation covers both products — the umbrella `ADJSON` and the Foundation-free
-        # `ADJSONCore` engine (where `JSON`/`JSONDocument`/`JSONValue`/query types live and are
+        # Combined documentation covers both products — the umbrella `AemiJSON` and the Foundation-free
+        # `AemiJSONCore` engine (where `JSON`/`JSONDocument`/`JSONValue`/query types live and are
         # re-exported from). A single-target build can't resolve cross-module symbol links to them.
         run: |
           swift package --allow-writing-to-directory "$PWD/_site" \
             generate-documentation \
             --enable-experimental-combined-documentation \
-            --target ADJSONCore --target ADJSON \
+            --target AemiJSONCore --target AemiJSON \
             --disable-indexing \
             --transform-for-static-hosting \
-            --hosting-base-path ADJSON \
+            --hosting-base-path "${{ github.event.repository.name }}" \
             --output-path "$PWD/_site"
       - name: Add root redirect to the documentation landing page
         run: |
           cat > _site/index.html <<'HTML'
           <!doctype html>
           <meta charset="utf-8">
-          <meta http-equiv="refresh" content="0; url=documentation/adjson/">
-          <link rel="canonical" href="documentation/adjson/">
-          <title>ADJSON</title>
-          <a href="documentation/adjson/">ADJSON documentation</a>
+          <meta http-equiv="refresh" content="0; url=documentation/aemijson/">
+          <link rel="canonical" href="documentation/aemijson/">
+          <title>AemiJSON</title>
+          <a href="documentation/aemijson/">AemiJSON documentation</a>
           HTML
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

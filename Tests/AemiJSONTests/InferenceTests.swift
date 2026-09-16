@@ -1,0 +1,64 @@
+import AemiTestKit
+import Foundation
+import Testing
+
+@testable import AemiJSON
+
+@Test func infersSchemaFromSamplesWithRequiredIntersection() throws {
+    let samples = [
+        #"{"id":1,"name":"a"}"#,
+        #"{"id":2,"tag":"x"}"#,
+        #"{"id":3,"name":"b"}"#
+    ]
+    .map { try! AemiJSON.parse($0).root }
+
+    let text = JSONSchema.infer(from: samples)
+    let s = try AemiJSON.parse(text).root
+    #expect(s["type"].string == "object")
+    #expect(s["required"].arrayValue.compactMap(\.string) == ["id"])  // present in all samples
+    #expect(s["properties"]["id"]["type"].string == "integer")
+
+    let compiled = try JSONSchema(parsing: text)
+    #expect(compiled.isValid(try AemiJSON.parse(#"{"id":9,"name":"z"}"#).root))
+    #expect(!compiled.isValid(try AemiJSON.parse(#"{"name":"z"}"#).root))  // missing required id
+    #expect(!compiled.isValid(try AemiJSON.parse(#"{"id":"nope"}"#).root))  // id must be integer
+}
+
+@Test func infersWidenedNumberType() throws {
+    let samples = [#"[1,2,3]"#, #"[1.5]"#].map { try! AemiJSON.parse($0).root }
+    let s = try AemiJSON.parse(JSONSchema.infer(from: samples)).root
+    #expect(s["type"].string == "array")
+    #expect(s["items"]["type"].string == "number")  // integer widened to number
+}
+
+@Test func generatesSchemaFromModelViaReflection() throws {
+    struct Addr: Codable {
+        var city: String
+        var zip: Int
+    }
+    struct Person: Codable {
+        var name: String
+        var age: Int
+        var nickname: String?
+        var addr: Addr
+        var scores: [Double]
+    }
+
+    let text = JSONSchema.describe(
+        Person(name: "A", age: 30, nickname: nil, addr: Addr(city: "X", zip: 1), scores: [1.5, 2.0]))
+    let s = try AemiJSON.parse(text).root
+
+    // AemiTestKit's typed asserts: each subscript chain type-checks once as a plain argument,
+    // keeping this body (which also carries two local Codable structs) under the 100ms budget.
+    expectEqual(s["type"].string, "object")
+    expectEqual(s["properties"]["name"]["type"].string, "string")
+    expectEqual(s["properties"]["age"]["type"].string, "integer")
+    expectEqual(s["properties"]["addr"]["type"].string, "object")
+    expectEqual(s["properties"]["addr"]["properties"]["zip"]["type"].string, "integer")
+    expectEqual(s["properties"]["scores"]["type"].string, "array")
+
+    let required = Set(s["required"].arrayValue.compactMap(\.string))
+    let requiredCovered: Bool = required.isSuperset(of: ["name", "age", "addr", "scores"])
+    expectTrue(requiredCovered)
+    expectFalse(required.contains("nickname"))  // optional → not required
+}

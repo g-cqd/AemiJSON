@@ -36,5 +36,5 @@ _site/
 
 # Vendored third-party fixtures (fetched via scripts/fetch-fixtures.sh)
 /Benchmarks/Corpus/*.json
-/Tests/ADJSONTests/Resources/JSONTestSuite/*.json
-/Tests/ADJSONTests/Resources/JSONPathCTS/*.json
+/Tests/AemiJSONTests/Resources/JSONTestSuite/*.json
+/Tests/AemiJSONTests/Resources/JSONPathCTS/*.json

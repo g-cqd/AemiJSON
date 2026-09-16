@@ -1,4 +1,4 @@
-# ADJSON
+# AemiJSON
 
 **Fast, safe, standards-first JSON for Swift 6.** A drop-in alternative to Foundation's
 `JSONDecoder` / `JSONEncoder` / `JSONSerialization` — with JSON Schema, JSONPath, JSON
@@ -6,72 +6,83 @@ Pointer, and JSON Patch in the box. Built on a single-pass **tape** with lazy, o
 materialization, so reading two fields out of a megabyte never decodes the rest.
 
 ```swift
-import ADJSON
+import AemiJSON
 
 // Parse once. Read only what you touch — nil-safe, even mid-chain.
-let doc  = try ADJSON.parse(data)
+let doc  = try AemiJSON.parse(data)
 let name = doc.root.user.name.string          // String?
 
 // Or map straight to your types — like Foundation, only faster.
-let users = try ADJSON.JSONDecoder().decode([User].self, from: data)
+let users = try AemiJSON.JSONDecoder().decode([User].self, from: data)
 ```
 
 That's the whole learning curve for the common case. Everything else is opt-in.
 
-## Why ADJSON
+## Why AemiJSON
 
 - **Quick** — ~1 GB/s tape parsing; lazy access skips what you don't read. ([Performance](#performance))
 - **Safe** — value-typed, `Sendable`, Swift 6 strict concurrency; parses off the main actor.
 - **Correct** — strict RFC 8259 by default; passes the full nst/JSONTestSuite (318/318).
 - **Complete** — Schema (validate, infer, or generate from a type with `@Schemable`), JSONPath,
   Pointer, Patch, and Merge Patch — all in one package.
-- **Familiar** — `ADJSON.JSONDecoder` / `ADJSON.JSONEncoder` mirror Foundation's API.
-- **Lean** — the engine ships as a separate **`ADJSONCore`** product with *no* Foundation and *no*
+- **Familiar** — `AemiJSON.JSONDecoder` / `AemiJSON.JSONEncoder` mirror Foundation's API.
+- **Lean** — the engine ships as a separate **`AemiJSONCore`** product with *no* Foundation and *no*
   swift-syntax, for dependency-strict consumers. ([Install](#install))
+
+## Migration from ADJSON
+
+The implementation modules are now `AemiJSON` and `AemiJSONCore`. Existing
+`import ADJSON` and `import ADJSONCore` statements remain supported through
+re-export targets, and `ADJSON.parse`, codec names, and protocol conformances
+retain compatibility aliases. There is one implementation behind both names.
+
+The remote repository still uses the `g-cqd/ADJSON` URL during this migration,
+so SwiftPM's package identity remains `ADJSON`. The new products require this
+revision to be published; older tags do not contain them.
 
 ## Install
 
 ```swift
 // Package.swift
-.package(url: "https://github.com/g-cqd/ADJSON.git", from: "0.1.0")
+.package(url: "https://github.com/g-cqd/ADJSON.git", branch: "main")
 ```
 
 ```swift
-.target(name: "MyApp", dependencies: ["ADJSON"])
+.target(name: "MyApp", dependencies: [.product(name: "AemiJSON", package: "ADJSON")])
 ```
 
-Reference the namespaced types as `ADJSON.JSONDecoder` etc. where Foundation is also imported.
+Reference the namespaced types as `AemiJSON.JSONDecoder` etc. where Foundation is also imported.
 
 ### Foundation-free core
 
 Want only the engine — tape parsing, lazy navigation, `JSONValue`, and JSONPath/Pointer/Patch —
 with **no Foundation and no swift-syntax** in your dependency graph (just `OrderedCollections` and
-`ADFCore`, both Foundation-free with no transitive deps)? Depend on the `ADJSONCore` product instead:
+`ADFCore`, both Foundation-free with no transitive deps)? Depend on the `AemiJSONCore` product instead:
 
 ```swift
-.target(name: "MyEngine", dependencies: [.product(name: "ADJSONCore", package: "ADJSON")])
+.target(name: "MyEngine", dependencies: [.product(name: "AemiJSONCore", package: "ADJSON")])
 ```
 
-`import ADJSON` re-exports `ADJSONCore`, so the full library is a strict superset: the `Data`
+`import AemiJSON` re-exports `AemiJSONCore`, so the full library is a strict superset: the `Data`
 conveniences, Codable, Schema, and the macros live only in the umbrella module.
 
-### swift-nio interop (`ADJSONNIO`)
+### swift-nio interop (`AemiJSONNIO`)
 
-Server-side consumers can opt into a swift-nio bridge — zero-copy `ADJSON.parse(ByteBuffer)` and a
-`ByteBuffer.writeJSON(_:options:)` sink — via the `ADJSONNIO` product, a superset that re-exports the
-Foundation-free `ADJSONCore`. It is **gated behind `ADJSON_NIO`** so swift-nio never enters the
+Server-side consumers can opt into a swift-nio bridge — zero-copy `AemiJSON.parse(ByteBuffer)` and a
+`ByteBuffer.writeJSON(_:options:)` sink — via the `AemiJSONNIO` product, a superset that re-exports the
+Foundation-free `AemiJSONCore`. It is **gated behind `AEMIJSON_NIO`** so swift-nio never enters the
 default resolution graph; enable it when resolving/building:
 
 ```swift
-// Build/resolve with ADJSON_NIO=1, then:
-.target(name: "MyServer", dependencies: [.product(name: "ADJSONNIO", package: "ADJSON")])
+// Build/resolve with AEMIJSON_NIO=1, then:
+.target(name: "MyServer", dependencies: [.product(name: "AemiJSONNIO", package: "ADJSON")])
 ```
 
 ```swift
-import ADJSONNIO  // re-exports ADJSONCore — JSON, JSONValue, ADJSON.parse — without Foundation
+import AemiJSONNIO  // re-exports AemiJSONCore — JSON, JSONValue, AemiJSON.parse — without Foundation
 
 func echo(_ buffer: ByteBuffer) throws -> ByteBuffer {
-    let doc = try ADJSON.parse(buffer)            // zero-copy: borrows the buffer's storage in place
+    let doc = try AemiJSON.parse(buffer)            // zero-copy: borrows the buffer's storage in place
     var out = ByteBuffer()
     try out.writeJSON(["ok": true, "name": .string(doc.root.name.string ?? "")])
     return out
@@ -85,21 +96,21 @@ tvOS 18+ / watchOS 11+ / visionOS 2+ (the floor is set by the Synchronization fr
 ## A quick tour
 
 ```swift
-import ADJSON
+import AemiJSON
 
 // 1. Lazy navigation — nothing is materialized until you read it.
-let doc   = try ADJSON.parse(data)
+let doc   = try AemiJSON.parse(data)
 let name  = doc.root.user.name.string           // String?
 let first = doc.root["items"][index: 0].int      // Int?
 
 // 2. Codable, drop-in. Add @JSONCodable for a faster path the coders use automatically.
 @JSONCodable
 struct User: Codable { var id: Int; var name: String; var tags: [String] }
-let users = try ADJSON.JSONDecoder().decode([User].self, from: data)
-let bytes = try ADJSON.JSONEncoder().encode(users)
+let users = try AemiJSON.JSONDecoder().decode([User].self, from: data)
+let bytes = try AemiJSON.JSONEncoder().encode(users)
 
 // 3. Off the main actor, in parallel across cores.
-let rows = try await ADJSON.decodeArrayConcurrently(Row.self, from: data)
+let rows = try await AemiJSON.decodeArrayConcurrently(Row.self, from: data)
 
 // 4. Query — JSON Pointer (RFC 6901) and JSONPath (RFC 9535).
 let title  = doc.root[pointer: "/store/book/0/title"].string
@@ -122,12 +133,12 @@ let toolSchema = SearchInput.jsonSchemaText      // draft-07 JSON, ready for too
 let patched = try JSONPatch(patchData).apply(to: JSONValue(parsing: targetData))
 
 // 7. Profiles — strict by default; opt into lenient or RFC 7493 I-JSON.
-let lenient = try ADJSON.parse(data, options: .lenient)
-var decoder = ADJSON.JSONDecoder(); decoder.options = .iJSON   // reject duplicate keys
+let lenient = try AemiJSON.parse(data, options: .lenient)
+var decoder = AemiJSON.JSONDecoder(); decoder.options = .iJSON   // reject duplicate keys
 
 // 8. Hot-path accessors — alloc-free compare, zero-copy bytes, JS-semantics, borrowed parse.
 if doc.root.kind.utf8Equals("paragraph") { … }   // no String allocation on the unescaped path
-buffer.withUnsafeBytes { raw in use(try ADJSON.parse(raw).root) }   // zero-copy borrowed parse
+buffer.withUnsafeBytes { raw in use(try AemiJSON.parse(raw).root) }   // zero-copy borrowed parse
 let text = doc.root.tags.jsString                // ECMAScript coercion ("a,b,c"); also .isTruthy
 
 // 9. Stream events from any async byte source (URLSession.AsyncBytes, FileHandle.AsyncBytes).
@@ -146,10 +157,10 @@ See the [documentation](#documentation) for the full guides.
 ## Performance
 
 Apple M3 (macOS 26.5), release build, strict mode; treat these as ratios, not absolutes.
-Reproduce with `ADJSON_DEV=1 swift package benchmark` (the [ordo-one/benchmark](https://github.com/ordo-one/benchmark)
-suite under `Benchmarks/ADJSONSuite`).
+Reproduce with `AEMIJSON_DEV=1 swift package benchmark` (the [ordo-one/benchmark](https://github.com/ordo-one/benchmark)
+suite under `Benchmarks/AemiJSONSuite`).
 
-| Workload | ADJSON vs Foundation |
+| Workload | AemiJSON vs Foundation |
 |---|---|
 | Untyped tape parse — `twitter.json` | **6.1×** `JSONSerialization` |
 | Untyped tape parse — `citm_catalog.json` | **4.1×** |
@@ -199,10 +210,10 @@ deployed by CI). Build it locally:
 
 ```sh
 # Xcode: Product ▸ Build Documentation
-# CLI (the DocC plugin is dev-only, gated behind ADJSON_DEV so consumers don't resolve it).
-# Combined docs cover both the umbrella (ADJSON) and the Foundation-free engine (ADJSONCore):
-ADJSON_DEV=1 swift package generate-documentation \
-  --enable-experimental-combined-documentation --target ADJSONCore --target ADJSON
+# CLI (the DocC plugin is dev-only, gated behind AEMIJSON_DEV so consumers don't resolve it).
+# Combined docs cover both the umbrella (AemiJSON) and the Foundation-free engine (AemiJSONCore):
+AEMIJSON_DEV=1 swift package generate-documentation \
+  --enable-experimental-combined-documentation --target AemiJSONCore --target AemiJSON
 ```
 
 ## Testing & benchmarks
@@ -215,14 +226,14 @@ swift package --allow-network-connections all --allow-writing-to-package-directo
 swift test                                             # full conformance + unit suite
 swift test --enable-code-coverage \
   && swift package coverage-check --floor 80           # coverage gate (Swift plugin)
-ADJSON_DEV=1 swift package benchmark                   # benchmark suite (ordo-one/benchmark)
-swift package bench-compare                            # ADJSON-vs-Foundation table (reuses the suite binary)
+AEMIJSON_DEV=1 swift package benchmark                   # benchmark suite (ordo-one/benchmark)
+swift package bench-compare                            # AemiJSON-vs-Foundation table (reuses the suite binary)
 swift package lint                                     # formatting gate + shipped-library discipline
 swift package --allow-writing-to-package-directory format   # apply formatting
 ```
 
 Without the fixtures, `swift test` still passes (corpus/conformance cases skip). See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the full developer workflow — git hooks, the `ADJSON_DEV`
+[CONTRIBUTING.md](CONTRIBUTING.md) for the full developer workflow — git hooks, the `AEMIJSON_DEV`
 flag, and build-time lint enforcement.
 
 ## License

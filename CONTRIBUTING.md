@@ -1,4 +1,4 @@
-# Contributing to ADJSON
+# Contributing to AemiJSON
 
 Developer tooling lives in the package itself — SwiftPM plugins and committed git hooks — so
 there are no shell scripts to run and nothing to install globally.
@@ -13,9 +13,9 @@ git config core.hooksPath .githooks
 
 That's it. The toolchain's bundled `swift format` powers the plugins; no extra tools needed.
 
-**Benchmarks only:** the ordo-one `package-benchmark` dependency (pulled into the `ADJSON_DEV=1`
+**Benchmarks only:** the ordo-one `package-benchmark` dependency (pulled into the `AEMIJSON_DEV=1`
 graph) needs the system **jemalloc** headers — `brew install jemalloc` on macOS (`libjemalloc-dev`
-on Linux). Without it, `ADJSON_DEV=1 swift …` fails at dependency-scan time. Plain `swift build` /
+on Linux). Without it, `AEMIJSON_DEV=1 swift …` fails at dependency-scan time. Plain `swift build` /
 `swift test` don't need it.
 
 ## Everyday commands
@@ -25,8 +25,8 @@ swift build                 # build the library
 swift test                  # run the test + conformance suite
 swift test --enable-code-coverage \
   && swift package coverage-check --floor 80   # the coverage gate CI runs (see Coverage below)
-ADJSON_DEV=1 swift package benchmark   # the ordo-one/benchmark suite (Benchmarks/ADJSONSuite)
-swift package bench-compare            # ADJSON-vs-Foundation table (build the suite first; see Benchmarks)
+AEMIJSON_DEV=1 swift package benchmark   # the ordo-one/benchmark suite (Benchmarks/AemiJSONSuite)
+swift package bench-compare            # AemiJSON-vs-Foundation table (build the suite first; see Benchmarks)
 
 swift package format        # format in place  (add --allow-writing-to-package-directory if prompted)
 swift package lint          # formatting gate + shipped-library discipline (what CI runs)
@@ -36,8 +36,8 @@ swift package fetch-fixtures \
 ```
 
 `swift package lint` is the single source of truth for the lint rules: a `swift format lint --strict`
-formatting pass over the package, plus shipped-library discipline on `Sources/ADJSON` **and**
-`Sources/ADJSONCore`. The latter forbids **force-unwrap / force-cast / force-try** via swift-format's
+formatting pass over the package, plus shipped-library discipline on `Sources/AemiJSON` **and**
+`Sources/AemiJSONCore`. The latter forbids **force-unwrap / force-cast / force-try** via swift-format's
 AST rules (`NeverForceUnwrap`, `NeverUseForceTry`, run with the project config plus those two switched
 on — so every `x!` / `as!` / `try!` is caught, not a fixed pattern set) and a locale-sensitive
 `strtod`. Annotate a reviewed force-unwrap with `// swift-format-ignore: NeverForceUnwrap` on the line
@@ -73,14 +73,14 @@ the JSONPath CTS) through the scanner and the shared-state concurrency layer, so
 --sanitize` doubles as the stress harness. These catch what `-enable-actor-data-race-checks`
 (actor-isolation only) cannot — the hot paths lean on `Unsafe*Pointer`. For coverage-guided
 input generation see the **libFuzzer** section below; for throughput numbers use
-`ADJSON_DEV=1 swift package benchmark` (never under a sanitizer — ASan changes allocation layout and
+`AEMIJSON_DEV=1 swift package benchmark` (never under a sanitizer — ASan changes allocation layout and
 TSan is ~5–15× slower, so a sanitized run is a correctness pass, not a measurement).
 
 ## Coverage-guided fuzzing (libFuzzer)
 
-The `ADJSONFuzz` target drives `ADJSON.parse` (strict / lenient / json5 / iJSON), lazy navigation,
+The `AemiJSONFuzz` target drives `AemiJSON.parse` (strict / lenient / json5 / iJSON), lazy navigation,
 `JSONValue(parsing:)`, `JSONPath`, and `SQLiteJSONPath` from one `LLVMFuzzerTestOneInput` entry. It
-is gated behind `ADJSON_FUZZ` (so the default `swift build` never tries to link a `main`-less
+is gated behind `AEMIJSON_FUZZ` (so the default `swift build` never tries to link a `main`-less
 fuzzer executable) and built with `-sanitize=fuzzer -parse-as-library`.
 
 `-sanitize=fuzzer` is a **Linux** capability of the Swift toolchain (the Darwin SDK rejects it), so
@@ -88,46 +88,46 @@ run it on Linux (the CI `fuzz` job does this on every `main` push / dispatch, ti
 from the vendored corpora + CTS):
 
 ```sh
-ADJSON_FUZZ=1 swift build --product ADJSONFuzz
-"$(ADJSON_FUZZ=1 swift build --product ADJSONFuzz --show-bin-path)/ADJSONFuzz" corpus -max_total_time=300
+AEMIJSON_FUZZ=1 swift build --product AemiJSONFuzz
+"$(AEMIJSON_FUZZ=1 swift build --product AemiJSONFuzz --show-bin-path)/AemiJSONFuzz" corpus -max_total_time=300
 ```
 
 A crash writes a `crash-*` reproducer; commit it as a regression test under `Tests/`.
 
-## The `ADJSON_DEV` flag
+## The `AEMIJSON_DEV` flag
 
-Heavier dev tooling is gated behind the `ADJSON_DEV` environment variable so that packages which
-merely *depend on* ADJSON never resolve it (they keep only swift-syntax, needed by the macro).
+Heavier dev tooling is gated behind the `AEMIJSON_DEV` environment variable so that packages which
+merely *depend on* AemiJSON never resolve it (they keep only swift-syntax, needed by the macro).
 Set it when you want:
 
 ```sh
-# Build-time formatting enforcement (the LintBuild plugin attaches to the ADJSON target):
-ADJSON_DEV=1 swift build      # fails the build on any formatting violation
+# Build-time formatting enforcement (the LintBuild plugin attaches to the AemiJSON target):
+AEMIJSON_DEV=1 swift build      # fails the build on any formatting violation
 
 # Generate the DocC documentation (pulls swift-docc-plugin):
-ADJSON_DEV=1 swift package generate-documentation --target ADJSON
+AEMIJSON_DEV=1 swift package generate-documentation --target AemiJSON
 ```
 
 The `format`, `lint`, and `fetch-fixtures` command plugins are dependency-free and work without
-the flag. `ADJSON_DEV` also pulls swift-docc-plugin (docs) and swift-collections (only the benchmark
+the flag. `AEMIJSON_DEV` also pulls swift-docc-plugin (docs) and swift-collections (only the benchmark
 target, for the OrderedDictionary-vs-Dictionary comparison) — neither is ever resolved by consumers.
 
-## The `ADJSON_NIO` flag
+## The `AEMIJSON_NIO` flag
 
-The swift-nio adapter (`ADJSONNIO`) is gated behind `ADJSON_NIO` so swift-nio stays out of the default
-resolution graph — consumers of `ADJSON` / `ADJSONCore` never fetch it. Build and test it with:
+The swift-nio adapter (`AemiJSONNIO`) is gated behind `AEMIJSON_NIO` so swift-nio stays out of the default
+resolution graph — consumers of `AemiJSON` / `AemiJSONCore` never fetch it. Build and test it with:
 
 ```sh
-ADJSON_NIO=1 swift build
-ADJSON_NIO=1 swift test --filter ADJSONNIOTests
+AEMIJSON_NIO=1 swift build
+AEMIJSON_NIO=1 swift test --filter AemiJSONNIOTests
 ```
 
 ## Benchmarks & the regression baseline
 
 ```sh
-ADJSON_DEV=1 swift package benchmark                         # full ordo-one/benchmark suite
-ADJSON_DEV=1 swift build -c release --product ADJSONSuite    # build the suite once, then:
-swift package bench-compare                                  # ADJSON-vs-Foundation speedup table
+AEMIJSON_DEV=1 swift package benchmark                         # full ordo-one/benchmark suite
+AEMIJSON_DEV=1 swift build -c release --product AemiJSONSuite    # build the suite once, then:
+swift package bench-compare                                  # AemiJSON-vs-Foundation speedup table
 ```
 
 Regression gating compares each run against a committed baseline under `.benchmarkBaselines/main`.
@@ -141,9 +141,9 @@ enough to promote to a hard gate.
 
 The shipped graph is deliberately thin: the library proper depends only on **swift-syntax** (the
 `@JSONCodable` / `@Schemable` macros need it), pinned with an `upToNextMajor` `from:` requirement;
-the `ADJSONCore` product depends on **nothing**. Everything heavier (docc-plugin, swift-collections,
-package-benchmark, the fuzzer) is gated behind `ADJSON_DEV` / `ADJSON_FUZZ` so a package that merely
-depends on ADJSON never resolves it.
+the `AemiJSONCore` product depends on **nothing**. Everything heavier (docc-plugin, swift-collections,
+package-benchmark, the fuzzer) is gated behind `AEMIJSON_DEV` / `AEMIJSON_FUZZ` so a package that merely
+depends on AemiJSON never resolves it.
 
 `Package.resolved` is **gitignored** (the library convention — an application pins exact versions,
 a library lets its consumers' resolution win). With the only requirement `from:`-bounded, a checkout
@@ -168,13 +168,13 @@ the gate passes:
 - **`platforms`**: a cross-platform compile matrix (iOS / tvOS / watchOS / visionOS), on
   `main` / manual dispatch.
 - **`sanitizers`**: TSan + ASan passes over `swift test`, on `main` / manual dispatch — and,
-  additionally, on any PR that touches the unsafe scanner (`Sources/ADJSONCore/Core/**`, gated by a
+  additionally, on any PR that touches the unsafe scanner (`Sources/AemiJSONCore/Core/**`, gated by a
   `dorny/paths-filter` `changes` job). Each pass rebuilds the graph under instrumentation, so other
   PRs stay off the path.
 - **`api-stability`** (PRs): `diagnose-api-breaking-changes` against the base ref — a hard gate that
   flags unintended public-API changes.
 - **`release-test`** (`main`): the test suite built in release, to catch debug-only assumptions.
-- **`linux`** (nightly container) and **`fuzz`** (libFuzzer over `Sources/ADJSONFuzz`, Linux): run as
+- **`linux`** (nightly container) and **`fuzz`** (libFuzzer over `Sources/AemiJSONFuzz`, Linux): run as
   advisory (non-gating) jobs.
 - **`docs`**: builds the DocC site and deploys it to GitHub Pages on `main` —
   <https://g-cqd.github.io/ADJSON/>. Requires Pages source = "GitHub Actions" in the repo
