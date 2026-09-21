@@ -211,6 +211,12 @@ private func makeEncodeBody(_ props: [Property]) -> String {
     guard let first = props.first else { return "" }
     var lines: [String] = []
     if first.isOptional {
+        // A single optional property needs no separator state at all — and emitting `__wrote`
+        // for it would be written-but-never-read, a hard error for warnings-as-errors consumers.
+        if props.count == 1 {
+            let key = "\"\(first.name)\""
+            return "if let __v = self.\(first.name) { w.key(\(key)); \(writeValue("__v", first.wrapped)) }"
+        }
         lines.append("var __wrote = false")
         for (index, p) in props.enumerated() {
             let key = "\"\(p.name)\""

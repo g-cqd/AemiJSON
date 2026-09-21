@@ -42,19 +42,29 @@ public struct JSONParseOptions: Sendable {
     /// the default (512) keeps them safe. Raising it for untrusted input risks a stack overflow in
     /// those paths when the input is deeply nested; keep it modest unless the source is trusted.
     public var maxDepth: Int
+    /// Record each container's raw source byte span (opening bracket through closing bracket)
+    /// during the parse, enabling ``JSON/withRawJSONBytes(_:)`` on object/array nodes — the
+    /// zero-copy "hand me the untouched subtree text" accessor (scalars need no recording; their
+    /// slots already carry offsets). Off by default: recording costs one dictionary insert per
+    /// container (~25% on container-dense inputs, measured), so only opt in when raw subtree
+    /// extraction is actually consumed — e.g. a JSON-RPC router forwarding `result`/`params`
+    /// payloads verbatim to a typed decode elsewhere.
+    public var recordsContainerSpans: Bool
 
     public init(
         validation: Validation = .strict,
         duplicateKeys: DuplicateKeyStrategy = .useLast,
         maxDepth: Int = 512,
         restrictsNumbersToIEEE754: Bool = false,
-        assumesTopLevelDictionary: Bool = false
+        assumesTopLevelDictionary: Bool = false,
+        recordsContainerSpans: Bool = false
     ) {
         self.validation = validation
         self.duplicateKeys = duplicateKeys
         self.maxDepth = maxDepth
         self.restrictsNumbersToIEEE754 = restrictsNumbersToIEEE754
         self.assumesTopLevelDictionary = assumesTopLevelDictionary
+        self.recordsContainerSpans = recordsContainerSpans
     }
 
     /// RFC 8259 strict syntax, duplicate keys keep the last value. The default.

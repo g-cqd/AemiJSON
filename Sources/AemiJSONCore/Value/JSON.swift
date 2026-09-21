@@ -141,6 +141,42 @@ public struct JSON: Sendable {
         }
     }
 
+    /// Borrows the **raw source bytes** of this node's complete JSON text — for a container, from
+    /// its opening `{`/`[` through its closing bracket; for a string, including the surrounding
+    /// quotes (escapes left as-is); for numbers/literals, the lexeme. Zero-copy: the bytes are a
+    /// slice of the parsed input, valid only within `body`; do not escape the pointer.
+    ///
+    /// Container nodes are available only when the document was parsed with
+    /// ``JSONParseOptions/recordsContainerSpans`` enabled (scalars always work — their slots carry
+    /// offsets). Returns `nil` — without calling `body` — for a missing node or an unrecorded
+    /// container.
+    ///
+    /// Motivating use: a JSON-RPC client that classifies an envelope and hands the untouched
+    /// `result` payload to a typed decode at the call site — without this, that requires
+    /// re-encoding the subtree (`encodedBytes()` or a materialized tree); this returns the
+    /// original bytes instead.
+    public func withRawJSONBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R? {
+        guard index >= 0 else { return nil }
+        let off: Int
+        let len: Int
+        switch tag {
+            case JSONKind.object.rawValue, JSONKind.array.rawValue:
+                guard let packed = doc.containerSpans[index] else { return nil }
+                let open = Int(packed >> 32)
+                off = open
+                len = Int(packed & 0xFFFF_FFFF) - open + 1
+            case JSONKind.string.rawValue:
+                off = Slot.low(slot) - 1  // include the opening quote
+                len = Slot.length(slot) + 2  // and the closing one
+            default:
+                off = Slot.low(slot)
+                len = Slot.length(slot)
+        }
+        return try unsafe doc.withBytePointer { p in
+            try unsafe body(UnsafeRawBufferPointer(start: p + off, count: len))
+        }
+    }
+
     /// This number node rendered as an ECMAScript number string — the JavaScript `String(n)` /
     /// `JSON.stringify(n)` shortest-round-trip form (see ``JSONOutput/ecmaNumberToString(_:)``).
     /// `nil` for any non-number node. JSON5 `Infinity`/`NaN` literals render as `"Infinity"`/`"NaN"`.

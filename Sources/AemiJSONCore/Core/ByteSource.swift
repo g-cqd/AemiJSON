@@ -30,8 +30,9 @@ extension AemiJSON {
         guard UInt64(count) <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
         // Same typed-throws funnel as `parse([UInt8])`: `withBytes` is untyped `rethrows`, so the
         // closure stays non-throwing and carries the `JSONError` out through `Result`.
-        let tape =
-            unsafe try source.withBytes { raw -> Result<ContiguousArray<UInt64>, JSONError> in
+        let built =
+            unsafe try source.withBytes {
+                raw -> Result<(slots: ContiguousArray<UInt64>, spans: [Int: UInt64]), JSONError> in
                 guard let rawBase = raw.baseAddress else { return .failure(.unexpectedEndOfInput) }
                 var builder = unsafe TapeBuilder(
                     rawBase.assumingMemoryBound(to: UInt8.self), raw.count, options: options)
@@ -40,8 +41,9 @@ extension AemiJSON {
             .get()
         AemiJSON.Metrics.record(bytes: count)
         return JSONDocument(
-            backing: .source(source), tape: tape,
-            keysAreUnique: options.duplicateKeys == .throwError, isJSON5: options.isJSON5)
+            backing: .source(source), tape: built.slots,
+            keysAreUnique: options.duplicateKeys == .throwError, isJSON5: options.isJSON5,
+            containerSpans: built.spans)
     }
 
     /// Parse a **caller-owned, borrowed** raw buffer with no copy: the resulting ``JSONDocument``

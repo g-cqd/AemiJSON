@@ -14,6 +14,12 @@ import AemiKernel
     var i = 0
     var slots: ContiguousArray<UInt64>
     var stack: [Frame] = []
+    /// Container tape index → packed source span (`openByteOffset << 32 | closeByteOffset`, both
+    /// inclusive). Scalars need no entry — their slots already carry offset+length. Populated in
+    /// `closeContainer` only under `recordsContainerSpans`; carried onto `JSONDocument` so
+    /// `JSON.withRawJSONBytes` can borrow a container's raw text zero-copy.
+    var containerSpans: [Int: UInt64] = [:]
+    let recordSpans: Bool
 
     // One open container being built. Stands in for a recursive-descent call frame, so nesting
     // lives on the heap and arbitrarily deep input can never overflow the call stack.
@@ -24,6 +30,9 @@ import AemiKernel
     // (no duplicate-check) path pay zero allocation here. (Measured: already optimal; left as-is.)
     struct Frame {
         let openIndex: Int
+        /// Byte offset of this container's opening `{` / `[` in the source, recorded so the
+        /// closing patch can persist the container's raw source span (see `containerSpans`).
+        let openByte: Int
         var count: Int
         let isObject: Bool
         var seenKeys: [Int: [(offset: Int, length: Int)]]
@@ -41,17 +50,18 @@ import AemiKernel
         self.checkDuplicates = options.duplicateKeys == .throwError
         self.enforceIEEE754Numbers = options.restrictsNumbersToIEEE754
         self.maxDepth = options.maxDepth
+        self.recordSpans = options.recordsContainerSpans
         self.slots = []
         slots.reserveCapacity(n / 4 + 8)
         stack.reserveCapacity(16)
     }
 
-    mutating func build() throws(JSONError) -> ContiguousArray<UInt64> {
+    mutating func build() throws(JSONError) -> (slots: ContiguousArray<UInt64>, spans: [Int: UInt64]) {
         skipWS()
         try parseValue()
         skipWS()
         if i != n { throw JSONError.trailingData(at: i) }
-        return slots
+        return (slots, containerSpans)
     }
 
     // Scalar whitespace skip — deliberately not SWAR. JSON whitespace runs are short (a newline + a
@@ -159,10 +169,17 @@ import AemiKernel
     // Patches a container's placeholder with its element count and the index after its subtree.
     // `count` occupies the 28-bit aux field, `next` the low 32 bits — both bounded by the 4 GB
     // input cap, but guarded so a pathological count can't silently wrap and corrupt navigation.
-    mutating func closeContainer(_ openIdx: Int, count: Int, isObject: Bool) throws(JSONError) {
+    mutating func closeContainer(_ openIdx: Int, openByte: Int, count: Int, isObject: Bool) throws(JSONError) {
         guard count <= Slot.auxMask, UInt64(slots.count) <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
         let tag = isObject ? JSONKind.object.rawValue : JSONKind.array.rawValue
         slots[openIdx] = Slot.container(tag, count: count, next: slots.count)
+        // Every close path reaches here with `i` one past the closing bracket, so `i - 1` is the
+        // bracket itself; the span is inclusive on both ends. Offsets fit 32 bits (input ≤ 4 GiB).
+        if recordSpans {
+            let open = UInt64(UInt32(truncatingIfNeeded: openByte))
+            let close = UInt64(UInt32(truncatingIfNeeded: i - 1))
+            containerSpans[openIdx] = (open << 32) | close
+        }
     }
 
     // Detects duplicate keys (RFC 7493 / `.throwError`) in O(1) expected time by bucketing keys

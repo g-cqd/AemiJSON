@@ -9,8 +9,9 @@ public enum AemiJSON {
         // `withUnsafeBufferPointer` is untyped `rethrows` (it erases the closure's error to
         // `any Error`), so the closure stays non-throwing and funnels the typed `JSONError`
         // out through `Result`, whose `.get()` is itself `throws(JSONError)`.
-        let tape =
-            try bytes.withUnsafeBufferPointer { bp -> Result<ContiguousArray<UInt64>, JSONError> in
+        let built =
+            try bytes.withUnsafeBufferPointer {
+                bp -> Result<(slots: ContiguousArray<UInt64>, spans: [Int: UInt64]), JSONError> in
                 guard let base = bp.baseAddress else { return .failure(.unexpectedEndOfInput) }
                 var builder = unsafe TapeBuilder(base, bp.count, options: options)
                 return Result { () throws(JSONError) in try builder.build() }
@@ -18,8 +19,9 @@ public enum AemiJSON {
             .get()
         AemiJSON.Metrics.record(bytes: bytes.count)
         return JSONDocument(
-            backing: .bytes(bytes), tape: tape,
-            keysAreUnique: options.duplicateKeys == .throwError, isJSON5: options.isJSON5)
+            backing: .bytes(bytes), tape: built.slots,
+            keysAreUnique: options.duplicateKeys == .throwError, isJSON5: options.isJSON5,
+            containerSpans: built.spans)
     }
 
     /// Parse a `String` into an immutable, lazily-navigable document.
