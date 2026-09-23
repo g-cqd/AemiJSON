@@ -79,9 +79,19 @@ final class DecodeContext {
     /// document starts with a slot, so this is also where a context used past its decode traps.
     @inline(__always) @inlinable func slot(_ i: Int) -> UInt64 {
         checkLive()
+        return uncheckedSlot(i)
+    }
+
+    /// `slot` without the liveness check, for the body of a member or element walk whose first read
+    /// went through `slot`. A context cannot die during the synchronous call that walks it, so one check
+    /// per call covers the walk, which would otherwise pay it on every slot. The bounds stay asserted.
+    @inline(__always) @inlinable func uncheckedSlot(_ i: Int) -> UInt64 {
         assert(i >= 0 && i < tapeCount, "AemiJSON: tape index \(i) out of bounds [0, \(tapeCount))")
         return tape[i]
     }
+
+    /// `nextIndex(after:)` without the liveness check; see `uncheckedSlot`.
+    @inline(__always) @inlinable func uncheckedNextIndex(after i: Int) -> Int { Slot.next(after: i, uncheckedSlot(i)) }
 
     @inline(__always) @inlinable func assertBytes(_ off: Int, _ len: Int) {
         assert(off >= 0 && len >= 0 && off + len <= byteCount, "AemiJSON: byte range out of bounds")
@@ -180,7 +190,7 @@ final class DecodeContext {
         var i = obj + 1
         var found: Int? = nil
         for _ in 0 ..< c {
-            let ks = slot(i)
+            let ks = uncheckedSlot(i)
             let valIdx = i + 1
             let koff = Slot.low(ks)
             let klen = Slot.length(ks)
@@ -189,7 +199,7 @@ final class DecodeContext {
                 found = valIdx
                 if keysAreUnique { break }  // unique keys → first match is the only match
             }
-            i = nextIndex(after: valIdx)
+            i = uncheckedNextIndex(after: valIdx)
         }
         return found
     }
@@ -203,8 +213,8 @@ final class DecodeContext {
         var members = [String: Int](minimumCapacity: c)
         var i = obj + 1
         for _ in 0 ..< c {
-            members[convertedKey(keyString(i))] = i + 1
-            i = nextIndex(after: i + 1)
+            members[convertedKey(decodeString(uncheckedSlot(i)))] = i + 1
+            i = uncheckedNextIndex(after: i + 1)
         }
         return members
     }
@@ -278,8 +288,9 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
         out.reserveCapacity(c)
         var i = index + 1
         for _ in 0 ..< c {
-            if let k = Key(stringValue: ctx.strategies.applyKeyDecoding(ctx.keyString(i))) { out.append(k) }
-            i = ctx.nextIndex(after: i + 1)
+            let key = ctx.strategies.applyKeyDecoding(ctx.decodeString(ctx.uncheckedSlot(i)))
+            if let k = Key(stringValue: key) { out.append(k) }
+            i = ctx.uncheckedNextIndex(after: i + 1)
         }
         return out
     }

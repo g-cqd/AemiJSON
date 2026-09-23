@@ -24,7 +24,7 @@ extension DecodeContext {
         var i = obj + 1
         var found: Int? = nil
         for _ in 0 ..< c {
-            let ks = slot(i)
+            let ks = uncheckedSlot(i)
             let valIdx = i + 1
             let koff = Slot.low(ks)
             let klen = Slot.length(ks)
@@ -33,7 +33,7 @@ extension DecodeContext {
                 found = valIdx
                 if keysAreUnique { break }  // unique keys → first match is the only match
             }
-            i = nextIndex(after: valIdx)
+            i = uncheckedNextIndex(after: valIdx)
         }
         return found
     }
@@ -131,7 +131,7 @@ extension _FastDecodeCursor {
         defer { ctx.popDepth() }
         for _ in 0 ..< count {
             out.append(try U.__adjsonDecode(_FastDecodeCursor(ctx: ctx, index: i)))
-            i = ctx.nextIndex(after: i)
+            i = ctx.uncheckedNextIndex(after: i)
         }
         return out
     }
@@ -175,9 +175,9 @@ extension _FastDecodeCursor {
         try ctx.pushDepth()
         defer { ctx.popDepth() }
         for _ in 0 ..< count {
-            let key = ctx.keyString(i)
+            let key = ctx.decodeString(ctx.uncheckedSlot(i))
             out[key] = try V.__adjsonDecode(_FastDecodeCursor(ctx: ctx, index: i + 1))
-            i = ctx.nextIndex(after: i + 1)
+            i = ctx.uncheckedNextIndex(after: i + 1)
         }
         return out
     }
@@ -228,11 +228,11 @@ extension _FastDecodeCursor {
         let c = ctx.count(index)
         var i = index + 1
         for _ in 0 ..< c {
-            let ks = ctx.slot(i)
+            let ks = ctx.uncheckedSlot(i)
             let key = _FastKey(
                 ctx: ctx, off: Slot.low(ks), len: Slot.length(ks), escaped: Slot.flags(ks) & 1 == 1)
             body(key, i + 1)
-            i = ctx.nextIndex(after: i + 1)
+            i = ctx.uncheckedNextIndex(after: i + 1)
         }
     }
 
