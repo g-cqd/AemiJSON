@@ -33,14 +33,18 @@ final class DecodeContext {
     @usableFromInline let strategies: DecodeStrategies
     // Native-recursion guard for the (unavoidably recursive) Codable path. `decodeValue` bumps
     // `decodeDepth` on entry and throws past `maxDecodeDepth`, converting a stack overflow on deeply
-    // nested input into a catchable error — even when `maxDepth` is raised far past it.
-    @usableFromInline var decodeDepth = 0
+    // nested input into a catchable error — even when `maxDepth` is raised far past it. Exempt from the
+    // runtime exclusivity check, like `isLive`: it is only ever read or bumped in place, never borrowed
+    // across a call, and two checked accesses per decoded value showed up in the decode benchmarks.
+    @usableFromInline @exclusivity(unchecked) var decodeDepth = 0
     @usableFromInline let maxDecodeDepth: Int
     /// Cleared when the decode that created this context returns (see `withDecodeContext`). A
     /// `Decoder` or container can outlive that call: a `Decodable` may store its decoder, or hand a
     /// `superDecoder()` to code that keeps it. `bytes` and `tape` are dead by then, so every tape
-    /// read checks this flag and traps rather than read through them.
-    @usableFromInline var isLive = true
+    /// read checks this flag and traps rather than read through them. Exempt from the runtime
+    /// exclusivity check, which would otherwise make each read a call: the flag is written once, at
+    /// the end of the decode, and never borrowed across a call.
+    @usableFromInline @exclusivity(unchecked) var isLive = true
     /// Keys converted under the key-decoding strategy so far in this decode, by raw key. The records
     /// of an array repeat the same keys, so each distinct key is converted once per decode rather than
     /// once per object. Capped, so a document of ever-new keys cannot grow it without bound.
