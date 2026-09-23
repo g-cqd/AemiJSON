@@ -211,7 +211,7 @@ final class DecodeContext {
 
     private func convertedKey(_ raw: String) -> String {
         if let converted = convertedKeys[raw] { return converted }
-        let converted = applyKeyDecoding(raw)
+        let converted = strategies.applyKeyDecoding(raw)
         if convertedKeys.count < 1024 { convertedKeys[raw] = converted }
         return converted
     }
@@ -278,7 +278,7 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
         out.reserveCapacity(c)
         var i = index + 1
         for _ in 0 ..< c {
-            if let k = Key(stringValue: ctx.applyKeyDecoding(ctx.keyString(i))) { out.append(k) }
+            if let k = Key(stringValue: ctx.strategies.applyKeyDecoding(ctx.keyString(i))) { out.append(k) }
             i = ctx.nextIndex(after: i + 1)
         }
         return out

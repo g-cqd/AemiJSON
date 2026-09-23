@@ -72,28 +72,28 @@ public enum JSONOutput {
         for _ in 0 ..< level { bytes.append(contentsOf: unit) }
     }
 
-    /// Appends `"…"` with RFC 8259 minimal escaping: `"`, `\`, and the C0 controls
-    /// (`\n \r \t \b \f` short forms, everything else `\u00XX`). Bytes ≥ 0x20 other than
-    /// `"`/`\` are copied verbatim in runs, so well-formed UTF-8 passes through untouched.
-    ///
-    /// `escapeHTMLUnsafe` additionally escapes the characters unsafe to embed in HTML/`<script>`:
-    /// `<`, `>`, `&` (as `<`/`>`/`&`) and the JS line/paragraph separators U+2028 /
-    /// U+2029 (as ` `/` `). Off by default; the checks short-circuit so the default path is
-    /// unchanged.
-    /// SWAR escape stop-mask for ``appendString``: `0x80` in each byte that must be escaped on the
-    /// default / `escapeSlashes` profile — a control (`< 0x20`), `"`, `\` (and `/` when escaping
-    /// slashes). Non-ASCII is intentionally NOT flagged (well-formed UTF-8 is copied verbatim on
-    /// encode), which is the one term that differs from the parser's `stringStopMask`.
     /// Minimum remaining bytes for the SIMD escape scan to beat the inline SWAR (below it the C-call
     /// overhead dominates); short string values keep the inline path. Tune from the AemiJSONSuite crossover.
     @usableFromInline static let kernelEscapeMinBytes = 64
 
+    /// SWAR escape stop-mask for ``appendString``: `0x80` in each byte that must be escaped on the
+    /// default / `escapeSlashes` profile — a control (`< 0x20`), `"`, `\` (and `/` when escaping
+    /// slashes). Non-ASCII is intentionally NOT flagged (well-formed UTF-8 is copied verbatim on
+    /// encode), which is the one term that differs from the parser's `stringStopMask`.
     @inlinable @inline(__always)
     static func encodeStopMask(_ v: UInt64, escapeSlashes: Bool) -> UInt64 {
         let m = SWAR.lessThan(v, 0x20) | SWAR.equals(v, 0x22) | SWAR.equals(v, 0x5C)
         return escapeSlashes ? m | SWAR.equals(v, 0x2F) : m
     }
 
+    /// Appends `"…"` with RFC 8259 minimal escaping: `"`, `\`, and the C0 controls
+    /// (`\n \r \t \b \f` short forms, everything else `\u00XX`). Bytes ≥ 0x20 other than
+    /// `"`/`\` are copied verbatim in runs, so well-formed UTF-8 passes through untouched.
+    ///
+    /// `escapeHTMLUnsafe` additionally escapes the characters unsafe to embed in HTML/`<script>`:
+    /// `<`, `>`, `&` (as `\u003c`/`\u003e`/`\u0026`) and the JS line/paragraph separators U+2028 /
+    /// U+2029 (as `\u2028`/`\u2029`). Off by default; the checks short-circuit so the default path is
+    /// unchanged.
     @inlinable
     public static func appendString(
         _ s: String, to bytes: inout [UInt8], escapeSlashes: Bool = false, escapeHTMLUnsafe: Bool = false

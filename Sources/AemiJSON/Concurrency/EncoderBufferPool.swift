@@ -9,5 +9,7 @@ enum EncoderBufferPool {
 
     static func take() -> [UInt8] { pool.take() }
 
-    static func recycle(_ buffer: [UInt8]) { pool.recycle(buffer) }
+    /// Takes ownership, like the pool itself: a buffer still shared with the caller would make the
+    /// pool's in-place clear copy it instead of reusing its storage.
+    static func recycle(_ buffer: consuming [UInt8]) { pool.recycle(consume buffer) }
 }

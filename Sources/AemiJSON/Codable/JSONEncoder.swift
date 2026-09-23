@@ -44,7 +44,7 @@ extension AemiJSON {
         public func encode<T: Encodable>(_ value: T) throws -> Data {
             let bytes = try encodeToBytes(value)
             let data = Data(bytes)
-            EncoderBufferPool.recycle(bytes)
+            EncoderBufferPool.recycle(consume bytes)  // the pool must get the only reference to reuse it
             return data
         }
 

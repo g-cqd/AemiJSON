@@ -168,14 +168,6 @@ struct JSONValueDecoderImpl: Decoder {
         }
     }
 
-    func applyKeyDecoding(_ key: String) -> String {
-        switch strategies.key {
-            case .useDefaultKeys: return key
-            case .convertFromSnakeCase: return KeyCoding.fromSnakeCase(key)
-            case .custom(let transform): return transform(key)
-        }
-    }
-
     // MARK: - Errors
 
     func typeMismatch<T>(_ type: T.Type, _ value: JSONValue, _ codingPath: [any CodingKey]) -> DecodingError {
@@ -222,7 +214,8 @@ private struct KeyedValueContainer<Key: CodingKey>: KeyedDecodingContainerProtoc
             members = object
         } else {
             var converted = OrderedDictionary<String, JSONValue>()
-            for (k, v) in object { converted[decoder.applyKeyDecoding(k)] = v }  // last value wins on collision
+            // Last value wins on a collision.
+            for (k, v) in object { converted[decoder.strategies.applyKeyDecoding(k)] = v }
             members = converted
         }
     }

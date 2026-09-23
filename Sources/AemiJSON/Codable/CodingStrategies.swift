@@ -116,6 +116,16 @@ struct EncodeStrategies {
     var data: AemiJSON.JSONDecoder.DataDecodingStrategy = .base64
     var nonConformingFloat: AemiJSON.JSONDecoder.NonConformingFloatDecodingStrategy = .throw
     @usableFromInline var key: AemiJSON.JSONDecoder.KeyDecodingStrategy = .useDefaultKeys
+
+    /// Convert a JSON key to its `CodingKey` form under the key-decoding strategy. The one definition
+    /// the tape decoder and the `JSONValue` decoder share.
+    func applyKeyDecoding(_ key: String) -> String {
+        switch self.key {
+            case .useDefaultKeys: return key
+            case .convertFromSnakeCase: return KeyCoding.fromSnakeCase(key)
+            case .custom(let transform): return transform(key)
+        }
+    }
 }
 
 // MARK: - snake_case conversion (matches swift-foundation's JSONEncoder/JSONDecoder semantics)
@@ -335,20 +345,12 @@ extension DecodeContext {
         return value
     }
 
-    /// True when JSON keys must be converted before matching `CodingKey`s (disables the byte-compare
-    /// fast path in `memberValueIndex` and the `@JSONCodable` fast decode).
+    /// True when JSON keys must be converted before matching `CodingKey`s: the keyed container then
+    /// looks fields up by converted key (see `convertedMembers`), and the `@JSONCodable` fast path,
+    /// which matches keys verbatim, steps aside.
     @usableFromInline var keyConversionActive: Bool {
         if case .useDefaultKeys = strategies.key { return false }
         return true
-    }
-
-    /// Convert a JSON key to its `CodingKey` form under the active key-decoding strategy.
-    func applyKeyDecoding(_ key: String) -> String {
-        switch strategies.key {
-            case .useDefaultKeys: return key
-            case .convertFromSnakeCase: return KeyCoding.fromSnakeCase(key)
-            case .custom(let transform): return transform(key)
-        }
     }
 
     private func dateMismatch() -> DecodingError {
