@@ -4,139 +4,152 @@ import AemiKernels
 public enum JSONString {
     // Decode a JSON string body (between quotes) that contains escape sequences.
     // The no-escape fast path is handled by the caller via `String(decoding:)`.
+    //
+    // The decoded text is written straight into the new string's storage, sized to `length`: no
+    // escape decodes to more bytes than it occupies (`\uXXXX`, 6 bytes, gives at most 3; a surrogate
+    // pair, 12, gives 4; an unpaired surrogate gives U+FFFD's 3; every other escape gives 1), so the
+    // output never outgrows the input. The initializer repairs ill-formed UTF-8 as
+    // `String(decoding:as:)` does, which lenient mode relies on for input it did not validate.
     public static func unescape(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> String {
         // Caller owns `p` for `p[offset ..< offset + length]` for this call; reads stay in that range
         // and `p` never escapes. Offsets/lengths come from the tape and are non-negative.
         assert(offset >= 0 && length >= 0, "unescape requires a non-negative byte range")
-        var out: [UInt8] = []
-        out.reserveCapacity(length)
-        var j = offset
-        let end = offset + length
-        while j < end {
-            // Bulk-copy the run of plain (non-backslash) bytes up to the next escape via the SIMD byte
-            // search (memchr-backed) instead of appending one byte at a time — a win on the long plain
-            // runs between sparse escapes; escape-dense strings just see cheap short searches.
-            let run = unsafe AemiKernels.firstIndexOfByte(base: p + j, count: end - j, needle: 0x5C)
-            if run > 0 {
-                unsafe out.append(contentsOf: UnsafeBufferPointer(start: p + j, count: run))
-                j += run
+        return String(unsafeUninitializedCapacity: length) { out in
+            var w = 0
+            // Every write below is bounded by the capacity argument above: `w` never passes `length`.
+            func emit(_ byte: UInt8) {
+                unsafe out[w] = byte
+                w += 1
             }
-            guard j < end else { break }
-            // `p[j]` is the backslash.
-            j += 1
-            guard j < end else { break }
-            let e = unsafe p[j]
-            j += 1
-            switch e {
-                case 0x22: out.append(0x22)
-                case 0x5C: out.append(0x5C)
-                case 0x2F: out.append(0x2F)
-                case 0x6E: out.append(0x0A)
-                case 0x74: out.append(0x09)
-                case 0x72: out.append(0x0D)
-                case 0x62: out.append(0x08)
-                case 0x66: out.append(0x0C)
-                case 0x75:
-                    let hi = unsafe readHex4(p, j, end)
-                    j += 4
-                    var scalar = UInt32(hi)
-                    if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, unsafe p[j] == 0x5C, unsafe p[j + 1] == 0x75 {
-                        let lo = unsafe readHex4(p, j + 2, end)
-                        if lo >= 0xDC00 && lo <= 0xDFFF {
-                            scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
-                            j += 6
-                        }
-                    }
-                    if let us = Unicode.Scalar(scalar) {
-                        Unicode.UTF8.encode(us) { out.append($0) }
-                    } else {
-                        out.append(contentsOf: [0xEF, 0xBF, 0xBD])  // U+FFFD
-                    }
-                default:
-                    out.append(e)
+            var j = offset
+            let end = offset + length
+            while j < end {
+                // Bulk-copy the run of plain (non-backslash) bytes up to the next escape via the SIMD
+                // byte search (memchr-backed) instead of one byte at a time — a win on the long plain
+                // runs between sparse escapes; escape-dense strings just see cheap short searches.
+                let run = unsafe AemiKernels.firstIndexOfByte(base: p + j, count: end - j, needle: 0x5C)
+                if run > 0, let base = out.baseAddress {
+                    unsafe (base + w).initialize(from: p + j, count: run)
+                    w += run
+                    j += run
+                }
+                guard j < end else { break }
+                // `p[j]` is the backslash.
+                j += 1
+                guard j < end else { break }
+                let e = unsafe p[j]
+                j += 1
+                switch e {
+                    case 0x22: emit(0x22)
+                    case 0x5C: emit(0x5C)
+                    case 0x2F: emit(0x2F)
+                    case 0x6E: emit(0x0A)
+                    case 0x74: emit(0x09)
+                    case 0x72: emit(0x0D)
+                    case 0x62: emit(0x08)
+                    case 0x66: emit(0x0C)
+                    case 0x75: unsafe emitUnicodeEscape(p, &j, end, emit)
+                    default: emit(e)
+                }
             }
+            return w
         }
-        return String(decoding: out, as: UTF8.self)
     }
 
     // Decode a JSON5 string body. Adds to the JSON escapes: `\'`, `\v`, `\0`, `\xHH`, line
     // continuations (`\` + LF/CR/CRLF/U+2028/U+2029 → elided), and identity escapes (`\X` → `X`).
     // The scanner has already validated these, so this only re-materializes them.
     public static func unescapeJSON5(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> String {
-        // Same contract as `unescape`: caller owns `p[offset ..< offset + length]`, `p` does not escape.
+        // Same contract as `unescape`, and the same in-place write: no JSON5 escape decodes to more
+        // bytes than it occupies either (`\xHH`, 4 bytes, gives at most 2; a line continuation gives 0).
         assert(offset >= 0 && length >= 0, "unescapeJSON5 requires a non-negative byte range")
-        var out: [UInt8] = []
-        out.reserveCapacity(length)
-        var j = offset
-        let end = offset + length
-        unescape: while j < end {
-            let c = unsafe p[j]
-            if c != 0x5C {
-                out.append(c)
-                j += 1
-                continue
+        return String(unsafeUninitializedCapacity: length) { out in
+            var w = 0
+            func emit(_ byte: UInt8) {
+                unsafe out[w] = byte
+                w += 1
             }
-            j += 1
-            guard j < end else { break }
-            let e = unsafe p[j]
-            j += 1
-            switch e {
-                case 0x22: out.append(0x22)  // \"
-                case 0x27: out.append(0x27)  // \'
-                case 0x5C: out.append(0x5C)  // \\
-                case 0x2F: out.append(0x2F)  // \/
-                case 0x6E: out.append(0x0A)  // \n
-                case 0x74: out.append(0x09)  // \t
-                case 0x72: out.append(0x0D)  // \r
-                case 0x62: out.append(0x08)  // \b
-                case 0x66: out.append(0x0C)  // \f
-                case 0x76: out.append(0x0B)  // \v
-                case 0x30: out.append(0x00)  // \0 (scanner ensured no trailing digit)
-                case 0x78:  // \xHH → U+00HH (value <= 0xFF: the non-failable UInt8 scalar init, no force-unwrap)
-                    // The scanner guarantees two hex digits follow, but don't make the in-bounds read
-                    // depend on that invariant alone: bail if the buffer is somehow short.
-                    guard j + 1 < end else { break unescape }
-                    let value = unsafe UInt32(Hex.value(p[j]) ?? 0) << 4 | UInt32(Hex.value(p[j + 1]) ?? 0)
-                    j += 2
-                    Unicode.UTF8.encode(Unicode.Scalar(UInt8(truncatingIfNeeded: value))) { out.append($0) }
-                case 0x75:  // \uHHHH (+ surrogate pair)
-                    let hi = unsafe readHex4(p, j, end)
-                    j += 4
-                    var scalar = UInt32(hi)
-                    if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, unsafe p[j] == 0x5C, unsafe p[j + 1] == 0x75 {
-                        let lo = unsafe readHex4(p, j + 2, end)
-                        if lo >= 0xDC00 && lo <= 0xDFFF {
-                            scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
-                            j += 6
-                        }
-                    }
-                    if let us = Unicode.Scalar(scalar) {
-                        Unicode.UTF8.encode(us) { out.append($0) }
-                    } else {
-                        out.append(contentsOf: [0xEF, 0xBF, 0xBD])  // U+FFFD
-                    }
-                case 0x0A: break  // \ + LF → line continuation (elided)
-                case 0x0D: if j < end, unsafe p[j] == 0x0A { j += 1 }  // \ + CR / CRLF → elided
-                default:
-                    if e >= 0x80 {  // identity-escaped multi-byte scalar, or a U+2028/U+2029 continuation
-                        let len = e >= 0xF0 ? 4 : (e >= 0xE0 ? 3 : 2)
-                        if len == 3, e == 0xE2, j + 1 < end, unsafe p[j] == 0x80,
-                            unsafe p[j + 1] == 0xA8 || p[j + 1] == 0xA9
-                        {
-                            j += 2  // elide the U+2028/U+2029 line continuation (lead already consumed)
-                        } else {
-                            out.append(e)
-                            for _ in 1 ..< len where j < end {
-                                out.append(unsafe p[j])
-                                j += 1
+            var j = offset
+            let end = offset + length
+            unescape: while j < end {
+                let c = unsafe p[j]
+                if c != 0x5C {
+                    emit(c)
+                    j += 1
+                    continue
+                }
+                j += 1
+                guard j < end else { break }
+                let e = unsafe p[j]
+                j += 1
+                switch e {
+                    case 0x22: emit(0x22)  // \"
+                    case 0x27: emit(0x27)  // \'
+                    case 0x5C: emit(0x5C)  // \\
+                    case 0x2F: emit(0x2F)  // \/
+                    case 0x6E: emit(0x0A)  // \n
+                    case 0x74: emit(0x09)  // \t
+                    case 0x72: emit(0x0D)  // \r
+                    case 0x62: emit(0x08)  // \b
+                    case 0x66: emit(0x0C)  // \f
+                    case 0x76: emit(0x0B)  // \v
+                    case 0x30: emit(0x00)  // \0 (scanner ensured no trailing digit)
+                    case 0x78:  // \xHH → U+00HH (value <= 0xFF: the non-failable UInt8 scalar init, no force-unwrap)
+                        // The scanner guarantees two hex digits follow, but don't make the in-bounds read
+                        // depend on that invariant alone: bail if the buffer is somehow short.
+                        guard j + 1 < end else { break unescape }
+                        let value = unsafe UInt32(Hex.value(p[j]) ?? 0) << 4 | UInt32(Hex.value(p[j + 1]) ?? 0)
+                        j += 2
+                        Unicode.UTF8.encode(Unicode.Scalar(UInt8(truncatingIfNeeded: value))) { emit($0) }
+                    case 0x75: unsafe emitUnicodeEscape(p, &j, end, emit)  // \uHHHH (+ surrogate pair)
+                    case 0x0A: break  // \ + LF → line continuation (elided)
+                    case 0x0D: if j < end, unsafe p[j] == 0x0A { j += 1 }  // \ + CR / CRLF → elided
+                    default:
+                        if e >= 0x80 {  // identity-escaped multi-byte scalar, or a U+2028/U+2029 continuation
+                            let len = e >= 0xF0 ? 4 : (e >= 0xE0 ? 3 : 2)
+                            if len == 3, e == 0xE2, j + 1 < end, unsafe p[j] == 0x80,
+                                unsafe p[j + 1] == 0xA8 || p[j + 1] == 0xA9
+                            {
+                                j += 2  // elide the U+2028/U+2029 line continuation (lead already consumed)
+                            } else {
+                                emit(e)
+                                for _ in 1 ..< len where j < end {
+                                    emit(unsafe p[j])
+                                    j += 1
+                                }
                             }
+                        } else {
+                            emit(e)  // identity escape \X → X
                         }
-                    } else {
-                        out.append(e)  // identity escape \X → X
-                    }
+                }
+            }
+            return w
+        }
+    }
+
+    /// Decodes a `\uXXXX` escape (with an optional surrogate-pair continuation) at `p[j]`, advancing
+    /// `j`, and emits the scalar's UTF-8 — U+FFFD for an unpaired or out-of-range surrogate.
+    @inline(__always)
+    private static func emitUnicodeEscape(
+        _ p: UnsafePointer<UInt8>, _ j: inout Int, _ end: Int, _ emit: (UInt8) -> Void
+    ) {
+        let hi = unsafe readHex4(p, j, end)
+        j += 4
+        var scalar = UInt32(hi)
+        if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, unsafe p[j] == 0x5C, unsafe p[j + 1] == 0x75 {
+            let lo = unsafe readHex4(p, j + 2, end)
+            if lo >= 0xDC00 && lo <= 0xDFFF {
+                scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
+                j += 6
             }
         }
-        return String(decoding: out, as: UTF8.self)
+        guard let us = Unicode.Scalar(scalar) else {
+            emit(0xEF)  // U+FFFD
+            emit(0xBF)
+            emit(0xBD)
+            return
+        }
+        Unicode.UTF8.encode(us) { emit($0) }
     }
 
     // Compare the strict-unescaped form of `p[offset..<offset+length]` to `target` byte-for-byte,
