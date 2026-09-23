@@ -110,8 +110,10 @@ private func schemaProperties(_ decl: StructDeclSyntax) -> [SchemaProperty]? {
         let decorators = SchemaDecorators.parse(varDecl)
         for binding in varDecl.bindings {
             if SyntaxExtract.isComputed(binding.accessorBlock) { continue }
-            guard let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text else { continue }
+            guard let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier else { continue }
             guard let type = binding.typeAnnotation?.type else { return nil }
+            // The JSON property name: a property spelled with backticks is keyed without them.
+            let name = identifier.identifier?.name ?? identifier.text
             props.append(SchemaProperty(name: name, type: type, doc: doc, decorators: decorators))
         }
     }

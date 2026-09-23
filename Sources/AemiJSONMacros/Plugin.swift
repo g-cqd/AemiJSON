@@ -13,7 +13,8 @@ struct AemiJSONMacrosPlugin: CompilerPlugin {
 }
 
 private struct Property {
-    let name: String
+    let name: String  // the property's Swift spelling, as written: `default` keeps its backticks
+    let key: String  // its JSON key: the identifier without backticks
     let type: String
     let isOptional: Bool
     let wrapped: String  // element type when optional, else == type
@@ -146,16 +147,18 @@ private func storedProperties(_ decl: StructDeclSyntax) -> [Property]? {
         if modifiers.contains("static") || modifiers.contains("lazy") { continue }
         for binding in varDecl.bindings {
             if SyntaxExtract.isComputed(binding.accessorBlock) { continue }
-            guard let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text else { continue }
+            guard let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier else { continue }
             guard let typeSyntax = binding.typeAnnotation?.type else { return nil }
+            let name = identifier.text
+            let key = identifier.identifier?.name ?? name
             if let optional = typeSyntax.as(OptionalTypeSyntax.self) {
                 props.append(
                     Property(
-                        name: name, type: typeSyntax.trimmedDescription, isOptional: true,
+                        name: name, key: key, type: typeSyntax.trimmedDescription, isOptional: true,
                         wrapped: optional.wrappedType.trimmedDescription))
             } else {
                 let full = typeSyntax.trimmedDescription
-                props.append(Property(name: name, type: full, isOptional: false, wrapped: full))
+                props.append(Property(name: name, key: key, type: full, isOptional: false, wrapped: full))
             }
         }
     }
@@ -166,25 +169,52 @@ private func storedProperties(_ decl: StructDeclSyntax) -> [Property]? {
 
 // Single-pass decode: resolve every field's value index in one `forEachMember` walk, then decode
 // each field from its index — O(K) instead of O(fields × K) repeated key scans. Last-value-wins is
-// preserved because a later duplicate key overwrites the stored index.
+// preserved because a later duplicate key overwrites the stored index. The body first rejects a
+// non-object, as synthesized `Codable` does; `forEachMember` alone would visit no members and leave a
+// struct of optionals decoding to all-`nil`. Its locals are numbered rather than named after the
+// properties, so a property spelled with backticks, or named like the cursor `c`, cannot break them.
 private func makeDecodeBody(_ props: [Property]) -> String {
-    let ctorArgs = props.map { "\($0.name): \($0.name)" }.joined(separator: ", ")
-    if props.isEmpty { return "return Self(\(ctorArgs))" }
-    var lines = props.map { "var __vi_\($0.name) = -1" }
+    let ctorArgs = props.enumerated().map { index, p in "\(argumentLabel(p)): __f_\(index)" }.joined(separator: ", ")
+    var lines = ["try c.requireObject()"]
+    if props.isEmpty { return (lines + ["return Self()"]).joined(separator: "\n        ") }
+    lines.append(contentsOf: props.indices.map { "var __vi_\($0) = -1" })
     let dispatch = props.enumerated()
         .map { index, p in
-            "\(index == 0 ? "if" : "else if") __k.matches(\"\(p.name)\") { __vi_\(p.name) = __v }"
+            "\(index == 0 ? "if" : "else if") __k.matches(\(stringLiteral(p.key))) { __vi_\(index) = __v }"
         }
         .joined(separator: " ")
     lines.append("c.forEachMember { __k, __v in \(dispatch) }")
-    lines.append(contentsOf: props.map { "let \($0.name) = \(decodeAtExpr($0))" })
+    lines.append(contentsOf: props.enumerated().map { index, p in "let __f_\(index) = \(decodeAtExpr(p, index))" })
     lines.append("return Self(\(ctorArgs))")
     return lines.joined(separator: "\n        ")
 }
 
-private func decodeAtExpr(_ p: Property) -> String {
-    let vi = "__vi_\(p.name)"
-    let key = "\"\(p.name)\""
+/// The label of `p` in the memberwise initializer call. Swift wants a keyword label such as `default`
+/// written without backticks at a call site, and keeps them only for `inout` and for a raw identifier
+/// that is not a plain one.
+private func argumentLabel(_ p: Property) -> String {
+    guard p.name != p.key, p.key != "inout" else { return p.name }
+    let isPlain = p.key.unicodeScalars.enumerated()
+        .allSatisfy { offset, scalar in
+            scalar == "_" || scalar.properties.isAlphabetic
+                || (offset > 0 && scalar.properties.numericType != nil)
+        }
+    return isPlain ? p.key : p.name
+}
+
+/// `text` as a Swift string literal, for a JSON key taken from an identifier.
+private func stringLiteral(_ text: String) -> String {
+    var literal = "\""
+    for character in text {
+        if character == "\\" || character == "\"" { literal.append("\\") }
+        literal.append(character)
+    }
+    return literal + "\""
+}
+
+private func decodeAtExpr(_ p: Property, _ index: Int) -> String {
+    let vi = "__vi_\(index)"
+    let key = stringLiteral(p.key)
     if p.isOptional {
         if integerTypes.contains(p.wrapped) { return "c.integerIfPresentAt(\(vi), \(p.wrapped).self)" }
         switch p.wrapped {
@@ -214,12 +244,12 @@ private func makeEncodeBody(_ props: [Property]) -> String {
         // A single optional property needs no separator state at all — and emitting `__wrote`
         // for it would be written-but-never-read, a hard error for warnings-as-errors consumers.
         if props.count == 1 {
-            let key = "\"\(first.name)\""
+            let key = stringLiteral(first.key)
             return "if let __v = self.\(first.name) { w.key(\(key)); \(writeValue("__v", first.wrapped)) }"
         }
         lines.append("var __wrote = false")
         for (index, p) in props.enumerated() {
-            let key = "\"\(p.name)\""
+            let key = stringLiteral(p.key)
             let comma = index == 0 ? "" : "if __wrote { w.comma() }; "
             if p.isOptional {
                 lines.append(
@@ -231,7 +261,7 @@ private func makeEncodeBody(_ props: [Property]) -> String {
         }
     } else {
         for (index, p) in props.enumerated() {
-            let key = "\"\(p.name)\""
+            let key = stringLiteral(p.key)
             if index == 0 {
                 lines.append("w.key(\(key)); \(writeValue("self.\(p.name)", p.wrapped))")
             } else if p.isOptional {

@@ -59,3 +59,14 @@ private func parsed(_ s: String) -> JSON { try! AemiJSON.parse(s).root }
     #expect(SPerson.jsonSchema.isValid(doc))
     #expect(viaDescribe.isValid(doc))
 }
+
+@Schemable
+private struct SKeyword {
+    var `default`: Int
+}
+
+// The schema names a backticked property the way its JSON key is spelled: without the backticks.
+@Test func schemableNamesBacktickedPropertiesWithoutBackticks() {
+    #expect(SKeyword.jsonSchema.isValid(parsed(#"{"default":1}"#)))
+    #expect(!SKeyword.jsonSchema.isValid(parsed(#"{"`default`":1}"#)))
+}

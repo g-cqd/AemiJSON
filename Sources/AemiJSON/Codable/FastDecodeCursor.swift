@@ -213,8 +213,16 @@ extension _FastDecodeCursor {
         }
     }
 
+    /// Throws `typeMismatch` unless the node at the cursor is an object: the error synthesized
+    /// `Codable` raises for a non-object, which ``forEachMember(_:)`` alone never reports. Generated
+    /// `__adjsonDecode` bodies call it first.
+    @inlinable public func requireObject() throws {
+        guard ctx.tag(index) == JSONKind.object.rawValue else { throw ctx.objectExpected(codingPath: []) }
+    }
+
     /// Walk the object's members once, in document order, handing each `(key, value-index)` to
     /// `body`. A later duplicate key overwrites an earlier match, so callers preserve last-value-wins.
+    /// Visits nothing when the node is not an object; see ``requireObject()``.
     @inlinable public func forEachMember(_ body: (_FastKey, Int) -> Void) {
         guard ctx.tag(index) == JSONKind.object.rawValue else { return }
         let c = ctx.count(index)

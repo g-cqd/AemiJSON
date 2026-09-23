@@ -101,3 +101,59 @@ private struct EOutput: Encodable {
     let bothSides = (t as? any AemiJSONFastDecodable.Type != nil) && (t as? any AemiJSONFastEncodable.Type != nil)
     #expect(bothSides)
 }
+
+// MARK: - Non-object input and backticked names
+
+// Synthesized `Codable` rejects a non-object with `typeMismatch` before it reads a key. The fast path
+// walks members with `forEachMember`, which visits nothing on a non-object, so a struct of optionals
+// used to decode `42` as all-`nil`, and one with no fields as a value.
+@JSONDecodable
+private struct OnlyOptionals: Decodable, Equatable {
+    var contents: String?
+    var count: Int?
+}
+
+@JSONCodable
+private struct NoFields: Codable, Equatable {}
+
+/// `OnlyOptionals` without the macro: the generic container path, for comparison.
+private struct OnlyOptionalsGeneric: Decodable, Equatable {
+    var contents: String?
+    var count: Int?
+}
+
+@Test(arguments: ["42", #""text""#, "[1]", "true", "null"])
+func fastPathRejectsANonObjectLikeTheGenericPath(_ json: String) {
+    let data = Data(json.utf8)
+    let decoder = AemiJSON.JSONDecoder()
+    let errors = [
+        #expect(throws: DecodingError.self) { try decoder.decode(OnlyOptionals.self, from: data) },
+        #expect(throws: DecodingError.self) { try decoder.decode(NoFields.self, from: data) },
+        #expect(throws: DecodingError.self) { try decoder.decode(OnlyOptionalsGeneric.self, from: data) }
+    ]
+    for error in errors {
+        if case .typeMismatch? = error { continue }
+        Issue.record("\(json): expected typeMismatch, got \(String(describing: error))")
+    }
+}
+
+// A property spelled with backticks is keyed by its name without them, as synthesized `Codable` keys
+// it. The generated code used to splice the backticked spelling into its own identifiers and did not
+// compile; a property named `c`, like the generated cursor parameter, broke it the same way.
+@JSONCodable
+private struct KeywordNamed: Codable, Equatable {
+    var `default`: Int
+    var `class`: String?
+    var c: Bool
+    var `let`: Int
+    var `inout`: Int  // the one keyword a call site's argument label must still escape
+    var `two words`: Int  // a raw identifier
+}
+
+@Test func fastPathKeysBacktickedPropertiesByTheirNames() throws {
+    let json = #"{"default":1,"class":"x","c":true,"let":2,"inout":3,"two words":4}"#
+    let value = KeywordNamed(default: 1, class: "x", c: true, let: 2, `inout`: 3, `two words`: 4)
+    #expect(try AemiJSON.JSONDecoder().decode(KeywordNamed.self, from: Data(json.utf8)) == value)
+    #expect(String(decoding: try AemiJSON.JSONEncoder().encode(value), as: UTF8.self) == json)
+    #expect(try Foundation.JSONDecoder().decode(KeywordNamed.self, from: Data(json.utf8)) == value)
+}
