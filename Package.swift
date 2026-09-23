@@ -93,7 +93,9 @@ var packageDependencies: [Package.Dependency] = [
     // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
     // with zero transitive package dependencies (measured), so the core stays portable; together with
     // `AemiKernel` it is one of the two shipped dependencies of `AemiJSONCore` beyond the standard library.
-    .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0")
+    // 1.7.0 emits Swift 6.4 borrowing runtime calls (including swift_initBorrow) that the
+    // macOS 26 Swift runtime lacks; SwiftStdlib 6.4 first ships with macOS 27.
+    .package(url: "https://github.com/apple/swift-collections.git", "1.1.0" ..< "1.7.0")
 ]
 if isDev {
     // Shared lint/format tooling (Format/Lint/LintBuild plugins + canonical `.swift-format`).

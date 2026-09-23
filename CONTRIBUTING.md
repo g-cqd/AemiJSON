@@ -108,9 +108,9 @@ AEMIJSON_DEV=1 swift build      # fails the build on any formatting violation
 AEMIJSON_DEV=1 swift package generate-documentation --target AemiJSON
 ```
 
-The `format`, `lint`, and `fetch-fixtures` command plugins are dependency-free and work without
-the flag. `AEMIJSON_DEV` also pulls swift-docc-plugin (docs) and swift-collections (only the benchmark
-target, for the OrderedDictionary-vs-Dictionary comparison) — neither is ever resolved by consumers.
+The `format`, `lint`, and `fetch-fixtures` command plugins work without the flag. `AEMIJSON_DEV`
+also pulls swift-docc-plugin (docs) and package-benchmark; consumers do not resolve those tools.
+`swift-collections` is a shipped dependency of `AemiJSONCore` for ordered objects.
 
 ## The `AEMIJSON_NIO` flag
 
@@ -139,15 +139,20 @@ enough to promote to a hard gate.
 
 ## Dependencies & `Package.resolved`
 
-The shipped graph is deliberately thin: the library proper depends only on **swift-syntax** (the
-`@JSONCodable` / `@Schemable` macros need it), pinned with an `upToNextMajor` `from:` requirement;
-the `AemiJSONCore` product depends on **nothing**. Everything heavier (docc-plugin, swift-collections,
-package-benchmark, the fuzzer) is gated behind `AEMIJSON_DEV` / `AEMIJSON_FUZZ` so a package that merely
-depends on AemiJSON never resolves it.
+`AemiJSONCore` depends on AemiKernel and `swift-collections`' OrderedCollections. The full library
+also depends on swift-syntax for its macros and AemiRuntime for concurrent operations. The Aemi
+revision is pinned; swift-syntax uses a bounded version range. The documentation and benchmark
+tools remain behind `AEMIJSON_DEV`, and the fuzzer remains behind `AEMIJSON_FUZZ`.
+
+`swift-collections` is bounded below 1.7.0 while this package supports macOS 26. Version 1.7.0
+compiles borrowing helpers that reference `_swift_initBorrow`. Swift 6.4 supplies that symbol in
+its toolchain runtime, but the macOS 26 system Swift runtime lacks it, so the test bundle fails to
+load. The swift-collections manifest maps the Swift 6.4 runtime to macOS 27.0. Revisit the bound
+when the deployment floor and test hosts have that runtime.
 
 `Package.resolved` is **gitignored** (the library convention — an application pins exact versions,
-a library lets its consumers' resolution win). With the only requirement `from:`-bounded, a checkout
-resolves to the latest compatible swift-syntax deterministically without a committed lock file.
+a library lets its consumers' resolution win). A fresh checkout resolves dependencies within the
+manifest's ranges and the pinned Aemi revision.
 
 ## Git hooks
 
