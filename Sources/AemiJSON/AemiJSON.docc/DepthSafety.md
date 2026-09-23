@@ -29,9 +29,9 @@ mandates recursion), and it is bounded by an explicit guard that **throws instea
 | ``/AemiJSONCore/JSONValue`` materialize (``/AemiJSONCore/JSONValue/init(_:)``) | **iterative** build | builds any depth; but see *tree deallocation* below |
 | ``/AemiJSONCore/JSONValue`` serialize (``/AemiJSONCore/JSONValue/encodedBytes(options:)``) | **iterative** | serializes any holdable tree |
 | ``/AemiJSONCore/JSONValue`` equality (`==`) | **iterative** | compares any depth (an explicit work-stack) |
-| **Codable decode** (``AemiJSON/JSONDecoder``) | recursive (protocol) | **throws** past `maxDecodingDepth` (default 2048) |
+| **Codable decode** (``AemiJSON/JSONDecoder``) | recursive (protocol) | **throws** past `maxDecodingDepth` (default 64 — sized for 512 KiB stacks) |
 | **Codable encode** (``AemiJSON/JSONEncoder``) | recursive (protocol) | **throws** past `maxEncodingDepth` (default 2048) |
-| Concurrent decode (`AemiJSON.decodeArrayConcurrently`) | recursive (per element, on the pool) | **throws** past `maxDecodingDepth` (default 128 — pool stacks are small) |
+| Concurrent decode (`AemiJSON.decodeArrayConcurrently`) | recursive (per element, on the pool) | **throws** past `maxDecodingDepth` (default 64, as above) |
 | JSON Schema validate | recursive | **fails closed** (records a `ValidationError`) past an independent cap (256) |
 | JSONPath filter parse (`length(length(…))`, `[?…[?…]]`) | recursive | **throws** `JSONPathError` past a cap (64) |
 | JSON Patch / Merge-Patch / SQLite mutate | recursive (per path / patch level) | **fails closed** past a cap (256): patch throws `JSONPatchError.depthExceeded`, merge/SQLite degrade safely |
@@ -49,21 +49,32 @@ time (as opposed to a single bulk release) also avoids the recursion.
 ## The decoder guard
 
 The Codable path is unavoidably recursive (each `init(from:)` decodes its children). AemiJSON caps
-that native recursion with ``AemiJSON/JSONDecoder/maxDecodingDepth`` (default **2048**), independent of
+that native recursion with ``AemiJSON/JSONDecoder/maxDecodingDepth`` (default **64**), independent of
 `maxDepth`: past it, decoding throws a catchable `DecodingError` rather than overflowing. So you can
 raise `maxDepth` to *parse / navigate* very deep documents iteratively, while a deeply nested (or
-self-referential) `Decodable` still **fails closed**.
+self-referential) `Decodable` still **fails closed**. Every nested value other than a scalar counts
+one level, so an array of objects nests two levels deep.
 
-The default is chosen empirically: the heaviest path (keyed-object decode) overflows the ~8 MB main
-thread around ~3.8k levels in a *debug* build (release reaches ~8k–14k), so the guard sits safely
-below that — 4× past Foundation's hard 512, yet guaranteed to throw before the stack runs out in
-both build modes. Raise it (to ~3000 on the main thread, more on a large stack) for legitimately deep
-data; lower it on a small-stack worker thread (default ~512 KB → ~16× shallower).
+The default is sized for the stack most decoding runs on: actors and the Swift cooperative pool run
+on 512 KiB threads, not the ~8 MB main thread. Measured on a thread created with a 512 KiB stack, in
+decode levels (the unit `maxDecodingDepth` counts):
+
+| Shape | Debug overflow | Release overflow |
+|---|--:|--:|
+| Keyed class with 32 optional fields and a recursive child | ~150 levels | ~440 levels |
+| Keyed class with 16 optional fields | ~185 levels | ~450 levels |
+| Untyped JSON value decoded through a `try?` chain (objects) | ~220 levels | ~490 levels |
+| `@JSONCodable` struct nesting through an array | ~650 levels | ~4,750 levels |
+
+Under the former default (2048) the guard fired only after each of these had overflowed, and in a
+debug build all but the `@JSONCodable` shape overflow at a nesting the default parser limit (512)
+accepts. At 64 the heaviest of them stays under half of a debug build's stack. Raise the cap on a thread with a known large stack: an 8 MiB stack (the main thread's size)
+holds ~2,400 levels of the 32-field class in a debug build.
 
 ```swift
 var decoder = AemiJSON.JSONDecoder()
 decoder.options = JSONParseOptions(maxDepth: 100_000)  // iterative parser accepts deep input
-decoder.maxDecodingDepth = 256                          // but cap the recursive decode (lower on small stacks)
+decoder.maxDecodingDepth = 1_000                        // raised: this decoder runs on the main thread
 // A 100k-deep document is rejected with a DecodingError rather than overflowing the stack.
 ```
 
@@ -77,17 +88,18 @@ for the call site: the recursive frames are heavy where the cap is low.
 | Limit | Default | Applies to | Past it |
 |---|---|---|---|
 | ``/AemiJSONCore/JSONParseOptions/maxDepth`` | 512 | iterative parse / lazy / SAX / JSONPath descent | throws `JSONError.depthExceeded` |
-| ``AemiJSON/JSONDecoder/maxDecodingDepth`` | 2048 | recursive Codable decode (main thread) | throws `DecodingError` |
+| ``AemiJSON/JSONDecoder/maxDecodingDepth`` | 64 | recursive Codable decode (512 KiB actor / pool stacks) | throws `DecodingError` |
 | ``AemiJSON/JSONEncoder/maxEncodingDepth`` | 2048 | recursive Codable encode (main thread) | throws `EncodingError` |
-| concurrent-decode `maxDecodingDepth` | 128 | per-element decode on the cooperative pool (~512 KB stacks) | throws `DecodingError` |
+| concurrent-decode `maxDecodingDepth` | 64 | per-element decode on the cooperative pool (512 KiB stacks) | throws `DecodingError` |
 | schema validation cap | 256 | recursive schema + instance walk (heavy frames) | records a `ValidationError` |
 | JSONPath filter-parse cap | 64 | nested `length()` / bracket-filter recursion | throws `JSONPathError` |
 | value-mutation cap | 256 | JSON Patch / Merge-Patch / SQLite path recursion | patch throws; merge/SQLite degrade safely |
 
-The recursive caps differ because frame sizes differ: a Codable frame is light (2048 fits the ~8 MB
-main thread), a schema-validation frame copies a whole compiled node (so 256), and the concurrent
-decoder runs on small pool stacks (so 128 ≈ 2048 ÷ 16). Lower any of them when running untrusted
-input on a smaller stack; raise the decode/encode caps on a thread with a known-large stack.
+The recursive caps differ because frame sizes and target stacks differ: the Codable decode cap is
+sized for the 512 KiB stacks of actors and the cooperative pool (so 64), the encode cap for the
+~8 MB main thread (so 2048), and a schema-validation frame copies a whole compiled node (so 256).
+Lower any of them when running untrusted input on a smaller stack; raise the decode/encode caps on a
+thread with a known-large stack.
 
 ### Can the fixed caps be raised?
 
@@ -133,9 +145,9 @@ it is bounded by the encode/decode caps above. New engine code is written iterat
 - **Untrusted input?** Keep ``/AemiJSONCore/JSONParseOptions/maxDepth`` modest *if you will decode, encode, or
   schema-validate it* (all recursive). For pure parse / lazy / SAX / JSONPath workloads you can
   raise it freely — those never touch the call stack.
-- **Decoding on a worker thread** (default stack ~512 KB, ~16× smaller than the 8 MB main thread)?
-  Lower ``AemiJSON/JSONDecoder/maxDecodingDepth`` accordingly, or decode on a thread with a known large
-  stack.
+- **Decoding legitimately deep data?** The default ``AemiJSON/JSONDecoder/maxDecodingDepth`` (64) is
+  safe on a 512 KiB worker or actor thread. Raise it only on a thread with a known large stack, such
+  as the ~8 MB main thread.
 - **Very deep documents?** Use the lazy ``/AemiJSONCore/JSON`` view or ``/AemiJSONCore/JSONEventReader`` / ``/AemiJSONCore/JSONEventStreamReader``
   rather than materializing a ``/AemiJSONCore/JSONValue`` (whose deallocation recurses).
 - **Always treat decode as fallible** at the boundary: catch `DecodingError`, never `try!`. A guarded

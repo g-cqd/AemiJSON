@@ -28,7 +28,7 @@ struct SchemaValidator {
     // native stack with no catchable error. Past this depth we fail closed: record a
     // `ValidationError` and stop.
     //
-    // Kept well below the decoder's `maxDecodeDepth` (2048): a `validate` frame is heavy (it copies a
+    // Kept far below the encoder's `maxEncodeDepth` (2048): a `validate` frame is heavy (it copies a
     // whole `SchemaNode` — ~30 optional fields — and the keyword groups it fans out to each build
     // their own `fail` closure), so it overflows the stack at a much shallower depth (a deep
     // recursive-schema validation overflowed a small worker stack around ~50 frames in debug). 256

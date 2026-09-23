@@ -37,10 +37,11 @@ public struct JSONParseOptions: Sendable {
     public var assumesTopLevelDictionary: Bool
     /// Maximum container nesting accepted while parsing. The tape parser, lazy navigation,
     /// ``JSONValue`` materialization/serialization, and JSONPath evaluation are all iterative, so
-    /// they stay safe at any depth. It still bounds the remaining *native-stack* recursive
-    /// consumers — `Codable` decoding (the protocol mandates recursion) and schema validation — so
-    /// the default (512) keeps them safe. Raising it for untrusted input risks a stack overflow in
-    /// those paths when the input is deeply nested; keep it modest unless the source is trusted.
+    /// they stay safe at any depth. The recursive consumers carry their own, lower caps (the Codable
+    /// decoder's `maxDecodingDepth`, schema validation's), but a materialized ``JSONValue`` tree is
+    /// still released recursively; the default (512) keeps that within a 512 KiB thread's stack, with
+    /// room to spare in a debug build. Raising it for untrusted input risks a stack overflow when
+    /// such a tree is released; keep it modest unless the source is trusted.
     public var maxDepth: Int
     /// Record each container's raw source byte span (opening bracket through closing bracket)
     /// during the parse, enabling ``JSON/withRawJSONBytes(_:)`` on object/array nodes — the

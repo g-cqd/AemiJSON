@@ -23,15 +23,21 @@ extension AemiJSON {
         /// Maximum native recursion depth for the (necessarily recursive) Codable decode. Past this,
         /// decoding throws `DecodingError.dataCorrupted` instead of overflowing the call stack — so a
         /// deeply nested or self-referential `Decodable` fails closed. Independent of `options.maxDepth`
-        /// (which bounds the *iterative* parser and can be raised freely).
+        /// (which bounds the *iterative* parser and can be raised freely). Every nested value other than
+        /// a scalar — an object, an array, or a custom `Decodable` — counts one level, so an array of
+        /// objects nests two levels deep: the array, then each object.
         ///
-        /// Default **2048** — 4× past Foundation's hard 512, and chosen to throw *before* overflow in
-        /// both debug and release on the ~8 MB main thread: the heaviest path (keyed-object decode)
-        /// overflows around ~3.8k levels in a debug build (release reaches ~8k–14k), so the guard must
-        /// sit safely below that. **Raise it** (to ~3000 on the main thread, more on a large stack) if
-        /// you decode legitimately deep data; **lower it** when decoding untrusted input on a
-        /// small-stack worker thread (a default ~512 KB thread overflows ~16× shallower).
-        public var maxDecodingDepth: Int = 2048
+        /// Default **64**, sized for the 512 KiB stacks that actors and the cooperative pool run on,
+        /// where most decoding happens. Measured on a 512 KiB thread in a debug build, a keyed class
+        /// with 32 optional fields overflows at ~150 levels and an untyped JSON value decoded through a
+        /// `try?` chain at ~220 (two levels per JSON level); release builds reach 2–3× deeper. 64 keeps
+        /// those under half the stack. **Raise it** when decoding legitimately deep data on a thread
+        /// with a known large stack: an 8 MiB stack, the main thread's size, holds ~2,400 levels of
+        /// the 32-field class in a debug build.
+        public var maxDecodingDepth: Int = JSONDecoder.defaultMaxDecodingDepth
+
+        /// The default ``maxDecodingDepth``, shared with the concurrent decoder.
+        static let defaultMaxDecodingDepth = 64
 
         /// Assume the top level of the input is an object even without enclosing braces, so
         /// `"a":1,"b":2` decodes as `{"a":1,"b":2}` (matches `Foundation.JSONDecoder`). Applies to

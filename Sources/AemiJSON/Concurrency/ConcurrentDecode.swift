@@ -45,13 +45,12 @@ extension JSONDocument {
 }
 
 extension AemiJSON {
-    /// Default per-element native-recursion cap for the concurrent path. The element decoders run on
-    /// the Swift cooperative pool, whose threads carry far smaller stacks (~512 KB) than the main
-    /// thread (~8 MB) — so the keyed-object decode that the main-thread default (2048) targets would
-    /// overflow ~16× shallower here. 128 (≈ 2048 / 16) throws a catchable `DecodingError` on an
-    /// over-nested element instead of crashing the pool thread; raise it via the `maxDecodingDepth`
-    /// parameter when elements are legitimately deeper and the data is trusted.
-    public static let concurrentDecodeDefaultDepth = 128
+    /// Default per-element native-recursion cap for the concurrent path: the same default as
+    /// ``AemiJSON/JSONDecoder/maxDecodingDepth`` (64), since the element decoders run on the
+    /// cooperative pool's 512 KiB stacks. Past it an over-nested element throws a catchable
+    /// `DecodingError` instead of crashing the pool thread; raise it via the `maxDecodingDepth`
+    /// parameter when elements are legitimately deeper.
+    public static let concurrentDecodeDefaultDepth = JSONDecoder.defaultMaxDecodingDepth
 
     /// Decode a top-level JSON array, scanning once on the calling task then
     /// decoding element batches in parallel across cores. Off the main actor.

@@ -23,6 +23,54 @@ private func deepFastNodeJSON(_ depth: Int) -> String {
     return s
 }
 
+// An untyped JSON value decoded through a `try?` chain, the shape of an LSP client's `JSONValue`. Each
+// JSON level costs two decode levels (the value, then its container), which makes it one of the
+// heaviest common shapes per level of nesting.
+private enum LooseJSON: Decodable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array([LooseJSON])
+    case object([String: LooseJSON])
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([LooseJSON].self) {
+            self = .array(value)
+        } else {
+            self = .object(try container.decode([String: LooseJSON].self))
+        }
+    }
+}
+
+// A wide keyed object at every level: sixteen optional fields and a recursive child, read from one
+// keyed container, so the synthesized `init(from:)` has a large frame.
+private final class WideNode: Decodable {
+    let a, b, c, d, e, f, g, h: String?
+    let i, j, k, l, m, n, o, p: Int?
+    let child: WideNode?
+}
+
+private func throwsDecodingError(_ body: () throws -> Void) -> Bool {
+    do {
+        try body()
+        return false
+    } catch is DecodingError {
+        return true
+    } catch {
+        return false
+    }
+}
+
 struct DepthSafetyTests {
     @Test func iterativeParseGoesFarBeyondFoundationCap() throws {
         // 50k nesting — ~100× Foundation's 512 — parses iteratively with no stack overflow.
@@ -122,6 +170,36 @@ struct DepthSafetyTests {
 
         // Normal-depth input still decodes.
         #expect(try decoder.decode([Int].self, from: Data("[1,2,3]".utf8)) == [1, 2, 3])
+    }
+
+    // The default decoder must fail closed on the 512 KiB stacks that actors and the cooperative pool
+    // run on. The documents nest 500 levels, which the parser's default limit (512) accepts, so only
+    // the decoder's own cap stands between the recursion and the stack. Under the former default
+    // (2048) each of these overflowed a 512 KiB thread, in debug and release builds alike. The pinned
+    // stack is 512 KiB uninstrumented and 4 MiB under a sanitizer, whose frames are 2-3x larger.
+    @Test func defaultDecodingDepthFailsClosedOnAPoolSizedStack() {
+        let depth = 500
+        let objects = String(repeating: #"{"a":"#, count: depth) + "1" + String(repeating: "}", count: depth)
+        let arrays = String(repeating: "[", count: depth) + "1" + String(repeating: "]", count: depth)
+        var wide = #"{"child":null}"#
+        for _ in 0 ..< depth { wide = #"{"a":"x","i":1,"child":"# + wide + "}" }
+        let deep = wide
+        let rejected = runOnConstrainedStack(stackSize: DepthSweep.defaultStackSize, name: "decode.default-cap") {
+            let decoder = AemiJSON.JSONDecoder()
+            return [
+                throwsDecodingError { _ = try decoder.decode(LooseJSON.self, from: Data(objects.utf8)) },
+                throwsDecodingError { _ = try decoder.decode(LooseJSON.self, from: Data(arrays.utf8)) },
+                throwsDecodingError { _ = try decoder.decode(WideNode.self, from: Data(deep.utf8)) }
+            ]
+        }
+        #expect(rejected == [true, true, true])
+
+        // Ordinary nesting still decodes with the defaults on the same stack.
+        let shallow = String(repeating: #"{"a":["#, count: 12) + "1" + String(repeating: "]}", count: 12)
+        let decoded = runOnConstrainedStack(stackSize: DepthSweep.defaultStackSize, name: "decode.default-ok") {
+            (try? AemiJSON.JSONDecoder().decode(LooseJSON.self, from: Data(shallow.utf8))) != nil
+        }
+        #expect(decoded)
     }
 
     @Test func equalityIsIterativeAndCorrect() throws {
