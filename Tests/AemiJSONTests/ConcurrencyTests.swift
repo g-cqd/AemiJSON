@@ -88,7 +88,16 @@ private struct Tracked: Decodable, Sendable {
     #expect(Tracked.live.load(ordering: .relaxed) == 0)
 }
 
-@Test func parseMetricsIncrement() throws {
+// Parse metrics are opt-in: until enabled, a parse leaves the shared counters alone. This is the only
+// test that enables them, so while it has them off no other parse can move them either.
+@Test func parseMetricsCountOnlyWhileEnabled() throws {
+    #expect(!AemiJSON.Metrics.isEnabled)
+    let idle = AemiJSON.Metrics.snapshot()
+    _ = try AemiJSON.parse("[1,2,3]")
+    #expect(AemiJSON.Metrics.snapshot() == idle)
+
+    AemiJSON.Metrics.isEnabled = true
+    defer { AemiJSON.Metrics.isEnabled = false }
     let before = AemiJSON.Metrics.snapshot()
     _ = try AemiJSON.parse("[1,2,3]")
     let after = AemiJSON.Metrics.snapshot()

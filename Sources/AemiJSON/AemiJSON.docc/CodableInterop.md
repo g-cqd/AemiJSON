@@ -114,9 +114,13 @@ free. `Row` must be `Decodable & Sendable`. The batch size is tunable
 
 ## Process-wide metrics
 
-``/AemiJSONCore/AemiJSON/Metrics`` exposes lock-free counters (via `Atomic`) for documents and bytes parsed:
+``/AemiJSONCore/AemiJSON/Metrics`` exposes lock-free counters (via `Atomic`) for documents and bytes parsed.
+Counting is off by default, since every parsing thread would update the same counters; turn it on
+for a measurement window:
 
 ```swift
+AemiJSON.Metrics.isEnabled = true
+// … parse …
 let m = AemiJSON.Metrics.snapshot()
 print(m.documents, m.bytes)
 ```
