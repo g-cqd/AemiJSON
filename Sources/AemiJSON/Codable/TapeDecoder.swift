@@ -23,7 +23,7 @@ import AemiJSONCore
 
 @usableFromInline
 final class DecodeContext {
-    let doc: JSONDocument  // retains backing storage for the decode's lifetime
+    @usableFromInline let doc: JSONDocument  // retains backing storage for the decode's lifetime
     @usableFromInline let bytes: UnsafePointer<UInt8>
     @usableFromInline let tape: UnsafePointer<UInt64>
     @usableFromInline let byteCount: Int
@@ -181,7 +181,7 @@ final class DecodeContext {
         if Slot.flags(s) & 1 == 0 {
             return String(decoding: UnsafeBufferPointer(start: bytes + off, count: len), as: UTF8.self)
         }
-        return JSONString.unescape(bytes, off, len)
+        return doc.isJSON5 ? JSONString.unescapeJSON5(bytes, off, len) : JSONString.unescape(bytes, off, len)
     }
 
     /// Index of the value slot for `key` within the object at `obj`, or nil, matching the JSON keys'
@@ -199,7 +199,7 @@ final class DecodeContext {
             let koff = Slot.low(ks)
             let klen = Slot.length(ks)
             assertBytes(koff, klen)
-            if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, key) {
+            if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, json5: doc.isJSON5, key) {
                 found = valIdx
                 if keysAreUnique { break }  // unique keys → first match is the only match
             }

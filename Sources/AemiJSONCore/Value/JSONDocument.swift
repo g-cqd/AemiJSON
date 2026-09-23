@@ -27,7 +27,7 @@ public final class JSONDocument: Sendable {
     package let keysAreUnique: Bool
     /// True when parsed in JSON5 mode, so escaped string/key bytes are decoded with the JSON5 escape
     /// set (`\x`, `\v`, `\0`, line continuations, …) rather than the strict JSON set.
-    package let isJSON5: Bool
+    @usableFromInline package let isJSON5: Bool
     /// Each container's inclusive source span, recorded by the parser under
     /// ``JSONParseOptions/recordsContainerSpans`` so ``JSON/withRawJSONBytes(_:)`` can borrow a
     /// container's raw source text zero-copy. Empty otherwise, and for documents built without a parse.

@@ -374,7 +374,9 @@ public struct JSON: Sendable {
 
     @inline(__always)
     private func keyMatches(_ p: UnsafePointer<UInt8>, _ keySlot: UInt64, _ key: String) -> Bool {
-        unsafe JSONKey.matches(p, Slot.low(keySlot), Slot.length(keySlot), escaped: Slot.flags(keySlot) & 1 == 1, key)
+        unsafe JSONKey.matches(
+            p, Slot.low(keySlot), Slot.length(keySlot), escaped: Slot.flags(keySlot) & 1 == 1,
+            json5: doc.isJSON5, key)
     }
 
     @inline(__always)

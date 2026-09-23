@@ -25,12 +25,20 @@ public enum JSONKey {
         }
     }
 
-    // Escape-aware key match against a raw key slot's bytes (`p[off..<off+len]`, `escaped` = the
-    // tape's hasEscape flag). This owns the escape branch that the lazy-navigation, generic-decode,
-    // and `@JSONCodable` fast-path lookups all share, so the policy lives in exactly one place.
+    /// Matches a parsed object key with a string, decoding escapes according to the parse mode.
+    /// - Parameters:
+    ///   - p: Backing UTF-8 buffer.
+    ///   - off: Start of the key body in `p`.
+    ///   - len: Byte length of the key body.
+    ///   - escaped: Whether the key body contains an escape.
+    ///   - json5: Whether the parser accepted JSON5 escapes in this key.
+    ///   - key: Decoded key to compare.
+    /// - Returns: Whether the parsed key equals `key`.
+    /// - Precondition: The parser validated `p[off ..< off + len]`, which remains valid for this call.
+    /// - Complexity: O(len + the string's UTF-8 length) time and O(1) extra space.
     @inlinable
     public static func matches(
-        _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, _ key: String
+        _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, json5: Bool = false, _ key: String
     ) -> Bool {
         // Caller owns `p[off ..< off + len]` for this call; `p` is read-only and never escapes.
         assert(off >= 0 && len >= 0, "key match requires a non-negative byte range")
@@ -38,17 +46,36 @@ public enum JSONKey {
             var k = key
             return k.withUTF8 { kb in
                 guard let kp = kb.baseAddress else { return len == 0 }
+                if json5 {
+                    return unsafe JSONString.unescapedEqualsJSON5(p, off, len, kp, kb.count)
+                }
                 return unsafe JSONString.unescapedEquals(p, off, len, kp, kb.count)
             }
         }
         return unsafe bytesEqual(key, p + off, len)
     }
 
+    /// Matches a parsed object key with a static string without materializing the key.
+    /// - Parameters:
+    ///   - p: Backing UTF-8 buffer.
+    ///   - off: Start of the key body in `p`.
+    ///   - len: Byte length of the key body.
+    ///   - escaped: Whether the key body contains an escape.
+    ///   - json5: Whether the parser accepted JSON5 escapes in this key.
+    ///   - key: Static key to compare.
+    /// - Returns: Whether the parsed key equals `key`.
+    /// - Precondition: The parser validated `p[off ..< off + len]`, which remains valid for this call.
+    /// - Complexity: O(len) time and O(1) extra space.
     @inlinable
     public static func matches(
-        _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, _ key: StaticString
+        _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, json5: Bool = false, _ key: StaticString
     ) -> Bool {
-        if escaped { return unsafe JSONString.unescapedEquals(p, off, len, key.utf8Start, key.utf8CodeUnitCount) }
+        if escaped {
+            if json5 {
+                return unsafe JSONString.unescapedEqualsJSON5(p, off, len, key.utf8Start, key.utf8CodeUnitCount)
+            }
+            return unsafe JSONString.unescapedEquals(p, off, len, key.utf8Start, key.utf8CodeUnitCount)
+        }
         return unsafe len == key.utf8CodeUnitCount && bytesEqual(p + off, key.utf8Start, len)
     }
 }

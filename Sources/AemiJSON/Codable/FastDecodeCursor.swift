@@ -29,7 +29,7 @@ extension DecodeContext {
             let koff = Slot.low(ks)
             let klen = Slot.length(ks)
             assertBytes(koff, klen)
-            if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, lit) {
+            if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, json5: doc.isJSON5, lit) {
                 found = valIdx
                 if keysAreUnique { break }  // unique keys → first match is the only match
             }
@@ -209,7 +209,7 @@ extension _FastDecodeCursor {
         }
         @inlinable public func matches(_ s: StaticString) -> Bool {
             ctx.checkLive()  // reads the bytes without a slot read, so it checks for itself
-            return JSONKey.matches(ctx.bytes, off, len, escaped: escaped, s)
+            return JSONKey.matches(ctx.bytes, off, len, escaped: escaped, json5: ctx.doc.isJSON5, s)
         }
     }
 

@@ -56,9 +56,9 @@ public enum JSONString {
         }
     }
 
-    // Decode a JSON5 string body. Adds to the JSON escapes: `\'`, `\v`, `\0`, `\xHH`, line
-    // continuations (`\` + LF/CR/CRLF/U+2028/U+2029 → elided), and identity escapes (`\X` → `X`).
-    // The scanner has already validated these, so this only re-materializes them.
+    /// Decodes a parser-validated JSON5 string body, including JSON5 escapes and line continuations.
+    /// - Precondition: The parser validated `p[offset ..< offset + length]` and its escapes.
+    /// - Complexity: O(length) time and O(length) output space.
     public static func unescapeJSON5(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> String {
         // Same contract as `unescape`, and the same in-place write: no JSON5 escape decodes to more
         // bytes than it occupies either (`\xHH`, 4 bytes, gives at most 2; a line continuation gives 0).
@@ -100,8 +100,15 @@ public enum JSONString {
                         guard j + 1 < end else { break unescape }
                         let value = unsafe UInt32(Hex.value(p[j]) ?? 0) << 4 | UInt32(Hex.value(p[j + 1]) ?? 0)
                         j += 2
-                        Unicode.UTF8.encode(Unicode.Scalar(UInt8(truncatingIfNeeded: value))) { emit($0) }
-                    case 0x75: unsafe emitUnicodeEscape(p, &j, end, emit)  // \uHHHH (+ surrogate pair)
+                        if value < 0x80 {
+                            emit(UInt8(truncatingIfNeeded: value))
+                        } else {
+                            emit(UInt8(truncatingIfNeeded: 0xC0 | (value >> 6)))
+                            emit(UInt8(truncatingIfNeeded: 0x80 | (value & 0x3F)))
+                        }
+                    case 0x75:
+                        let scalar = unsafe decodeUnicodeEscapeScalar(p, &j, end)
+                        unsafe emitJSON5Scalar(scalar, out, &w)
                     case 0x0A: break  // \ + LF → line continuation (elided)
                     case 0x0D: if j < end, unsafe p[j] == 0x0A { j += 1 }  // \ + CR / CRLF → elided
                     default:
@@ -152,18 +159,55 @@ public enum JSONString {
         Unicode.UTF8.encode(us) { emit($0) }
     }
 
-    // Compare the strict-unescaped form of `p[offset..<offset+length]` to `target` byte-for-byte,
-    // decoding escapes on the fly so no intermediate `String`/`[UInt8]` is allocated. Behaviour is
-    // identical to `unescape(p, offset, length) == String(decoding: target)`, just allocation-free —
-    // used by the object-key compare path where most keys are unescaped but some are not.
+    // Returning the scalar keeps JSON5's output index local to its string initializer.
+    @inline(__always)
+    static func decodeUnicodeEscapeScalar(_ p: UnsafePointer<UInt8>, _ j: inout Int, _ end: Int) -> UInt32 {
+        let hi = unsafe readHex4(p, j, end)
+        j += 4
+        var scalar = UInt32(hi)
+        if hi >= 0xD800 && hi <= 0xDBFF, j + 1 < end, unsafe p[j] == 0x5C, unsafe p[j + 1] == 0x75 {
+            let lo = unsafe readHex4(p, j + 2, end)
+            if lo >= 0xDC00 && lo <= 0xDFFF {
+                scalar = 0x10000 + ((UInt32(hi) - 0xD800) << 10) + (UInt32(lo) - 0xDC00)
+                j += 6
+            }
+        }
+        return Unicode.Scalar(scalar) == nil ? 0xFFFD : scalar
+    }
+
+    @inline(__always)
+    private static func emitJSON5Scalar(
+        _ scalar: UInt32, _ output: UnsafeMutableBufferPointer<UInt8>, _ index: inout Int
+    ) {
+        func emit(_ byte: UInt8) {
+            unsafe output[index] = byte
+            index += 1
+        }
+        if scalar < 0x80 {
+            emit(UInt8(truncatingIfNeeded: scalar))
+        } else if scalar < 0x800 {
+            emit(UInt8(truncatingIfNeeded: 0xC0 | (scalar >> 6)))
+            emit(UInt8(truncatingIfNeeded: 0x80 | (scalar & 0x3F)))
+        } else if scalar < 0x10000 {
+            emit(UInt8(truncatingIfNeeded: 0xE0 | (scalar >> 12)))
+            emit(UInt8(truncatingIfNeeded: 0x80 | ((scalar >> 6) & 0x3F)))
+            emit(UInt8(truncatingIfNeeded: 0x80 | (scalar & 0x3F)))
+        } else {
+            emit(UInt8(truncatingIfNeeded: 0xF0 | (scalar >> 18)))
+            emit(UInt8(truncatingIfNeeded: 0x80 | ((scalar >> 12) & 0x3F)))
+            emit(UInt8(truncatingIfNeeded: 0x80 | ((scalar >> 6) & 0x3F)))
+            emit(UInt8(truncatingIfNeeded: 0x80 | (scalar & 0x3F)))
+        }
+    }
+
+    /// Compares a strict JSON string body with UTF-8 bytes without materializing a string.
+    /// - Precondition: The parser validated the source range and its escapes; the target range is valid.
+    /// - Complexity: O(length) time and O(1) extra space.
     public static func unescapedEquals(
         _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, _ target: UnsafePointer<UInt8>, _ targetLength: Int
     ) -> Bool {
-        // Caller owns `p[offset ..< offset + length]` and `target[0 ..< targetLength]` for this call;
-        // neither pointer escapes. All four indices are non-negative (tape- / String-UTF8-derived).
         assert(offset >= 0 && length >= 0 && targetLength >= 0, "unescapedEquals requires non-negative ranges")
         var t = 0
-        // Match one decoded byte against the target; false on overrun or mismatch.
         func emit(_ b: UInt8) -> Bool {
             if unsafe t >= targetLength || target[t] != b { return false }
             t += 1
