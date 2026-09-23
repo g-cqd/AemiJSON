@@ -11,7 +11,7 @@ public enum AemiJSON {
         // out through `Result`, whose `.get()` is itself `throws(JSONError)`.
         let built =
             try bytes.withUnsafeBufferPointer {
-                bp -> Result<(slots: ContiguousArray<UInt64>, spans: [Int: UInt64]), JSONError> in
+                bp -> Result<(slots: ContiguousArray<UInt64>, spans: ContainerSpans), JSONError> in
                 guard let base = bp.baseAddress else { return .failure(.unexpectedEndOfInput) }
                 var builder = unsafe TapeBuilder(base, bp.count, options: options)
                 return Result { () throws(JSONError) in try builder.build() }

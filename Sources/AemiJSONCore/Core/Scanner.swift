@@ -14,11 +14,11 @@ import AemiKernel
     var i = 0
     var slots: ContiguousArray<UInt64>
     var stack: [Frame] = []
-    /// Container tape index → packed source span (`openByteOffset << 32 | closeByteOffset`, both
-    /// inclusive). Scalars need no entry — their slots already carry offset+length. Populated in
-    /// `closeContainer` only under `recordsContainerSpans`; carried onto `JSONDocument` so
-    /// `JSON.withRawJSONBytes` can borrow a container's raw text zero-copy.
-    var containerSpans: [Int: UInt64] = [:]
+    /// Each container's source span, recorded only under `recordsContainerSpans`: started when the
+    /// container opens, completed when it closes, and carried onto `JSONDocument` so
+    /// `JSON.withRawJSONBytes` can borrow a container's raw text zero-copy. Scalars need no entry —
+    /// their slots already carry offset+length.
+    var spans = ContainerSpans()
     let recordSpans: Bool
 
     // One open container being built. Stands in for a recursive-descent call frame, so nesting
@@ -30,9 +30,9 @@ import AemiKernel
     // (no duplicate-check) path pay zero allocation here. (Measured: already optimal; left as-is.)
     struct Frame {
         let openIndex: Int
-        /// Byte offset of this container's opening `{` / `[` in the source, recorded so the
-        /// closing patch can persist the container's raw source span (see `containerSpans`).
-        let openByte: Int
+        /// This container's entry in `spans`, which the closing patch completes (-1 when spans are
+        /// not recorded).
+        let spanEntry: Int
         var count: Int
         let isObject: Bool
         var seenKeys: [Int: [(offset: Int, length: Int)]]
@@ -54,9 +54,13 @@ import AemiKernel
         self.slots = []
         slots.reserveCapacity(n / 4 + 8)
         stack.reserveCapacity(16)
+        // Room for one container per 64 input bytes, at 12 bytes an entry, so most documents record
+        // their spans without regrowing (the benchmark corpora run from one container per 40 bytes to
+        // one per 900).
+        if recordSpans { spans.reserveCapacity(n / 64 + 8) }
     }
 
-    mutating func build() throws(JSONError) -> (slots: ContiguousArray<UInt64>, spans: [Int: UInt64]) {
+    mutating func build() throws(JSONError) -> (slots: ContiguousArray<UInt64>, spans: ContainerSpans) {
         // Skip a leading UTF-8 byte-order mark, which Foundation's decoder accepts and RFC 8259 §8.1
         // lets a parser ignore. Offsets stay relative to the buffer, so the tape still indexes the
         // caller's bytes.
@@ -65,7 +69,7 @@ import AemiKernel
         try parseValue()
         skipWS()
         if i != n { throw JSONError.trailingData(at: i) }
-        return (slots, containerSpans)
+        return (slots, spans)
     }
 
     // Scalar whitespace skip — deliberately not SWAR. JSON whitespace runs are short (a newline + a
@@ -173,17 +177,19 @@ import AemiKernel
     // Patches a container's placeholder with its element count and the index after its subtree.
     // `count` occupies the 28-bit aux field, `next` the low 32 bits — both bounded by the 4 GB
     // input cap, but guarded so a pathological count can't silently wrap and corrupt navigation.
-    mutating func closeContainer(_ openIdx: Int, openByte: Int, count: Int, isObject: Bool) throws(JSONError) {
+    mutating func closeContainer(_ openIdx: Int, spanEntry: Int, count: Int, isObject: Bool) throws(JSONError) {
         guard count <= Slot.auxMask, UInt64(slots.count) <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
         let tag = isObject ? JSONKind.object.rawValue : JSONKind.array.rawValue
         slots[openIdx] = Slot.container(tag, count: count, next: slots.count)
         // Every close path reaches here with `i` one past the closing bracket, so `i - 1` is the
-        // bracket itself; the span is inclusive on both ends. Offsets fit 32 bits (input ≤ 4 GiB).
-        if recordSpans {
-            let open = UInt64(UInt32(truncatingIfNeeded: openByte))
-            let close = UInt64(UInt32(truncatingIfNeeded: i - 1))
-            containerSpans[openIdx] = (open << 32) | close
-        }
+        // bracket itself; the span is inclusive on both ends.
+        if spanEntry >= 0 { spans.close(spanEntry, at: i - 1) }
+    }
+
+    /// Starts the span of the container opening at `i` with its slot at `openIdx`, returning the entry
+    /// its close completes, or -1 when spans are not recorded.
+    @inline(__always) mutating func openSpan(_ openIdx: Int) -> Int {
+        recordSpans ? spans.open(tapeIndex: openIdx, at: i) : -1
     }
 
     // Detects duplicate keys (RFC 7493 / `.throwError`) in O(1) expected time by bucketing keys

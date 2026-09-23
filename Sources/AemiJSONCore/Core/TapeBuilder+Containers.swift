@@ -8,16 +8,16 @@ extension TapeBuilder {
     mutating func openObject() throws(JSONError) -> Bool {
         if stack.count >= maxDepth { throw JSONError.depthExceeded(at: i) }
         let openIdx = slots.count
-        let openByte = i
+        let spanEntry = openSpan(openIdx)
         slots.append(0)  // placeholder, patched at close
         i += 1
         skipWS()
         if unsafe i < n && p[i] == 0x7D {
             i += 1
-            try closeContainer(openIdx, openByte: openByte, count: 0, isObject: true)
+            try closeContainer(openIdx, spanEntry: spanEntry, count: 0, isObject: true)
             return true
         }
-        stack.append(Frame(openIndex: openIdx, openByte: openByte, count: 0, isObject: true, seenKeys: [:]))
+        stack.append(Frame(openIndex: openIdx, spanEntry: spanEntry, count: 0, isObject: true, seenKeys: [:]))
         try readKeyColon()
         return false
     }
@@ -27,16 +27,16 @@ extension TapeBuilder {
     mutating func openArray() throws(JSONError) -> Bool {
         if stack.count >= maxDepth { throw JSONError.depthExceeded(at: i) }
         let openIdx = slots.count
-        let openByte = i
+        let spanEntry = openSpan(openIdx)
         slots.append(0)
         i += 1
         skipWS()
         if unsafe i < n && p[i] == 0x5D {
             i += 1
-            try closeContainer(openIdx, openByte: openByte, count: 0, isObject: false)
+            try closeContainer(openIdx, spanEntry: spanEntry, count: 0, isObject: false)
             return true
         }
-        stack.append(Frame(openIndex: openIdx, openByte: openByte, count: 0, isObject: false, seenKeys: [:]))
+        stack.append(Frame(openIndex: openIdx, spanEntry: spanEntry, count: 0, isObject: false, seenKeys: [:]))
         return false
     }
 
@@ -117,6 +117,6 @@ extension TapeBuilder {
     // Pops the top frame and patches its container placeholder with the final count + subtree end.
     private mutating func closeTopContainer(isObject: Bool) throws(JSONError) {
         let frame = stack.removeLast()
-        try closeContainer(frame.openIndex, openByte: frame.openByte, count: frame.count, isObject: isObject)
+        try closeContainer(frame.openIndex, spanEntry: frame.spanEntry, count: frame.count, isObject: isObject)
     }
 }

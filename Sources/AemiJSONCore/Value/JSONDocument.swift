@@ -28,14 +28,14 @@ public final class JSONDocument: Sendable {
     /// True when parsed in JSON5 mode, so escaped string/key bytes are decoded with the JSON5 escape
     /// set (`\x`, `\v`, `\0`, line continuations, …) rather than the strict JSON set.
     package let isJSON5: Bool
-    /// PROTOTYPE (raw-subtree bytes): container tape index → packed inclusive source span
-    /// (`open << 32 | close`), recorded by the parser so ``JSON/withRawJSONBytes(_:)`` can borrow a
-    /// container's raw source text zero-copy. Empty for documents built without a parse.
-    package let containerSpans: [Int: UInt64]
+    /// Each container's inclusive source span, recorded by the parser under
+    /// ``JSONParseOptions/recordsContainerSpans`` so ``JSON/withRawJSONBytes(_:)`` can borrow a
+    /// container's raw source text zero-copy. Empty otherwise, and for documents built without a parse.
+    package let containerSpans: ContainerSpans
 
     package init(
         backing: Backing, tape: ContiguousArray<UInt64>, keysAreUnique: Bool = false, isJSON5: Bool = false,
-        containerSpans: [Int: UInt64] = [:]
+        containerSpans: ContainerSpans = ContainerSpans()
     ) {
         self.backing = backing
         self.tape = tape

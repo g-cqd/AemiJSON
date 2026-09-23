@@ -62,3 +62,40 @@ private func rawText(_ node: JSON) -> String? {
     let decoded = try #require(raw.map { try AemiJSON.JSONDecoder().decode(Inner.self, from: Data($0)) })
     #expect(decoded == Inner(kind: "x", value: 42))
 }
+
+/// Every node of `root`, visited with an explicit stack.
+private func allNodes(_ root: JSON) -> [JSON] {
+    var nodes: [JSON] = []
+    var pending = [root]
+    while let node = pending.popLast() {
+        nodes.append(node)
+        node.forEachElement { pending.append($0) }
+        node.forEachMember { _, value in pending.append(value) }
+    }
+    return nodes
+}
+
+// Every container's recorded span, looked up among many, holds exactly that container's text: the
+// text parses back to the same value. JSON5 adds comments and trailing commas inside the spans.
+@Test(arguments: [false, true])
+func rawSubtreeBytesOfEveryContainerParseBackToTheSameValue(json5: Bool) throws {
+    var parts: [String] = []
+    for k in 0 ..< 60 {
+        let members =
+            json5
+            ? #"{"id":\#(k), /* c */ "tags":[\#(k), [], {},], "o":{"n":{"k":[1,2,],},},}"#
+            : #"{"id":\#(k),"tags":[\#(k),[],{}],"o":{"n":{"k":[1,2]}}}"#
+        parts.append(members)
+    }
+    let text = "[" + parts.joined(separator: ",") + "]"
+    var options: JSONParseOptions = json5 ? .json5 : .strict
+    options.recordsContainerSpans = true
+    let document = try AemiJSON.parse(text, options: options)
+    var containers = 0
+    for node in allNodes(document.root) where node.isObject || node.isArray {
+        containers += 1
+        let raw = try #require(node.withRawJSONBytes { [UInt8]($0) })
+        #expect(try JSONValue(AemiJSON.parse(raw, options: json5 ? .json5 : .strict).root) == JSONValue(node))
+    }
+    #expect(containers == 1 + 60 * 7)  // the root, then seven per element
+}

@@ -39,7 +39,7 @@ extension AemiJSON {
         // stays non-throwing and carries the `JSONError` out through `Result`.
         let built =
             unsafe try source.withBytes {
-                raw -> Result<(slots: ContiguousArray<UInt64>, spans: [Int: UInt64], count: Int), JSONError> in
+                raw -> Result<(slots: ContiguousArray<UInt64>, spans: ContainerSpans, count: Int), JSONError> in
                 guard raw.count > 0, let rawBase = raw.baseAddress else { return .failure(.unexpectedEndOfInput) }
                 guard UInt64(raw.count) <= 0xFFFF_FFFF else { return .failure(.documentTooLarge) }
                 var builder = unsafe TapeBuilder(

@@ -46,11 +46,11 @@ public struct JSONParseOptions: Sendable {
     /// Record each container's raw source byte span (opening bracket through closing bracket)
     /// during the parse, enabling ``JSON/withRawJSONBytes(_:)`` on object/array nodes — the
     /// zero-copy "hand me the untouched subtree text" accessor (scalars need no recording; their
-    /// slots already carry offsets). Off by default: recording costs one dictionary insert per
-    /// container (~25% on container-dense inputs, measured), so only opt in when raw subtree
-    /// extraction is actually consumed — e.g. a JSON-RPC router forwarding `result`/`params`
-    /// payloads verbatim. A typed decode of a node needs no spans: `AemiJSON.JSONDecoder` decodes a
-    /// ``JSON`` node straight from the tape.
+    /// slots already carry offsets). Off by default: recording appends one entry per container to
+    /// two arrays (measured at roughly 5–15% over a plain parse on container-dense inputs), so only
+    /// opt in when raw subtree extraction is actually consumed — e.g. a JSON-RPC router forwarding
+    /// `result`/`params` payloads verbatim. A typed decode of a node needs no spans:
+    /// `AemiJSON.JSONDecoder` decodes a ``JSON`` node straight from the tape.
     public var recordsContainerSpans: Bool
 
     public init(

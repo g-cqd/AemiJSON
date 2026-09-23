@@ -161,10 +161,9 @@ public struct JSON: Sendable {
         let len: Int
         switch tag {
             case JSONKind.object.rawValue, JSONKind.array.rawValue:
-                guard let packed = doc.containerSpans[index] else { return nil }
-                let open = Int(packed >> 32)
-                off = open
-                len = Int(packed & 0xFFFF_FFFF) - open + 1
+                guard let span = doc.containerSpans.span(ofContainerAt: index) else { return nil }
+                off = span.lowerBound
+                len = span.count
             case JSONKind.string.rawValue:
                 off = Slot.low(slot) - 1  // include the opening quote
                 len = Slot.length(slot) + 2  // and the closing one
