@@ -18,10 +18,13 @@ extension JSONDocument {
                     }
                     return unsafe try body(base)
                 }
-            case .source(let source):
+            case .source(let source, let count):
                 return unsafe try source.withBytes { raw in
-                    guard let base = raw.baseAddress else {
-                        preconditionFailure("JSONDocument input is never empty")
+                    // The tape's offsets index the bytes this document parsed. A source that lends a
+                    // different length has broken the `ByteSource` contract, and reading it would run
+                    // past its end (a shorter buffer) or through bytes that were never validated.
+                    guard raw.count == count, let base = raw.baseAddress else {
+                        preconditionFailure("ByteSource lent \(raw.count) bytes to a document parsed from \(count)")
                     }
                     return unsafe try body(base.assumingMemoryBound(to: UInt8.self))
                 }

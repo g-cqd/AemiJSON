@@ -25,23 +25,26 @@ extension AemiJSON {
     public static func parse(
         _ source: some ByteSource & Sendable, options: JSONParseOptions = .strict
     ) throws(JSONError) -> JSONDocument {
-        let count = unsafe source.withBytes { $0.count }
-        guard count > 0 else { throw JSONError.unexpectedEndOfInput }
-        guard UInt64(count) <= 0xFFFF_FFFF else { throw JSONError.documentTooLarge }
-        // Same typed-throws funnel as `parse([UInt8])`: `withBytes` is untyped `rethrows`, so the
-        // closure stays non-throwing and carries the `JSONError` out through `Result`.
+        // Validate the length and build the tape inside ONE borrow, so the bytes checked are the bytes
+        // parsed; the document then keeps that count and holds every later borrow to it. Same
+        // typed-throws funnel as `parse([UInt8])`: `withBytes` is untyped `rethrows`, so the closure
+        // stays non-throwing and carries the `JSONError` out through `Result`.
         let built =
             unsafe try source.withBytes {
-                raw -> Result<(slots: ContiguousArray<UInt64>, spans: [Int: UInt64]), JSONError> in
-                guard let rawBase = raw.baseAddress else { return .failure(.unexpectedEndOfInput) }
+                raw -> Result<(slots: ContiguousArray<UInt64>, spans: [Int: UInt64], count: Int), JSONError> in
+                guard raw.count > 0, let rawBase = raw.baseAddress else { return .failure(.unexpectedEndOfInput) }
+                guard UInt64(raw.count) <= 0xFFFF_FFFF else { return .failure(.documentTooLarge) }
                 var builder = unsafe TapeBuilder(
                     rawBase.assumingMemoryBound(to: UInt8.self), raw.count, options: options)
-                return Result { () throws(JSONError) in try builder.build() }
+                return Result { () throws(JSONError) in
+                    let tape = try builder.build()
+                    return (tape.slots, tape.spans, raw.count)
+                }
             }
             .get()
-        AemiJSON.Metrics.record(bytes: count)
+        AemiJSON.Metrics.record(bytes: built.count)
         return JSONDocument(
-            backing: .source(source), tape: built.slots,
+            backing: .source(source, count: built.count), tape: built.slots,
             keysAreUnique: options.duplicateKeys == .throwError, isJSON5: options.isJSON5,
             containerSpans: built.spans)
     }

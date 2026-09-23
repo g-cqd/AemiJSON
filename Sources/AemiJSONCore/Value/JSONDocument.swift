@@ -4,16 +4,17 @@
 public final class JSONDocument: Sendable {
     /// Owned UTF-8 input. A `[UInt8]` input keeps its single existing copy (`.bytes`); a `String`
     /// input is copied once into a `[UInt8]` at the parse boundary. A ``ByteSource`` owner (e.g.
-    /// `Data`) is **retained in place** (`.source`) and read without a copy. Exposes contiguous
-    /// bytes via `withBytePointer`.
+    /// `Data`) is **retained in place** (`.source`) and read without a copy, together with the byte
+    /// count the parse validated, so no later borrow has to trust the source's length again.
+    /// Exposes contiguous bytes via `withBytePointer`.
     package enum Backing: Sendable {
         case bytes([UInt8])
-        case source(any ByteSource & Sendable)
+        case source(any ByteSource & Sendable, count: Int)
 
         @inline(__always) var count: Int {
             switch self {
                 case .bytes(let b): return b.count
-                case .source(let s): return unsafe s.withBytes { $0.count }
+                case .source(_, let count): return count
             }
         }
     }
