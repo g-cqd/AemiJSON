@@ -76,13 +76,9 @@ extension AemiJSON {
 
         /// Decode directly from an already-parsed document (skips re-scanning).
         public func decode<T: Decodable>(_ type: T.Type, from document: JSONDocument) throws -> T {
-            try document.withBuffers { bytesBase, byteCount, tapeBase, tapeCount in
-                let ctx = DecodeContext(
-                    doc: document, bytes: bytesBase, byteCount: byteCount,
-                    tape: tapeBase, tapeCount: tapeCount, userInfo: userInfo, strategies: strategies,
-                    maxDecodeDepth: maxDecodingDepth)
-                return try ctx.decodeValue(T.self, at: 0)
-            }
+            try document.withDecodeContext(
+                userInfo: userInfo, strategies: strategies, maxDecodeDepth: maxDecodingDepth
+            ) { ctx in try ctx.decodeValue(T.self, at: 0) }
         }
 
         /// Decode directly from an already-materialized ``JSONValue``, skipping the serialize-and-reparse

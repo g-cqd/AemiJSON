@@ -208,7 +208,8 @@ extension _FastDecodeCursor {
             self.escaped = escaped
         }
         @inlinable public func matches(_ s: StaticString) -> Bool {
-            JSONKey.matches(ctx.bytes, off, len, escaped: escaped, s)
+            ctx.checkLive()  // reads the bytes without a slot read, so it checks for itself
+            return JSONKey.matches(ctx.bytes, off, len, escaped: escaped, s)
         }
     }
 

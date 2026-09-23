@@ -36,13 +36,19 @@ final class DecodeContext {
     // nested input into a catchable error — even when `maxDepth` is raised far past it.
     @usableFromInline var decodeDepth = 0
     @usableFromInline let maxDecodeDepth: Int
+    /// Cleared when the decode that created this context returns (see `withDecodeContext`). A
+    /// `Decoder` or container can outlive that call: a `Decodable` may store its decoder, or hand a
+    /// `superDecoder()` to code that keeps it. `bytes` and `tape` are dead by then, so every tape
+    /// read checks this flag and traps rather than read through them.
+    @usableFromInline var isLive = true
 
     // INVARIANT: `bytes`/`tape` are borrowed from `doc`'s storage for the duration of one
-    // `withBuffers` scope (see Bytes.swift). `doc` is retained here so the storage outlives
-    // every read. We use raw pointers rather than `Span` because Codable's `Decoder` must be
-    // `Escapable` (a `Span` cannot be stored in this shared context). `slot`/`decodeString`
-    // bounds-check every access under `assert`, so debug/test builds trap on any out-of-range
-    // index while release builds keep the raw-pointer speed.
+    // `withBuffers` scope (see Bytes.swift), and are valid only inside it: a `ByteSource` may lend a
+    // temporary (`Data` lends a copy of its inline bytes), so retaining `doc` does not keep them
+    // alive. `isLive` marks the end of that scope. We use raw pointers rather than `Span` because
+    // Codable's `Decoder` must be `Escapable` (a `Span` cannot be stored in this shared context).
+    // `slot`/`decodeString` bounds-check every access under `assert`, so debug/test builds trap on any
+    // out-of-range index while release builds keep the raw-pointer speed.
     @usableFromInline
     init(
         doc: JSONDocument, bytes: UnsafePointer<UInt8>, byteCount: Int,
@@ -60,8 +66,15 @@ final class DecodeContext {
         self.maxDecodeDepth = maxDecodeDepth
     }
 
-    /// Bounds-checked tape read (the single choke point for tape navigation).
+    /// Traps when this context is used after the decode that created it returned (see `isLive`).
+    @inline(__always) @inlinable func checkLive() {
+        precondition(isLive, "AemiJSON: a Decoder was used after the decode call that created it returned")
+    }
+
+    /// Bounds-checked tape read (the single choke point for tape navigation). Every read of the
+    /// document starts with a slot, so this is also where a context used past its decode traps.
     @inline(__always) @inlinable func slot(_ i: Int) -> UInt64 {
+        checkLive()
         assert(i >= 0 && i < tapeCount, "AemiJSON: tape index \(i) out of bounds [0, \(tapeCount))")
         return tape[i]
     }
@@ -183,6 +196,24 @@ final class DecodeContext {
             i = nextIndex(after: valIdx)
         }
         return found
+    }
+}
+
+extension JSONDocument {
+    /// Runs `body` with a decode context over this document's buffers. The context's pointers are
+    /// borrowed for this call only, so it is marked dead when `body` returns: a `Decoder` or container
+    /// kept past that point traps on its next read instead of reading freed memory.
+    func withDecodeContext<R>(
+        userInfo: [CodingUserInfoKey: Any], strategies: DecodeStrategies, maxDecodeDepth: Int,
+        _ body: (DecodeContext) throws -> R
+    ) rethrows -> R {
+        try withBuffers { bytes, byteCount, tape, tapeCount in
+            let ctx = DecodeContext(
+                doc: self, bytes: bytes, byteCount: byteCount, tape: tape, tapeCount: tapeCount,
+                userInfo: userInfo, strategies: strategies, maxDecodeDepth: maxDecodeDepth)
+            defer { ctx.isLive = false }
+            return try body(ctx)
+        }
     }
 }
 

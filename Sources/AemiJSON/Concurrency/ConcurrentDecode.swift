@@ -31,11 +31,9 @@ extension JSONDocument {
     func decodeElementRange<T: Decodable>(
         _ type: T.Type, _ lo: Int, _ hi: Int, _ starts: [Int], maxDecodingDepth: Int
     ) throws -> [T] {
-        try withBuffers { byteBase, byteCount, tapeBase, tapeCount in
-            let ctx = DecodeContext(
-                doc: self, bytes: byteBase, byteCount: byteCount,
-                tape: tapeBase, tapeCount: tapeCount, userInfo: [:], strategies: DecodeStrategies(),
-                maxDecodeDepth: maxDecodingDepth)
+        try withDecodeContext(
+            userInfo: [:], strategies: DecodeStrategies(), maxDecodeDepth: maxDecodingDepth
+        ) { ctx in
             var out: [T] = []
             out.reserveCapacity(hi - lo)
             for k in lo ..< hi { out.append(try ctx.decodeValue(T.self, at: starts[k])) }
