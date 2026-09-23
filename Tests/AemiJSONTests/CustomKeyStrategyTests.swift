@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AemiJSON
@@ -75,4 +76,40 @@ private struct FastRec: Codable, Equatable {
     let root = try AemiJSON.parse(data).root
     #expect(root["firstName"].string == "a")
     #expect(try AemiJSON.JSONDecoder().decode(FastRec.self, from: data) == FastRec(firstName: "a", ageYears: 1))
+}
+
+/// Counts the keys a custom key-decoding strategy converts.
+private final class ConversionCounter: Sendable {
+    private let count = Atomic<Int>(0)
+    var conversions: Int { count.load(ordering: .relaxed) }
+    func convert(_ key: String) -> String {
+        count.wrappingAdd(1, ordering: .relaxed)
+        return key.lowercased()
+    }
+}
+
+private struct TwelveFields: Decodable, Equatable {
+    let a, b, c, d, e, f, g, h, i, j, k, l: Int
+}
+
+// A key strategy converts each JSON key once per object. Before, every field lookup converted every
+// key of the object again: 144 conversions for these 12 fields.
+@Test func keyDecodingStrategyConvertsEachKeyOncePerObject() throws {
+    let keys = "ABCDEFGHIJKL".map(String.init)
+    let json = "{" + keys.enumerated().map { #""\#($1)":\#($0)"# }.joined(separator: ",") + "}"
+    let counter = ConversionCounter()
+    var decoder = AemiJSON.JSONDecoder()
+    decoder.keyDecodingStrategy = .custom { counter.convert($0) }
+    let decoded = try decoder.decode(TwelveFields.self, from: Data(json.utf8))
+    #expect(decoded == TwelveFields(a: 0, b: 1, c: 2, d: 3, e: 4, f: 5, g: 6, h: 7, i: 8, j: 9, k: 10, l: 11))
+    #expect(counter.conversions == keys.count)
+}
+
+// Converting once per object keeps last-value-wins for keys that collide after conversion.
+@Test func keyDecodingStrategyKeepsTheLastOfCollidingKeys() throws {
+    struct Named: Decodable, Equatable { let firstName: String }
+    var decoder = AemiJSON.JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    let json = #"{"first_name":"a","firstName":"b","first__name":"c"}"#  // all three convert to firstName
+    #expect(try decoder.decode(Named.self, from: Data(json.utf8)) == Named(firstName: "c"))
 }

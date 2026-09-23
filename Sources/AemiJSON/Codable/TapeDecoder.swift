@@ -41,6 +41,10 @@ final class DecodeContext {
     /// `superDecoder()` to code that keeps it. `bytes` and `tape` are dead by then, so every tape
     /// read checks this flag and traps rather than read through them.
     @usableFromInline var isLive = true
+    /// Keys converted under the key-decoding strategy so far in this decode, by raw key. The records
+    /// of an array repeat the same keys, so each distinct key is converted once per decode rather than
+    /// once per object. Capped, so a document of ever-new keys cannot grow it without bound.
+    var convertedKeys: [String: String] = [:]
 
     // INVARIANT: `bytes`/`tape` are borrowed from `doc`'s storage for the duration of one
     // `withBuffers` scope (see Bytes.swift), and are valid only inside it: a `ByteSource` may lend a
@@ -166,36 +170,50 @@ final class DecodeContext {
         return JSONString.unescape(bytes, off, len)
     }
 
-    /// Index of the value slot for `key` within the object at `obj`, or nil.
+    /// Index of the value slot for `key` within the object at `obj`, or nil, matching the JSON keys'
+    /// raw bytes. Under a key-decoding strategy the keyed container looks keys up in
+    /// `convertedMembers(of:)` instead.
     // Returns the LAST matching member (duplicate keys resolve last-value-wins,
     // consistent with `JSON.object` and JS / Foundation semantics).
     func memberValueIndex(of obj: Int, key: String) -> Int? {
         let c = Slot.count(slot(obj))
-        // When a key-decoding strategy is active, each JSON key is converted (e.g. snake_case →
-        // camelCase) before comparison — losing the byte-compare fast path, but only while the
-        // strategy is set.
-        let convert = keyConversionActive
         var i = obj + 1
         var found: Int? = nil
         for _ in 0 ..< c {
             let ks = slot(i)
             let valIdx = i + 1
-            let isMatch: Bool
-            if convert {
-                isMatch = applyKeyDecoding(keyString(i)) == key
-            } else {
-                let koff = Slot.low(ks)
-                let klen = Slot.length(ks)
-                assertBytes(koff, klen)
-                isMatch = JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, key)
-            }
-            if isMatch {
+            let koff = Slot.low(ks)
+            let klen = Slot.length(ks)
+            assertBytes(koff, klen)
+            if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, key) {
                 found = valIdx
                 if keysAreUnique { break }  // unique keys → first match is the only match
             }
             i = nextIndex(after: valIdx)
         }
         return found
+    }
+
+    /// The members of the object at `obj`, keyed by their keys converted under the key-decoding
+    /// strategy (e.g. snake_case → camelCase) and mapped to their value indices; a later duplicate
+    /// wins, as in `memberValueIndex`. A keyed container builds this once, so each lookup costs a hash
+    /// instead of converting every key of the object again.
+    func convertedMembers(of obj: Int) -> [String: Int] {
+        let c = count(obj)
+        var members = [String: Int](minimumCapacity: c)
+        var i = obj + 1
+        for _ in 0 ..< c {
+            members[convertedKey(keyString(i))] = i + 1
+            i = nextIndex(after: i + 1)
+        }
+        return members
+    }
+
+    private func convertedKey(_ raw: String) -> String {
+        if let converted = convertedKeys[raw] { return converted }
+        let converted = applyKeyDecoding(raw)
+        if convertedKeys.count < 1024 { convertedKeys[raw] = converted }
+        return converted
     }
 }
 
@@ -225,7 +243,10 @@ struct TapeDecoder: Decoder {
 
     func container<Key: CodingKey>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> {
         guard ctx.tag(index) == JSONKind.object.rawValue else { throw ctx.objectExpected(codingPath: codingPath) }
-        return KeyedDecodingContainer(KeyedTapeDecodingContainer<Key>(ctx: ctx, index: index, codingPath: codingPath))
+        let converted = ctx.keyConversionActive ? ctx.convertedMembers(of: index) : nil
+        return KeyedDecodingContainer(
+            KeyedTapeDecodingContainer<Key>(ctx: ctx, index: index, codingPath: codingPath, convertedMembers: converted)
+        )
     }
 
     func unkeyedContainer() throws -> any UnkeyedDecodingContainer {
@@ -247,6 +268,9 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
     let ctx: DecodeContext
     let index: Int
     let codingPath: [any CodingKey]
+    /// Under a key-decoding strategy, the object's members by converted key (see `convertedMembers`);
+    /// nil without one, when keys are matched on their raw bytes.
+    let convertedMembers: [String: Int]?
 
     var allKeys: [Key] {
         var out: [Key] = []
@@ -260,7 +284,7 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
         return out
     }
 
-    func contains(_ key: Key) -> Bool { ctx.memberValueIndex(of: index, key: key.stringValue) != nil }
+    func contains(_ key: Key) -> Bool { memberValueIndex(key) != nil }
 
     func decodeNil(forKey key: Key) throws -> Bool {
         let vi = try requireIndex(key)
@@ -324,8 +348,13 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
         TapeDecoder(ctx: ctx, index: try requireIndex(key), codingPath: codingPath + [key])
     }
 
+    @inline(__always) private func memberValueIndex(_ key: Key) -> Int? {
+        guard let convertedMembers else { return ctx.memberValueIndex(of: index, key: key.stringValue) }
+        return convertedMembers[key.stringValue]
+    }
+
     @inline(__always) private func requireIndex(_ key: Key) throws -> Int {
-        guard let vi = ctx.memberValueIndex(of: index, key: key.stringValue) else {
+        guard let vi = memberValueIndex(key) else {
             throw DecodingError.keyNotFound(
                 key, .init(codingPath: codingPath, debugDescription: "No value for key \(key.stringValue)"))
         }
