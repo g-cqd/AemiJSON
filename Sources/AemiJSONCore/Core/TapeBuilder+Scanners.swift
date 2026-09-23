@@ -75,16 +75,19 @@ extension TapeBuilder {
         i = j + 1
     }
 
-    // SWAR: returns a word whose every byte holds `0x80` exactly where the corresponding input byte
-    // must stop the fast scan — a control char (`< 0x20`), a non-ASCII lead (`>= 0x80`), a quote
-    // (`"`), or a backslash (`\`). Zero means all eight bytes are plain string content. The set bits
-    // are only ever the per-byte `0x80`, so `trailingZeroBitCount >> 3` (little-endian) locates the
-    // first stop byte. Uses the classic "bytes < n" / "bytes == c" bit hacks (Bit Twiddling Hacks).
     // Minimum remaining bytes for the SIMD string-stop kernel to beat the inline SWAR scan; below it
     // the C-call overhead dominates, so the inline SWAR path is used. Conservative default — tune from
     // the AemiJSONSuite crossover exactly as `UTF8Validation.simdMinBytes` was tuned from its benchmark.
     @usableFromInline static let kernelStringScanMinBytes = 64
 
+    // SWAR stop-mask over a little-endian word: zero when all eight bytes are plain string content,
+    // otherwise `0x80` in the first byte that must stop the fast scan — a control char (`< 0x20`), a
+    // non-ASCII lead (`>= 0x80`), a quote (`"`), or a backslash (`\`) — and in no byte before it, so
+    // `trailingZeroBitCount >> 3` locates that first stop byte. Only the first flagged byte is exact:
+    // the `lessThan` and `equals` terms subtract across the word, and the borrow out of a stop byte can
+    // flag plain content above it (a control char followed by a space flags both). The scan reads the
+    // first lane and nothing more; never count or walk the flagged lanes. Uses the classic "bytes < n"
+    // / "bytes == c" bit hacks (Bit Twiddling Hacks), shared through `AemiKernel.SWAR`.
     @inline(__always) static func stringStopMask(_ v: UInt64) -> UInt64 {
         // Parse stops on a control, a non-ASCII lead, a quote, or a backslash. (Encode shares the
         // control/quote/backslash terms but omits non-ASCII — UTF-8 is copied verbatim there.)

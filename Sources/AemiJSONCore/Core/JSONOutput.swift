@@ -76,10 +76,12 @@ public enum JSONOutput {
     /// overhead dominates); short string values keep the inline path. Tune from the AemiJSONSuite crossover.
     @usableFromInline static let kernelEscapeMinBytes = 64
 
-    /// SWAR escape stop-mask for ``appendString``: `0x80` in each byte that must be escaped on the
-    /// default / `escapeSlashes` profile — a control (`< 0x20`), `"`, `\` (and `/` when escaping
-    /// slashes). Non-ASCII is intentionally NOT flagged (well-formed UTF-8 is copied verbatim on
-    /// encode), which is the one term that differs from the parser's `stringStopMask`.
+    /// SWAR escape stop-mask for ``appendString``: zero when no byte needs escaping on the default /
+    /// `escapeSlashes` profile, otherwise `0x80` in the first byte that does — a control (`< 0x20`),
+    /// `"`, `\` (and `/` when escaping slashes) — and in no byte before it. Only that first lane is
+    /// exact (a borrow can flag plain bytes above it), so read it with `trailingZeroBitCount >> 3` and
+    /// never count or walk the lanes. Non-ASCII is intentionally NOT flagged (well-formed UTF-8 is
+    /// copied verbatim on encode), which is the one term that differs from the parser's `stringStopMask`.
     @inlinable @inline(__always)
     static func encodeStopMask(_ v: UInt64, escapeSlashes: Bool) -> UInt64 {
         let m = SWAR.lessThan(v, 0x20) | SWAR.equals(v, 0x22) | SWAR.equals(v, 0x5C)
