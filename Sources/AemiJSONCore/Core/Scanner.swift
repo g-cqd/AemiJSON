@@ -57,6 +57,10 @@ import AemiKernel
     }
 
     mutating func build() throws(JSONError) -> (slots: ContiguousArray<UInt64>, spans: [Int: UInt64]) {
+        // Skip a leading UTF-8 byte-order mark, which Foundation's decoder accepts and RFC 8259 §8.1
+        // lets a parser ignore. Offsets stay relative to the buffer, so the tape still indexes the
+        // caller's bytes.
+        if n >= 3, unsafe p[0] == 0xEF && p[1] == 0xBB && p[2] == 0xBF { i = 3 }
         skipWS()
         try parseValue()
         skipWS()

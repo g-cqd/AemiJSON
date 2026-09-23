@@ -31,18 +31,20 @@ public enum AemiJSON {
 
     // `assumesTopLevelDictionary`: wrap the input in `{ … }` unless its first significant byte is
     // already `{`, then parse with the flag cleared (one-shot). Leaving an already-braced input
-    // untouched is what makes a single unmatched brace still a parse error.
+    // untouched is what makes a single unmatched brace still a parse error. A leading byte-order mark
+    // is dropped before wrapping, since inside the braces it would no longer lead the input.
     static func parseAssumingTopLevelDictionary(
         _ bytes: [UInt8], options: JSONParseOptions
     ) throws(JSONError) -> JSONDocument {
         var plain = options
         plain.assumesTopLevelDictionary = false
-        let firstSignificant = bytes.first { $0 != 0x20 && $0 != 0x09 && $0 != 0x0A && $0 != 0x0D }
+        let body = bytes.starts(with: [0xEF, 0xBB, 0xBF]) ? bytes.dropFirst(3) : bytes[...]
+        let firstSignificant = body.first { $0 != 0x20 && $0 != 0x09 && $0 != 0x0A && $0 != 0x0D }
         if firstSignificant == 0x7B { return try parse(bytes, options: plain) }  // already an object
         var wrapped: [UInt8] = []
-        wrapped.reserveCapacity(bytes.count + 2)
+        wrapped.reserveCapacity(body.count + 2)
         wrapped.append(0x7B)  // '{'
-        wrapped.append(contentsOf: bytes)
+        wrapped.append(contentsOf: body)
         wrapped.append(0x7D)  // '}'
         return try parse(wrapped, options: plain)
     }

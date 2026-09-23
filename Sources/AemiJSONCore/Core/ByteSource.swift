@@ -21,10 +21,18 @@ extension AemiJSON {
     /// Parse a ``ByteSource`` (e.g. `Data`) into a document that **retains the source** and reads
     /// its bytes in place — no copy into a `[UInt8]`. The source must be `Sendable` so the resulting
     /// immutable ``JSONDocument`` stays `Sendable`. Value-semantic sources (CoW) make this safe: a
-    /// later mutation of the caller's copy can't disturb the bytes this document borrows.
+    /// later mutation of the caller's copy can't disturb the bytes this document borrows. With
+    /// ``JSONParseOptions/assumesTopLevelDictionary`` set, the bytes are copied instead, since
+    /// wrapping them in braces needs a buffer of its own.
     public static func parse(
         _ source: some ByteSource & Sendable, options: JSONParseOptions = .strict
     ) throws(JSONError) -> JSONDocument {
+        if options.assumesTopLevelDictionary {
+            // Wrapping the input in braces needs a buffer of its own, so this path copies the bytes
+            // out of one borrow and parses the copy rather than reading the source in place.
+            let bytes = unsafe source.withBytes { unsafe [UInt8]($0) }
+            return try parseAssumingTopLevelDictionary(bytes, options: options)
+        }
         // Validate the length and build the tape inside ONE borrow, so the bytes checked are the bytes
         // parsed; the document then keeps that count and holds every later borrow to it. Same
         // typed-throws funnel as `parse([UInt8])`: `withBytes` is untyped `rethrows`, so the closure
