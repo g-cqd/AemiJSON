@@ -1,4 +1,5 @@
 import AemiJSONCore
+
 #if canImport(FoundationEssentials)
     import FoundationEssentials
 #else
@@ -67,6 +68,14 @@ final class DecodeContext {
 
     @inline(__always) @inlinable func assertBytes(_ off: Int, _ len: Int) {
         assert(off >= 0 && len >= 0 && off + len <= byteCount, "AemiJSON: byte range out of bounds")
+    }
+
+    /// The error for reading members from a node that is not an object. Shared by the keyed container
+    /// and the fast cursor's by-key readers, so both paths report a non-object alike (as Foundation
+    /// does: a type mismatch against a dictionary).
+    @usableFromInline func objectExpected(codingPath: [any CodingKey]) -> DecodingError {
+        DecodingError.typeMismatch(
+            [String: Any].self, .init(codingPath: codingPath, debugDescription: "Expected an object"))
     }
 
     @inline(__always) @inlinable func tag(_ i: Int) -> UInt8 { Slot.tag(slot(i)) }
@@ -184,10 +193,7 @@ struct TapeDecoder: Decoder {
     var userInfo: [CodingUserInfoKey: Any] { ctx.userInfo }
 
     func container<Key: CodingKey>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> {
-        guard ctx.tag(index) == JSONKind.object.rawValue else {
-            throw DecodingError.typeMismatch(
-                [String: Any].self, .init(codingPath: codingPath, debugDescription: "Expected an object"))
-        }
+        guard ctx.tag(index) == JSONKind.object.rawValue else { throw ctx.objectExpected(codingPath: codingPath) }
         return KeyedDecodingContainer(KeyedTapeDecodingContainer<Key>(ctx: ctx, index: index, codingPath: codingPath))
     }
 

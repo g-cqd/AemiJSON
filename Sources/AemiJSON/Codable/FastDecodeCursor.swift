@@ -1,4 +1,5 @@
 import AemiJSONCore
+
 #if canImport(FoundationEssentials)
     import FoundationEssentials
 #else
@@ -12,8 +13,14 @@ import AemiJSONCore
 extension DecodeContext {
     /// Value-slot index for a statically-known key, matched on raw bytes (no String
     /// alloc). Returns the LAST match (duplicate keys resolve last-value-wins).
-    @inlinable func memberValueIndex(of obj: Int, keyBytes lit: StaticString) -> Int? {
-        let c = Slot.count(slot(obj))
+    ///
+    /// Throws `typeMismatch` when the node at `obj` is not an object. Only an object slot carries a
+    /// member count: a string's slot holds `(length << 2) | flags` in the same field, so walking it as
+    /// members would read past the end of the tape.
+    @inlinable func memberValueIndex(of obj: Int, keyBytes lit: StaticString) throws -> Int? {
+        let s = slot(obj)
+        guard Slot.tag(s) == JSONKind.object.rawValue else { throw objectExpected(codingPath: []) }
+        let c = Slot.count(s)
         var i = obj + 1
         var found: Int? = nil
         for _ in 0 ..< c {
@@ -44,58 +51,60 @@ public struct _FastDecodeCursor {
     }
 
     @inlinable public func string(_ key: StaticString) throws -> String {
-        guard let vi = ctx.memberValueIndex(of: index, keyBytes: key), let s = ctx.string(vi) else {
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), let s = ctx.string(vi) else {
             throw missing(key)
         }
         return s
     }
 
-    @inlinable public func stringIfPresent(_ key: StaticString) -> String? {
-        guard let vi = ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
+    @inlinable public func stringIfPresent(_ key: StaticString) throws -> String? {
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
         return ctx.string(vi)
     }
 
     @inlinable public func bool(_ key: StaticString) throws -> Bool {
-        guard let vi = ctx.memberValueIndex(of: index, keyBytes: key), let b = ctx.bool(vi) else { throw missing(key) }
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), let b = ctx.bool(vi) else {
+            throw missing(key)
+        }
         return b
     }
 
-    @inlinable public func boolIfPresent(_ key: StaticString) -> Bool? {
-        guard let vi = ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
+    @inlinable public func boolIfPresent(_ key: StaticString) throws -> Bool? {
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
         return ctx.bool(vi)
     }
 
     @inlinable public func double(_ key: StaticString) throws -> Double {
-        guard let vi = ctx.memberValueIndex(of: index, keyBytes: key), let d = ctx.double(vi) else {
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), let d = ctx.double(vi) else {
             throw missing(key)
         }
         return d
     }
 
-    @inlinable public func doubleIfPresent(_ key: StaticString) -> Double? {
-        guard let vi = ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
+    @inlinable public func doubleIfPresent(_ key: StaticString) throws -> Double? {
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
         return ctx.double(vi)
     }
 
     @inlinable public func integer<T: FixedWidthInteger>(_ key: StaticString, _ type: T.Type) throws -> T {
-        guard let vi = ctx.memberValueIndex(of: index, keyBytes: key), let n = ctx.integer(vi, type) else {
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), let n = ctx.integer(vi, type) else {
             throw missing(key)
         }
         return n
     }
 
-    @inlinable public func integerIfPresent<T: FixedWidthInteger>(_ key: StaticString, _ type: T.Type) -> T? {
-        guard let vi = ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
+    @inlinable public func integerIfPresent<T: FixedWidthInteger>(_ key: StaticString, _ type: T.Type) throws -> T? {
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
         return ctx.integer(vi, type)
     }
 
     @inlinable public func decode<T: Decodable>(_ type: T.Type, _ key: StaticString) throws -> T {
-        guard let vi = ctx.memberValueIndex(of: index, keyBytes: key) else { throw missing(key) }
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key) else { throw missing(key) }
         return try ctx.decodeValue(type, at: vi)
     }
 
     @inlinable public func decodeIfPresent<T: Decodable>(_ type: T.Type, _ key: StaticString) throws -> T? {
-        guard let vi = ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
         return try ctx.decodeValue(type, at: vi)
     }
 
