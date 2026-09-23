@@ -74,10 +74,12 @@ let isFuzz = Context.environment["AEMIJSON_FUZZ"] != nil || Context.environment[
 // `AemiJSONNIO` product, which re-exports `AemiJSONCore`. Same opt-in model as `AEMIJSON_DEV` / `AEMIJSON_FUZZ`.
 let isNIO = Context.environment["AEMIJSON_NIO"] != nil || Context.environment["ADJSON_NIO"] != nil
 
-// Aemi supplies the shared low-level primitives (the `AemiKernel` byte/number kernel),
-// resolved from the published package.
+// Aemi supplies the shared low-level primitives (the `AemiKernel` byte/number kernel). It is pinned to
+// one revision rather than tracking a branch, so a push to aemi cannot change the C kernels and unsafe
+// code under an existing build. The pin is the g-cqd mirror's revision that Atelier pins as well:
+// SwiftPM rejects one package identity at two locations, so the two move together.
 let aemiDependency: Package.Dependency = .package(
-    url: "https://github.com/Aemi-Studio/aemi.git", branch: "main")
+    url: "https://github.com/Aemi-Studio/aemi.git", revision: "739d982e95db75eb1e6565c79c42c705dbae247f")
 
 // AemiRuntime (the production `TaskProvider`/`Clock` seams the concurrent parse/decode paths use) and
 // AemiTestKit (the test-only kit) are now both vended by the Aemi umbrella package, so they
