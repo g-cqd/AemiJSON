@@ -55,54 +55,64 @@ extension AemiJSON {
     /// Each record is a separate top-level document, so — unlike parsing a single document, where the
     /// tape is one sequential dependency chain — the records have no data dependency and fan out
     /// cleanly. ``AemiJSON/parse(_:options:)-([UInt8],_)`` is a pure function of its bytes, so nothing mutable crosses the
-    /// task boundary. Records that fail to parse surface the first error (the throwing task group
-    /// cancels the rest).
+    /// task boundary. The batches run as child tasks of a task group, so the call returns only once
+    /// every batch has stopped. A record that fails to parse surfaces the first error and cancels the
+    /// other batches, and cancelling the calling task cancels them too; each stops within 64 records
+    /// with a `CancellationError`.
     ///
     /// - Important: `minimumBatch` is the fan-out floor in records. At or below it the records parse
     ///   serially on the calling task; above it they are split into
     ///   `min(coreCount, count / minimumBatch)` batches.
     public static func parseLinesConcurrently(
-        _ bytes: [UInt8], options: JSONParseOptions = .strict, minimumBatch: Int = 64,
-        taskProvider: any TaskProvider = LiveTaskProvider()
+        _ bytes: [UInt8], options: JSONParseOptions = .strict, minimumBatch: Int = 64
     ) async throws -> [JSONDocument] {
         let lines = ndjsonLines(bytes)
         let n = lines.count
         if n <= minimumBatch {
-            return try lines.map { try AemiJSON.parse($0, options: options) }
+            return try parseRecords(lines, 0, n, options: options)
         }
 
         let cores = max(1, ProcessInfo.processInfo.activeProcessorCount)
         let chunkCount = min(cores, max(1, n / minimumBatch))
         let chunkSize = (n + chunkCount - 1) / chunkCount
 
-        // Spawn one `.work` task per chunk through the injected provider (live = `Task.init`), holding
-        // the handles in chunk order, then gather them in order — preserving the input order the former
-        // `(index, part)` task-group collection produced. A test injects a `TaskProviderSpy` and
-        // `await waitForAllTasks()` to settle these handles deterministically.
-        var handles: [Task<[JSONDocument], any Error>] = []
-        handles.reserveCapacity(chunkCount)
-        var lo = 0
-        while lo < n {
-            let hi = min(lo + chunkSize, n)
-            let lo0 = lo
-            handles.append(
-                taskProvider.task(role: .work) {
-                    var docs: [JSONDocument] = []
-                    docs.reserveCapacity(hi - lo0)
-                    for k in lo0 ..< hi { docs.append(try AemiJSON.parse(lines[k], options: options)) }
-                    return docs
-                })
-            lo = hi
+        // One child task per batch of records. Each reports its batch number, so the batches are
+        // reassembled in input order whatever order they finish in.
+        return try await withThrowingTaskGroup(of: (batch: Int, documents: [JSONDocument]).self) { group in
+            var batches = 0
+            for lo in stride(from: 0, to: n, by: chunkSize) {
+                let batch = batches
+                group.addTask { (batch, try parseRecords(lines, lo, min(lo + chunkSize, n), options: options)) }
+                batches += 1
+            }
+            var parts = [[JSONDocument]](repeating: [], count: batches)
+            for try await part in group { parts[part.batch] = part.documents }
+            var out: [JSONDocument] = []
+            out.reserveCapacity(n)
+            for part in parts { out.append(contentsOf: part) }
+            return out
         }
-        var out: [JSONDocument] = []
-        out.reserveCapacity(n)
-        do {
-            for handle in handles { out.append(contentsOf: try await handle.value) }
-        } catch {
-            for handle in handles { handle.cancel() }  // first error cancels the rest, as the group did
-            throw error
+    }
+
+    @available(*, deprecated, message: "The batches run in a task group; the task provider is no longer used")
+    public static func parseLinesConcurrently(
+        _ bytes: [UInt8], options: JSONParseOptions = .strict, minimumBatch: Int = 64, taskProvider: any TaskProvider
+    ) async throws -> [JSONDocument] {
+        try await parseLinesConcurrently(bytes, options: options, minimumBatch: minimumBatch)
+    }
+
+    /// Parses `lines[lo ..< hi]`, checking for cancellation of the current task every 64 records,
+    /// starting with the first.
+    private static func parseRecords(
+        _ lines: [[UInt8]], _ lo: Int, _ hi: Int, options: JSONParseOptions
+    ) throws -> [JSONDocument] {
+        var documents: [JSONDocument] = []
+        documents.reserveCapacity(hi - lo)
+        for k in lo ..< hi {
+            if (k - lo) & 63 == 0 { try Task.checkCancellation() }
+            documents.append(try AemiJSON.parse(lines[k], options: options))
         }
-        return out
+        return documents
     }
 
     /// `Data` convenience for ``parseLinesConcurrently(_:options:minimumBatch:)``.

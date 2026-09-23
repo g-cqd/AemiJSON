@@ -1,5 +1,5 @@
-import AemiTestKit
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AemiJSON
@@ -33,32 +33,59 @@ private func makeRows(_ n: Int) -> [Row] {
     #expect(out == rows)
 }
 
-// MARK: - TaskProvider seam (deterministic spy settling)
+// MARK: - Structured fan-out: cancellation and no work left behind
 
-@Test func concurrentDecodeSettlesViaTaskProviderSpy() async throws {
-    // Inject the kit's spy: it spawns the real `.work` tasks (so the decode actually runs) while
-    // tracking them, then settles deterministically — no real-time wait, no serial-result race.
-    let rows = makeRows(3000)
-    let data = try AemiJSON.JSONEncoder().encode(rows)
-    let spy = TaskProviderSpy()
-    let decoded = try await AemiJSON.decodeArrayConcurrently(
-        Row.self, from: data, minimumBatch: 64, taskProvider: spy)
-    try await spy.waitForAllTasks()
-    #expect(decoded == rows)  // correct AND in input order (the manual ordered gather)
-    #expect(spy.spawnedCount > 1, "the fan-out spawned more than one chunk task")
-    #expect(spy.liveCount == 0, "every spawned `.work` task settled")
+// The batches are child tasks of a task group, so cancelling the caller reaches them and the call
+// returns only after every batch has stopped. Each test cancels its own task before the call, which
+// makes the outcome independent of scheduling. Before, the batches were unstructured tasks that
+// ignored the caller's cancellation, and both calls returned every result.
+
+@Test func concurrentDecodeStopsWhenTheCallerIsCancelled() async throws {
+    let data = try AemiJSON.JSONEncoder().encode(makeRows(3000))
+    for minimumBatch in [64, 5000] {  // fanned out, then the serial path
+        let outcome = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await AemiJSON.decodeArrayConcurrently(Row.self, from: data, minimumBatch: minimumBatch)
+        }
+        .result
+        #expect(throws: CancellationError.self) { try outcome.get() }
+    }
 }
 
-@Test func concurrentParseSettlesViaTaskProviderSpy() async throws {
-    let recordCount = 2000
-    let ndjson = (0 ..< recordCount).map { #"{"i":\#($0)}"# }.joined(separator: "\n")
-    let spy = TaskProviderSpy()
-    let docs = try await AemiJSON.parseLinesConcurrently(
-        [UInt8](ndjson.utf8), minimumBatch: 64, taskProvider: spy)
-    try await spy.waitForAllTasks()  // deterministic settle — no real-time wait
-    #expect(docs.count == recordCount)
-    #expect(spy.spawnedCount > 1, "the fan-out spawned more than one chunk task")
-    #expect(spy.liveCount == 0, "every spawned `.work` task settled")
+@Test func concurrentParseStopsWhenTheCallerIsCancelled() async throws {
+    let ndjson = [UInt8]((0 ..< 2000).map { #"{"i":\#($0)}"# }.joined(separator: "\n").utf8)
+    for minimumBatch in [64, 5000] {
+        let outcome = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await AemiJSON.parseLinesConcurrently(ndjson, minimumBatch: minimumBatch)
+        }
+        .result
+        #expect(throws: CancellationError.self) { try outcome.get() }
+    }
+}
+
+/// Counts the elements being decoded right now, and fails on the element whose `fail` is true.
+private struct Tracked: Decodable, Sendable {
+    struct Failure: Error {}
+    static let live = Atomic<Int>(0)
+    init(from decoder: any Decoder) throws {
+        Tracked.live.wrappingAdd(1, ordering: .relaxed)
+        defer { Tracked.live.wrappingSubtract(1, ordering: .relaxed) }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if try container.decode(Bool.self, forKey: .fail) { throw Failure() }
+    }
+    private enum CodingKeys: String, CodingKey {
+        case fail
+    }
+}
+
+@Test func concurrentDecodeLeavesNoBatchRunningAfterAnElementThrows() async throws {
+    let elements = (0 ..< 4000).map { #"{"fail":\#($0 == 3)}"# }
+    let data = Data(("[" + elements.joined(separator: ",") + "]").utf8)
+    await #expect(throws: Tracked.Failure.self) {
+        _ = try await AemiJSON.decodeArrayConcurrently(Tracked.self, from: data, minimumBatch: 64)
+    }
+    #expect(Tracked.live.load(ordering: .relaxed) == 0)
 }
 
 @Test func parseMetricsIncrement() throws {
