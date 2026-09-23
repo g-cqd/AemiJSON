@@ -117,6 +117,48 @@ nonisolated(unsafe) let benchmarks = {
         for _ in bm.scaledIterations { blackHole(try! decoder.decode([MacroUser].self, from: userData)) }
     }
 
+    // Key-decoding strategy: snake_case JSON keys converted to the model's camelCase `CodingKey`s. Any
+    // key strategy takes the generic container path (the macro fast path matches keys verbatim).
+    let snakeUserData: Data = {
+        var encoder = AemiJSON.JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return (try? encoder.encode(users)) ?? Data()
+    }()
+    Benchmark("decode/Foundation snake_case") { bm in
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        for _ in bm.scaledIterations { blackHole(try decoder.decode([User].self, from: snakeUserData)) }
+    }
+    Benchmark("decode/AemiJSON snake_case") { bm in
+        var decoder = AemiJSON.JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        for _ in bm.scaledIterations { blackHole(try decoder.decode([User].self, from: snakeUserData)) }
+    }
+
+    // Escape-heavy strings shaped like LSP hover markdown: newlines, quotes, and a non-ASCII `\u`
+    // escape in every value, so every string read takes the unescape path.
+    let escapedStringsData = Data(
+        ("["
+            + (0 ..< 4000).map { #""```swift\nfunc f\#($0)(_ x: Int) -> String\n```\n\"quoted\" caf\u00e9 \#($0)""# }
+            .joined(separator: ",") + "]")
+            .utf8)
+    Benchmark("decode/Foundation escaped strings") { bm in
+        for _ in bm.scaledIterations {
+            blackHole(try foundationDecoder.decode([String].self, from: escapedStringsData))
+        }
+    }
+    Benchmark("decode/AemiJSON escaped strings") { bm in
+        let decoder = AemiJSON.JSONDecoder()
+        for _ in bm.scaledIterations { blackHole(try decoder.decode([String].self, from: escapedStringsData)) }
+    }
+    Benchmark("parse/AemiJSON escaped walk") { bm in
+        for _ in bm.scaledIterations {
+            var bytes = 0
+            try AemiJSON.parse(escapedStringsData).root.forEachElement { bytes &+= $0.stringValue.utf8.count }
+            blackHole(bytes)
+        }
+    }
+
     // MARK: encode  ([User] -> Data)
 
     Benchmark("encode/Foundation") { bm in
@@ -287,6 +329,23 @@ nonisolated(unsafe) let benchmarks = {
         }
     }
 
+    // MARK: raw subtree bytes  (container span recording for `withRawJSONBytes`)
+
+    // The same parse with every container's source span recorded, and a JSON-RPC-style consumer that
+    // borrows each element's raw bytes (one span lookup per element).
+    let spanOptions = JSONParseOptions(recordsContainerSpans: true)
+    Benchmark("parse/AemiJSON tape spans") { bm in
+        for _ in bm.scaledIterations { blackHole(try AemiJSON.parse(userData, options: spanOptions)) }
+    }
+    Benchmark("parse/AemiJSON raw subtree bytes") { bm in
+        let document = try AemiJSON.parse(userData, options: spanOptions)
+        for _ in bm.scaledIterations {
+            var total = 0
+            document.root.forEachElement { total &+= $0.withRawJSONBytes { $0.count } ?? 0 }
+            blackHole(total)
+        }
+    }
+
     // MARK: - Capabilities with no Foundation equivalent
     // SAX streaming, JSONPath (RFC 9535), JSON Schema, JSON Patch, and off-actor parallel decode have
     // no Foundation counterpart. These measure AemiJSON's absolute throughput — the feature edge, not a
@@ -450,6 +509,9 @@ nonisolated(unsafe) let benchmarks = {
         }
         Benchmark("corpus/\(name) AemiJSON tape") { bm in
             for _ in bm.scaledIterations { blackHole(try! AemiJSON.parse(data)) }
+        }
+        Benchmark("corpus/\(name) AemiJSON tape spans") { bm in
+            for _ in bm.scaledIterations { blackHole(try AemiJSON.parse(data, options: spanOptions)) }
         }
         Benchmark("corpus/\(name) AemiJSON walk") { bm in
             for _ in bm.scaledIterations { blackHole(adWalk(try! AemiJSON.parse(data).root)) }
