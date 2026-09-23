@@ -49,7 +49,8 @@ public struct JSONParseOptions: Sendable {
     /// slots already carry offsets). Off by default: recording costs one dictionary insert per
     /// container (~25% on container-dense inputs, measured), so only opt in when raw subtree
     /// extraction is actually consumed — e.g. a JSON-RPC router forwarding `result`/`params`
-    /// payloads verbatim to a typed decode elsewhere.
+    /// payloads verbatim. A typed decode of a node needs no spans: `AemiJSON.JSONDecoder` decodes a
+    /// ``JSON`` node straight from the tape.
     public var recordsContainerSpans: Bool
 
     public init(

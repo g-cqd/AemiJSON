@@ -8,7 +8,7 @@
 @dynamicMemberLookup
 public struct JSON: Sendable {
     package let doc: JSONDocument
-    let index: Int
+    package let index: Int
 
     init(doc: JSONDocument, index: Int) {
         self.doc = doc
@@ -151,10 +151,10 @@ public struct JSON: Sendable {
     /// offsets). Returns `nil` — without calling `body` — for a missing node or an unrecorded
     /// container.
     ///
-    /// Motivating use: a JSON-RPC client that classifies an envelope and hands the untouched
-    /// `result` payload to a typed decode at the call site — without this, that requires
-    /// re-encoding the subtree (`encodedBytes()` or a materialized tree); this returns the
-    /// original bytes instead.
+    /// Use it to forward a subtree verbatim — to another process, a cache, or a log — without
+    /// re-encoding it (`encodedBytes()` or a materialized tree). To decode a node into a `Decodable`
+    /// type, pass the node itself to `AemiJSON.JSONDecoder`'s `decode(_:from:)`, which reads the
+    /// parsed tape and needs neither these bytes nor a second parse.
     public func withRawJSONBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R? {
         guard index >= 0 else { return nil }
         let off: Int

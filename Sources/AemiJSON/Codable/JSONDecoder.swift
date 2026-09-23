@@ -76,9 +76,35 @@ extension AemiJSON {
 
         /// Decode directly from an already-parsed document (skips re-scanning).
         public func decode<T: Decodable>(_ type: T.Type, from document: JSONDocument) throws -> T {
+            try decode(type, from: document, at: 0)
+        }
+
+        /// Decode one node of an already-parsed document, such as the `result` member of a JSON-RPC
+        /// envelope, without re-serializing the node or parsing it again. The decode reads the node's
+        /// own document — its bytes, tape, and parse flavour — and applies this decoder's strategies,
+        /// `userInfo`, and ``maxDecodingDepth``, counted from the node, exactly as a decode of the
+        /// whole document would. `options` does not apply, since the document is already parsed.
+        ///
+        /// A missing node (`exists` is `false`, as `root["absent"]` returns) throws
+        /// `DecodingError.valueNotFound`. A `null` node decodes as JSON `null`, so an optional type
+        /// decodes to `nil`.
+        ///
+        /// ```swift
+        /// let envelope = try AemiJSON.parse(payload)
+        /// let hover = try decoder.decode(Hover.self, from: envelope.root["result"])
+        /// ```
+        public func decode<T: Decodable>(_ type: T.Type, from node: JSON) throws -> T {
+            guard node.exists else {
+                throw DecodingError.valueNotFound(
+                    type, .init(codingPath: [], debugDescription: "The JSON node to decode is missing"))
+            }
+            return try decode(type, from: node.doc, at: node.index)
+        }
+
+        private func decode<T: Decodable>(_ type: T.Type, from document: JSONDocument, at index: Int) throws -> T {
             try document.withDecodeContext(
                 userInfo: userInfo, strategies: strategies, maxDecodeDepth: maxDecodingDepth
-            ) { ctx in try ctx.decodeValue(T.self, at: 0) }
+            ) { ctx in try ctx.decodeValue(T.self, at: index) }
         }
 
         /// Decode directly from an already-materialized ``JSONValue``, skipping the serialize-and-reparse
