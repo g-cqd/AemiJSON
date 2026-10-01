@@ -63,6 +63,34 @@ struct NumberFastPathTests {
         #expect(parsedDouble(hugeTimesTiny) == .infinity)
     }
 
+    // A decimal far too long for `Double(_:)` on every platform (Linux rejects tens of thousands of digits)
+    // still rounds exactly: digits past the 768th only matter as a nonzero tail, and a huge or tiny
+    // exponent reads as overflow or underflow, never as NaN.
+    @Test func veryLongDecimalsRoundLikeTheirExactValue() {
+        let padding = String(repeating: "0", count: 100_000)
+        #expect(parsedDouble("0.1" + padding) == 0.1)
+        #expect(parsedDouble("1." + padding + "1") == 1.0)
+        #expect(parsedDouble("-1" + padding + "e-100000") == -1.0)
+        #expect(parsedDouble("0." + padding + "1e100000") == 0.1)
+        #expect(parsedDouble("0." + padding + "1e-400") == 0.0)
+        #expect(parsedDouble("1" + padding + "e1000000000000") == .infinity)
+        #expect(parsedDouble("-1" + padding + "e1000000000000") == -.infinity)
+        #expect(parsedDouble("0." + padding + "1e-1000000000000") == 0.0)
+        #expect(parsedDouble("-0." + padding) == 0.0 && parsedDouble("-0." + padding).sign == .minus)
+        #expect(parsedFloat("0.5" + padding) == 0.5)
+        #expect(parsedFloat("1" + padding + "e1000000000000") == .infinity)
+    }
+
+    // 2^53 + 1 sits exactly between two doubles: padding with zeros keeps round-half-to-even, while a
+    // nonzero digit hundreds of places later, well past any budget, must push it up.
+    @Test func halfwayDecimalsKeepTheirTailThroughTheCutoff() {
+        let padding = String(repeating: "0", count: 100_000)
+        #expect(parsedDouble("9007199254740993." + padding) == 9007199254740992.0)
+        #expect(parsedDouble("9007199254740993." + padding + "1") == 9007199254740994.0)
+        #expect(parsedFloat("16777217." + padding) == 16777216.0)
+        #expect(parsedFloat("16777217." + padding + "1") == 16777218.0)
+    }
+
     // Random decimals with padding and interior zeros, through the whole parse (fast path or not),
     // must match the standard library bit for bit.
     @Test func paddedDecimalsParseLikeTheStandardLibrary() {

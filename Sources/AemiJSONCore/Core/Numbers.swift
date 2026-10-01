@@ -12,7 +12,8 @@ public enum JSONNumber {
     //
     // `Double(_:)` parses with fixed C-locale semantics, unlike libc `strtod`, which honours the
     // host `LC_NUMERIC` and would misread "1.5" as 1.0 under a comma-decimal locale. It only fails
-    // on out-of-range magnitudes, which round to ±inf exactly as `strtod` did. Short numbers
+    // on out-of-range magnitudes, which round to ±inf exactly as `strtod` did, and, on Linux, on a decimal
+    // tens of thousands of digits long; `LongDecimal` rounds that one. Short numbers
     // (≤15 UTF-8 bytes) use the inline small-string buffer, so no heap allocation occurs.
     @inline(__always)
     public static func parseDouble(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Double {
@@ -24,7 +25,8 @@ public enum JSONNumber {
         // path; only a long/extreme decimal reaches here and `parseJSON5Number` returns nil for it.
         if let json5 = unsafe parseJSON5Number(p, offset, length) { return json5 }
         let s = unsafe String(decoding: UnsafeBufferPointer(start: p + offset, count: length), as: UTF8.self)
-        return Double(s) ?? .nan
+        if let value = Double(s) { return value }
+        return unsafe LongDecimal.normalized(p, offset, length).flatMap { Double($0) } ?? .nan
     }
 
     // Parse a (scanner-validated) JSON number to `Float`, **correctly rounded to the nearest Float**.
@@ -46,7 +48,8 @@ public enum JSONNumber {
         // `Float` directly (no Double round-trip). Returns nil for an ordinary decimal.
         if let json5 = unsafe parseJSON5Float(p, offset, length) { return json5 }
         let s = unsafe String(decoding: UnsafeBufferPointer(start: p + offset, count: length), as: UTF8.self)
-        return Float(s) ?? .nan
+        if let value = Float(s) { return value }
+        return unsafe LongDecimal.normalized(p, offset, length).flatMap { Float($0) } ?? .nan
     }
 
     // Clinger fast path at `Float` width. When the decimal significand fits in 2^24 (so
