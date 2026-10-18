@@ -93,28 +93,29 @@ var packageDependencies: [Package.Dependency] = [
     // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
     // with zero transitive package dependencies (measured), so the core stays portable; together with
     // `AemiKernel` it is one of the two shipped dependencies of `AemiJSONCore` beyond the standard library.
-    // 1.7.0 emits Swift 6.4 borrowing runtime calls (including swift_initBorrow) that the
-    // macOS 26 Swift runtime lacks; SwiftStdlib 6.4 first ships with macOS 27.
-    .package(url: "https://github.com/apple/swift-collections.git", "1.1.0" ..< "1.7.0")
+    // From 1.7.1: 1.7.0 referenced swift_initBorrow, which Swift runtimes before macOS 27 lack, so a
+    // test bundle failed to load on macOS 26 (apple/swift-collections#733). 1.7.1 removed it; built
+    // here, 1.7.3 references exactly the runtime symbols 1.6.0 does.
+    .package(url: "https://github.com/apple/swift-collections.git", "1.7.1" ..< "1.8.0")
 ]
 if isDev {
     // Shared lint/format tooling (Format/Lint/LintBuild plugins + canonical `.swift-format`).
     // Dev-only, resolved from the published `main` branch.
     packageDependencies.append(
-        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.0.0"))
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0"))
     // ordo-one's statistically-rigorous benchmark framework (p-percentile latencies, malloc /
     // throughput metrics, CI-gated thresholds) — the project's single benchmark suite lives in
     // `Benchmarks/AemiJSONSuite` and runs via `swift package benchmark`. Dev-only: the suite target is
     // added only under `AEMIJSON_DEV`, so consumers never resolve it.
     packageDependencies.append(
-        .package(url: "https://github.com/ordo-one/benchmark", from: "1.4.0"))
+        .package(url: "https://github.com/ordo-one/benchmark", from: "1.38.0"))
     // (AemiTestKit is vended by the Aemi package now; the test target references it from there.)
 }
 if isNIO {
     // swift-nio (NIOCore) supplies `ByteBuffer`. Resolved only under `AEMIJSON_NIO`, so default
     // consumers of `AemiJSON` / `AemiJSONCore` never pull it into their dependency graph.
     packageDependencies.append(
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.50.0"))
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0"))
 }
 
 let orderedCollections: Target.Dependency = .product(name: "OrderedCollections", package: "swift-collections")

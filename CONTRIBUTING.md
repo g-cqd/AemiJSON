@@ -144,11 +144,11 @@ also depends on swift-syntax for its macros and AemiRuntime for concurrent opera
 revision is pinned; swift-syntax uses a bounded version range. The documentation and benchmark
 tools remain behind `AEMIJSON_DEV`, and the fuzzer remains behind `AEMIJSON_FUZZ`.
 
-`swift-collections` is bounded below 1.7.0 while this package supports macOS 26. Version 1.7.0
-compiles borrowing helpers that reference `_swift_initBorrow`. Swift 6.4 supplies that symbol in
-its toolchain runtime, but the macOS 26 system Swift runtime lacks it, so the test bundle fails to
-load. The swift-collections manifest maps the Swift 6.4 runtime to macOS 27.0. Revisit the bound
-when the deployment floor and test hosts have that runtime.
+`swift-collections` starts at 1.7.1. Version 1.7.0 compiled borrowing helpers that reference
+`_swift_initBorrow`, a Swift 6.4 runtime symbol that runtimes before macOS 27 lack, so a test bundle
+failed to load on macOS 26 (apple/swift-collections#733). 1.7.1 removed the reference. Checked on
+2026-10-18: the swift-collections objects built for this package reference the same 28 Swift runtime
+symbols with 1.7.3 as with 1.6.0, while 1.7.0 adds `_swift_initBorrow` — the check detects the defect.
 
 `Package.resolved` is **gitignored** (the library convention — an application pins exact versions,
 a library lets its consumers' resolution win). A fresh checkout resolves dependencies within the
