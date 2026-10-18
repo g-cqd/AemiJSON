@@ -79,7 +79,7 @@ let isNIO = Context.environment["AEMIJSON_NIO"] != nil || Context.environment["A
 // code under an existing build. Atelier and TerminalKit pin the same revision: SwiftPM rejects one package
 // identity at two revisions in a graph, so all three move together.
 let aemiDependency: Package.Dependency = .package(
-    url: "https://github.com/Aemi-Studio/aemi.git", revision: "a6446f154b42945891107e739c0617fbe965db8c")
+    url: "https://github.com/Aemi-Studio/aemi.git", revision: "639caad90b0a8409185a712f32f9dea795e6470c")
 
 // AemiRuntime (the production `TaskProvider`/`Clock` seams the concurrent parse/decode paths use) and
 // AemiTestKit (the test-only kit) are now both vended by the Aemi umbrella package, so they
