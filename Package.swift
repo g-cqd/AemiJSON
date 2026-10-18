@@ -76,10 +76,10 @@ let isNIO = Context.environment["AEMIJSON_NIO"] != nil || Context.environment["A
 
 // Aemi supplies the shared low-level primitives (the `AemiKernel` byte/number kernel). It is pinned to
 // one revision rather than tracking a branch, so a push to aemi cannot change the C kernels and unsafe
-// code under an existing build. The pin is the g-cqd mirror's revision that Atelier pins as well:
-// SwiftPM rejects one package identity at two locations, so the two move together.
+// code under an existing build. Atelier and TerminalKit pin the same revision: SwiftPM rejects one package
+// identity at two revisions in a graph, so all three move together.
 let aemiDependency: Package.Dependency = .package(
-    url: "https://github.com/Aemi-Studio/aemi.git", revision: "d0f8108bf205e92a3a683db072cf54b0badb40f1")
+    url: "https://github.com/Aemi-Studio/aemi.git", revision: "5f0c47c56223db4401d7a67d7792b02fe0b5b322")
 
 // AemiRuntime (the production `TaskProvider`/`Clock` seams the concurrent parse/decode paths use) and
 // AemiTestKit (the test-only kit) are now both vended by the Aemi umbrella package, so they
