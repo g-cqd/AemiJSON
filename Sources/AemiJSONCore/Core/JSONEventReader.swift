@@ -52,6 +52,9 @@ public struct JSONEventReader {
         self.strict = options.isStrict
         self.isJSON5 = options.isJSON5
         self.maxDepth = options.maxDepth
+        // RFC 8259 §8.1: a parser may ignore a leading UTF-8 byte-order mark, as the tape parser does. Only a
+        // complete one is skipped; offsets stay relative to the buffer.
+        if n >= 3, bytes[0] == 0xEF, bytes[1] == 0xBB, bytes[2] == 0xBF { i = 3 }
     }
 
     public init(_ string: String, options: JSONParseOptions = .strict) {

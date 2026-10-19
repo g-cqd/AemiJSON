@@ -16,6 +16,9 @@ public struct JSONEventStreamReader {
     private var i = 0
     private var stack: [Bool] = []  // innermost container last (true = object)
     private var finished = false
+    // Whether the start of the stream has been checked for a UTF-8 byte-order mark (RFC 8259 §8.1), which the
+    // tape parser skips too. The mark can arrive split across feeds, so the check waits for its three bytes.
+    private var byteOrderMarkChecked = false
     private let strict: Bool
     private let isJSON5: Bool
     private let maxDepth: Int
@@ -96,7 +99,25 @@ public struct JSONEventStreamReader {
     // backstops it. Compiles to the same access as the former `buffer[idx]` once `readOffset` is 0.
     @inline(__always) private func byte(_ idx: Int) -> UInt8 { buffer[readOffset + idx] }
 
+    // Skips a leading byte-order mark once, at the very start. Returns false while the bytes so far are still a
+    // proper prefix of the mark and more may arrive; anything else, or the end of the input, settles it.
+    private mutating func skipByteOrderMark() -> Bool {
+        let mark = Self.byteOrderMark
+        let available = Swift.min(count, mark.count)
+        for k in 0 ..< available where byte(k) != mark[k] {
+            byteOrderMarkChecked = true
+            return true
+        }
+        if available < mark.count, !finished { return false }
+        if available == mark.count { i += mark.count }
+        byteOrderMarkChecked = true
+        return true
+    }
+
+    private static let byteOrderMark: [UInt8] = [0xEF, 0xBB, 0xBF]
+
     private mutating func step() throws(JSONError) -> Step {
+        if !byteOrderMarkChecked, !skipByteOrderMark() { return .needMore }
         switch expect {
             case .rootDone:
                 if skipWS() { return .needMore }
