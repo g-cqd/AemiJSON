@@ -167,7 +167,7 @@ Committed in `.githooks/` and enabled via `core.hooksPath` (above):
 `Scripts/analyzers.sh` runs [deadwood](https://github.com/g-cqd/deadwood) (unused code),
 [dolly](https://github.com/g-cqd/dolly) (duplicated code) and [arcleak](https://github.com/g-cqd/arcleak)
 (retain cycles and leaks) over `Sources` and `Tests` under `--strict`. They are syntax-level, so they need no
-build, and each is pinned to a release **and to the SHA-256 of its macOS arm64 archive** (checked before
+build, and each is pinned to a release **and to the SHA-256 of its archive for each platform** (macOS arm64 and Linux x86_64; checked before
 anything runs; a mismatch is exit 2, never a silent skip). Pin changes move version and hash together, and
 the diff of findings is read before committing: fingerprints move between versions.
 

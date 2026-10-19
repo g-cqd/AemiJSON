@@ -64,11 +64,12 @@ jobs:
 
   static-analysis:
     name: Static analysis (deadwood, dolly, arcleak)
-    # All three gate under --strict, from releases pinned by version and SHA-256 in Scripts/analyzers.sh.
-    # They read source, so no toolchain or build is needed, and a run takes well under a second after the
-    # download. dolly compares against .dolly-baseline.json (the duplication that predates the gate), so
-    # only a NEW clone fails; deadwood and arcleak have no baseline.
-    runs-on: macos-26
+    # All three gate under --strict, from releases pinned by version and SHA-256 (per platform) in
+    # Scripts/analyzers.sh. They read source, so no toolchain or build is needed, a run takes well under a
+    # second after the download, and the Linux archives make it a job for the cheapest runner. dolly compares
+    # against .dolly-baseline.json (the duplication that predates the gate), so only a NEW clone fails;
+    # deadwood and arcleak have no baseline.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run the analyzers
