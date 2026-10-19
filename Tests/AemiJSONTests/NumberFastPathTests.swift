@@ -63,22 +63,49 @@ struct NumberFastPathTests {
         #expect(parsedDouble(hugeTimesTiny) == .infinity)
     }
 
+    private struct PaddedDecimal: Sendable, CustomTestStringConvertible {
+        let head: String
+        let tail: String
+        let expected: Double
+        var testDescription: String { "\(head)<100k zeros>\(tail)" }
+    }
+
+    private static let padding = String(repeating: "0", count: 100_000)
+
     // A decimal far too long for `Double(_:)` on every platform (Linux rejects tens of thousands of digits)
     // still rounds exactly: digits past the 768th only matter as a nonzero tail, and a huge or tiny
     // exponent reads as overflow or underflow, never as NaN.
-    @Test func veryLongDecimalsRoundLikeTheirExactValue() {
-        let padding = String(repeating: "0", count: 100_000)
-        #expect(parsedDouble("0.1" + padding) == 0.1)
-        #expect(parsedDouble("1." + padding + "1") == 1.0)
-        #expect(parsedDouble("-1" + padding + "e-100000") == -1.0)
-        #expect(parsedDouble("0." + padding + "1e100000") == 0.1)
-        #expect(parsedDouble("0." + padding + "1e-400") == 0.0)
-        #expect(parsedDouble("1" + padding + "e1000000000000") == .infinity)
-        #expect(parsedDouble("-1" + padding + "e1000000000000") == -.infinity)
-        #expect(parsedDouble("0." + padding + "1e-1000000000000") == 0.0)
-        #expect(parsedDouble("-0." + padding) == 0.0 && parsedDouble("-0." + padding).sign == .minus)
-        #expect(parsedFloat("0.5" + padding) == 0.5)
-        #expect(parsedFloat("1" + padding + "e1000000000000") == .infinity)
+    //
+    // One table, not eleven chained `#expect`s of `String + String == literal`: the chain took the type checker
+    // 258 ms on a CI runner against the 250 ms budget (100 ms locally), which a failing build reports as an
+    // error. The table is the same cases with explicit types.
+    @Test(arguments: [
+        PaddedDecimal(head: "0.1", tail: "", expected: 0.1),
+        PaddedDecimal(head: "1.", tail: "1", expected: 1.0),
+        PaddedDecimal(head: "-1", tail: "e-100000", expected: -1.0),
+        PaddedDecimal(head: "0.", tail: "1e100000", expected: 0.1),
+        PaddedDecimal(head: "0.", tail: "1e-400", expected: 0.0),
+        PaddedDecimal(head: "1", tail: "e1000000000000", expected: .infinity),
+        PaddedDecimal(head: "-1", tail: "e1000000000000", expected: -.infinity),
+        PaddedDecimal(head: "0.", tail: "1e-1000000000000", expected: 0.0)
+    ])
+    func veryLongDecimalsRoundLikeTheirExactValue(_ decimal: PaddedDecimal) {
+        let text: String = decimal.head + Self.padding + decimal.tail
+        #expect(parsedDouble(text) == decimal.expected)
+    }
+
+    @Test func aVeryLongNegativeZeroKeepsItsSign() {
+        let text: String = "-0." + Self.padding
+        let value = parsedDouble(text)
+        #expect(value == 0.0)
+        #expect(value.sign == .minus)
+    }
+
+    @Test func veryLongDecimalsRoundAsFloatsToo() {
+        let half: String = "0.5" + Self.padding
+        let overflow: String = "1" + Self.padding + "e1000000000000"
+        #expect(parsedFloat(half) == 0.5)
+        #expect(parsedFloat(overflow) == .infinity)
     }
 
     // 2^53 + 1 sits exactly between two doubles: padding with zeros keeps round-half-to-even, while a
