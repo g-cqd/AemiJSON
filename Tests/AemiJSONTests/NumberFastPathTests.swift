@@ -63,7 +63,7 @@ struct NumberFastPathTests {
         #expect(parsedDouble(hugeTimesTiny) == .infinity)
     }
 
-    private struct PaddedDecimal: Sendable, CustomTestStringConvertible {
+    struct PaddedDecimal: Sendable, CustomTestStringConvertible {
         let head: String
         let tail: String
         let expected: Double
