@@ -21,7 +21,15 @@ public struct JSONParseOptions: Sendable {
     public enum DuplicateKeyStrategy: Sendable {
         /// Keep the last value for a repeated object key (matches JS / Foundation).
         case useLast
-        /// Reject objects containing duplicate keys (RFC 7493 I-JSON).
+        /// Reject objects containing duplicate keys (RFC 7493 I-JSON), throwing
+        /// ``JSONError/duplicateKey(at:)`` at the second spelling.
+        ///
+        /// Keys are compared by their decoded bytes, so `"a"` and `"\u0061"` are one key, as are `'a'`,
+        /// `"a"` and an unquoted `a` in JSON5. Keys that differ in code points are different keys even
+        /// when they normalize alike (`é` and `e` + U+0301). A document accepted under this strategy has no
+        /// two keys a lookup could confuse, so a lookup returns the one value there is. Keys without an
+        /// escape (the common case) are hashed and compared in place; only an escaped key is decoded, into
+        /// one reused buffer.
         case throwError
     }
 

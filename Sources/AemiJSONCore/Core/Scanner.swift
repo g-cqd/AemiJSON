@@ -20,6 +20,9 @@ import AemiKernel
     /// their slots already carry offset+length.
     var spans = ContainerSpans()
     let recordSpans: Bool
+    /// Scratch for the decoded bytes of an escaped object key under `.throwError` (see `recordKey`). It keeps
+    /// its capacity across keys and stays empty, allocating nothing, until the first escaped key.
+    var decodedKey = ContiguousArray<UInt8>()
 
     // One open container being built. Stands in for a recursive-descent call frame, so nesting
     // lives on the heap and arbitrarily deep input can never overflow the call stack.
@@ -35,7 +38,9 @@ import AemiKernel
         let spanEntry: Int
         var count: Int
         let isObject: Bool
-        var seenKeys: [Int: [(offset: Int, length: Int)]]
+        /// The keys seen so far, bucketed by the hash of their decoded bytes; each entry is the key's own tape
+        /// slot, which carries its offset, length and escape flag in 8 bytes.
+        var seenKeys: [Int: [UInt64]]
     }
 
     init(_ p: UnsafePointer<UInt8>, _ n: Int, options: JSONParseOptions) {
@@ -197,49 +202,5 @@ import AemiKernel
     /// its close completes, or -1 when spans are not recorded.
     @inline(__always) mutating func openSpan(_ openIdx: Int) -> Int {
         recordSpans ? spans.open(tapeIndex: openIdx, at: i) : -1
-    }
-
-    // Detects duplicate keys (RFC 7493 / `.throwError`) in O(1) expected time by bucketing keys
-    // under a hash of their raw bytes — avoiding the O(n²) all-pairs scan a hostile object with
-    // many keys could exploit (DoS). Hash collisions fall back to a byte compare.
-    //
-    // The hash is Swift's `Hasher` (SipHash), seeded randomly per process, so an attacker cannot
-    // precompute a flood of colliding keys to force the O(bucket²) byte-compare fallback (a fixed-seed
-    // hash would be vulnerable to exactly that HashDoS).
-    //
-    // NOTE: keys are compared by their RAW (still-escaped) bytes, so two keys equal only after
-    // unescaping (`"a"` vs `"a"`) are NOT reported as duplicates. This is a deliberate perf
-    // tradeoff — no per-key unescape on the scan path — and is acceptable under RFC 8259 (which
-    // leaves duplicate handling to the application); RFC 7493 I-JSON producers emit canonical keys.
-    mutating func recordKey(_ keyStart: Int, frame: Int) throws(JSONError) {
-        let keySlot = slots[slots.count - 1]
-        let offset = Slot.low(keySlot)
-        let length = Slot.length(keySlot)
-        var hasher = Hasher()
-        unsafe hasher.combine(bytes: UnsafeRawBufferPointer(start: p + offset, count: length))
-        let hash = hasher.finalize()
-        // Read the bucket for the collision check, then append in place. The `if let` binding is
-        // released before the `default:` subscript mutates, so the stored array keeps refcount 1 and
-        // the append doesn't copy-on-write the whole bucket on every key.
-        if let bucket = stack[frame].seenKeys[hash] {
-            for previous in bucket
-            where unsafe previous.length == length
-                && (length == 0 || JSONKey.bytesEqual(p + previous.offset, p + offset, length))
-            {
-                throw JSONError.duplicateKey(at: keyStart)
-            }
-        }
-        // Reserve the per-frame `seenKeys` once, on the object's first key, so the dictionary skips the
-        // 1→2→4… rehash chain it would otherwise pay as each distinct key grows it. The scanner is
-        // single-pass, so the object's *total* member count isn't in hand here (it's only final at the
-        // closing `}`), and pre-scanning it would cost an extra O(members) walk; a small fixed reserve
-        // covers the common small/medium object in one allocation without over-allocating a 1-key one,
-        // and larger objects grow from there as before. `isEmpty` makes this fire exactly once per
-        // object frame (array frames never call `recordKey`). Capacity never affects which key throws or
-        // when, so the duplicate-key semantics stay byte-for-byte identical.
-        if stack[frame].seenKeys.isEmpty {
-            stack[frame].seenKeys.reserveCapacity(8)
-        }
-        stack[frame].seenKeys[hash, default: []].append((offset, length))
     }
 }
