@@ -47,22 +47,17 @@ jobs:
   quality:
     # Shared build/test and quality checks resolve the published Aemi dependency.
     # Additional jobs below cover platform builds, fuzzing, benchmarks, and Pages.
-    uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@main
+    uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@ci/shared-quality-graph
     with:
       # Static analysis is the `static-analysis` job below, not the reusable's: that one installs
       # arcleak 0.7.1 / dolly 0.6.1 / deadwood 0.7.1, and gates only arcleak because it predates
       # dolly's repository-relative fingerprints.
       enable-static-analysis: false
       dev-env-var: AEMIJSON_DEV
-      enable-sanitizers: true
-      sanitizers: "address thread"
+      # Sanitizers run in the path-gated `sanitizers` job below, which also covers UBSan; the reusable's copy
+      # ran the same two passes on every push and PR on top of it.
+      enable-sanitizers: false
       enable-coverage: true
-      # The Linux release-mode test leg segfaults on process EXIT (all tests pass first) under the
-      # dated nightly-6.4.x Linux container — a nightly-toolchain teardown crash, not an AemiJSON bug
-      # (macOS release + Linux debug are clean; the parse/decode fan-out is structured concurrency and
-      # the buffer pool holds managed arrays). Advisory until a stable 6.4 Linux toolchain ships,
-      # matching the standalone `linux` job below; the Linux DEBUG leg stays required.
-      linux-release-advisory: true
       # The conformance/benchmark suites need fixtures fetched (network) before `swift test`; the
       # reusable build/test legs run this first so fixture-dependent tests don't fail/skip on them.
       fixtures-command: "swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures"
@@ -95,8 +90,8 @@ jobs:
     outputs:
       core: ${{ steps.filter.outputs.core }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -107,21 +102,14 @@ jobs:
 
   linux:
     name: Build & test (Linux, Foundation-free core)
-    needs: quality
     # AemiJSONCore is Foundation-free; building it in isolation on Linux guards portability for
-    # zero-dependency consumers — a check the reusable's whole-package Linux leg doesn't make. The
-    # full package is exercised by the reusable test-linux leg.
-    #
-    # Advisory (continue-on-error) for now: the package targets Swift 6.4, whose stable Linux toolchain
-    # has not yet shipped, so this runs a dated 6.4 nightly Linux container, which can be unstable
-    # independent of the code. Promote to a required gate once the matching stable Linux toolchain ships.
-    if: github.event_name != 'pull_request'
+    # zero-dependency consumers: a check the reusable's whole-package Linux leg does not make. It is one
+    # target on the stable toolchain image, so it runs beside `quality` on every push and PR rather than
+    # waiting behind it.
     runs-on: ubuntu-latest
-    # Dated nightly pins the toolchain for reproducible CI; bump deliberately like a dependency (#14).
-    container: swiftlang/swift:nightly-6.4.x-noble@sha256:54970846d48a8255eee5986aa5bbd259b7f73bbf38429cc2428ce6a62a390b47
-    continue-on-error: true
+    container: swift:6.4.1-noble
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show toolchain
         run: swift --version
       - name: Build Foundation-free core
@@ -135,13 +123,15 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Select latest Xcode
         run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
-      - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
-        uses: Aemi-Studio/aemi/.github/actions/setup-swift@main
+      - name: Install Swift 6.4.1
+        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
+        with:
+          swift-version: "6.4.1"
       - name: Diagnose API breaking changes vs base
         run: swift package diagnose-api-breaking-changes "${{ github.event.pull_request.base.sha }}"
 
@@ -163,21 +153,23 @@ jobs:
           - { platform: "watchOS (arm64)", sdk: watchos, triple: arm64-apple-watchos11.0 }
           - { platform: visionOS, sdk: xros, triple: arm64-apple-xros2.0 }
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select latest Xcode
         run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
-      - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
-        uses: Aemi-Studio/aemi/.github/actions/setup-swift@main
+      - name: Install Swift 6.4.1
+        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
+        with:
+          swift-version: "6.4.1"
       - name: Cache SwiftPM platform build
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             .build
-          key: ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
+          key: ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-6.4.1-${{ hashFiles('Package.swift') }}
           restore-keys: |
-            ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-${{ hashFiles('Package.swift') }}-
-            ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-${{ env.TOOLCHAINS }}-
+            ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-6.4.1-${{ hashFiles('Package.swift') }}-
+            ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-6.4.1-
       - name: Build for ${{ matrix.platform }}
         run: |
           sdk_path="$(xcrun --sdk '${{ matrix.sdk }}' --show-sdk-path)"
@@ -205,20 +197,22 @@ jobs:
           - { name: thread, flags: "--sanitize=thread" }
           - { name: address, flags: "--sanitize=address --sanitize=undefined" }
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select latest Xcode
         run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
-      - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
-        uses: Aemi-Studio/aemi/.github/actions/setup-swift@main
+      - name: Install Swift 6.4.1
+        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
+        with:
+          swift-version: "6.4.1"
       - name: Show toolchain
         run: swift --version
       - name: Cache SwiftPM
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Tests/**', 'Plugins/**') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}
           restore-keys: |
             ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-
             ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-
@@ -232,16 +226,14 @@ jobs:
     needs: quality
     # libFuzzer (`-sanitize=fuzzer`) is a Linux capability of the Swift toolchain — the Darwin SDK
     # rejects the flag — so the gated `AemiJSONFuzz` target builds and runs here, time-boxed, on
-    # main / manual dispatch. Advisory (nightly toolchain), like the Linux build job. A crash fails
-    # the job and uploads the reproducer; commit any reproducer as a regression test.
+    # main / manual dispatch. A crash fails the job and uploads the reproducer; commit any reproducer as a
+    # regression test.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # Dated nightly pins the toolchain for reproducible CI; bump deliberately like a dependency (#14).
-    container: swiftlang/swift:nightly-6.4.x-noble@sha256:54970846d48a8255eee5986aa5bbd259b7f73bbf38429cc2428ce6a62a390b47
-    continue-on-error: true
+    container: swift:6.4.1-noble
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show toolchain
         run: swift --version
       - name: Fetch fixtures (seed corpus)
@@ -283,7 +275,7 @@ jobs:
           "$BIN" corpus -max_total_time=300 -timeout=10 -rss_limit_mb=2048 -artifact_prefix=crash-
       - name: Upload crash reproducers
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-crashes
           path: crash-*
@@ -301,20 +293,22 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select latest Xcode
         run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
-      - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
-        uses: Aemi-Studio/aemi/.github/actions/setup-swift@main
+      - name: Install Swift 6.4.1
+        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
+        with:
+          swift-version: "6.4.1"
       - name: Show toolchain
         run: swift --version
       - name: Cache SwiftPM
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ github.repository }}-spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**', 'Benchmarks/AemiJSONSuite/**') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}
           restore-keys: |
             ${{ github.repository }}-spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-
             ${{ github.repository }}-spm-${{ runner.os }}-bench-
@@ -340,7 +334,7 @@ jobs:
         run: swift package --allow-writing-to-package-directory benchmark baseline update main
       - name: Upload benchmark baseline artifact
         if: github.event_name == 'workflow_dispatch' && inputs.update_baseline
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: benchmark-baseline-main
           # ordo-one stores baselines at `.benchmarkBaselines/<target>/<name>/`; upload the whole tree
@@ -409,18 +403,20 @@ jobs:
     env:
       AEMIJSON_DEV: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select latest Xcode
         run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
-      - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
-        uses: Aemi-Studio/aemi/.github/actions/setup-swift@main
+      - name: Install Swift 6.4.1
+        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
+        with:
+          swift-version: "6.4.1"
       - name: Cache SwiftPM
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}
           restore-keys: |
             ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
             ${{ github.repository }}-spm-${{ runner.os }}-docs-
@@ -452,18 +448,20 @@ jobs:
     env:
       AEMIJSON_DEV: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select latest Xcode
         run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
-      - name: Install Swift 6.4 dev toolchain (no hosted macOS image ships 6.4)
-        uses: Aemi-Studio/aemi/.github/actions/setup-swift@main
+      - name: Install Swift 6.4.1
+        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
+        with:
+          swift-version: "6.4.1"
       - name: Cache SwiftPM
-        uses: actions/cache@v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}
           restore-keys: |
             ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
             ${{ github.repository }}-spm-${{ runner.os }}-docs-
