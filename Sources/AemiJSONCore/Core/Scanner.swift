@@ -89,9 +89,10 @@ import AemiKernel
         }
     }
 
-    // JSON5 insignificant input: the usual whitespace, vertical-tab / form-feed, and `//` line and
-    // `/* … */` block comments. A lone `/` is left for the value parser to reject. An unterminated
-    // block comment consumes to EOF, so the parser then reports an unexpected end of input.
+    // JSON5 insignificant input: the usual whitespace, vertical-tab / form-feed, the Unicode white space
+    // JSON5 adds (`JSON5Whitespace`), and `//` line and `/* … */` block comments. A lone `/` is left for
+    // the value parser to reject. A `//` comment ends at LF, CR, U+2028 or U+2029. An unterminated block
+    // comment consumes to EOF, so the parser then reports an unexpected end of input.
     mutating func skipWSAndCommentsJSON5() {
         while i < n {
             let c = unsafe p[i]
@@ -99,10 +100,16 @@ import AemiKernel
                 i += 1
                 continue
             }
+            if c >= 0x80 {
+                // A multi-byte white-space character, or the first byte of significant input. The whole
+                // buffer is in hand, so a sequence cut by its end is just invalid input for the parser.
+                guard case .space(let length) = unsafe JSON5Whitespace.match(p, i, n) else { break }
+                i += length
+                continue
+            }
             guard c == 0x2F, i + 1 < n else { break }  // '/'
             if unsafe p[i + 1] == 0x2F {  // '//' line comment
-                i += 2
-                while i < n, unsafe p[i] != 0x0A, unsafe p[i] != 0x0D { i += 1 }
+                i = unsafe JSON5Whitespace.lineCommentEnd(p, from: i + 2, count: n)
             } else if unsafe p[i + 1] == 0x2A {  // '/*' block comment
                 i += 2
                 while i + 1 < n, unsafe !(p[i] == 0x2A && p[i + 1] == 0x2F) { i += 1 }

@@ -315,7 +315,8 @@ extension TapeBuilder {
     }
 
     // JSON5 unquoted object key: an ECMAScript IdentifierName (first char a letter / `_` / `$` /
-    // non-ASCII; the rest also allowing digits). Recorded as an escape-free string slot.
+    // non-ASCII; the rest also allowing digits, and ending at JSON5 white space). Recorded as an
+    // escape-free string slot.
     mutating func scanIdentifierKeyJSON5() throws(JSONError) {
         let start = i
         guard i < n, unsafe JSONString.isIdentStart(p[i]) else {
@@ -325,6 +326,9 @@ extension TapeBuilder {
         while i < n {
             let c = unsafe p[i]
             if c >= 0x80 {
+                // The name ends at JSON5 white space (`a<NBSP>: 1` is the key `a`), which is not an
+                // identifier character even though it is non-ASCII.
+                if case .space = unsafe JSON5Whitespace.match(p, i, n) { break }
                 i += try unsafe JSONUTF8.sequenceLength(p, i, n)
             } else if JSONString.isIdentStart(c) || isDigit(c) {
                 i += 1

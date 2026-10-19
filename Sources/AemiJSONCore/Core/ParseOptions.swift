@@ -11,8 +11,10 @@ public struct JSONParseOptions: Sendable {
         /// JSON5 (json5.org): a superset of JSON that also accepts line (`//`) and block (`/* */`)
         /// comments, single-quoted and unquoted (identifier) object keys, single-quoted strings,
         /// trailing commas, leading `+`, leading/trailing decimal points (`.5`, `5.`), hexadecimal
-        /// numbers (`0xFF`), and `Infinity` / `-Infinity` / `NaN`. UTF-8 is validated as in strict
-        /// mode. Matches `Foundation.JSONDecoder.allowsJSON5`.
+        /// numbers (`0xFF`), and `Infinity` / `-Infinity` / `NaN`. White space includes U+00A0, U+FEFF
+        /// and the Unicode space separators, and U+2028 / U+2029 end a `//` comment (json5.org §6, §8).
+        /// A decimal integer part is `0` or a non-zero digit then digits, so `01` is rejected. UTF-8 is
+        /// validated as in strict mode. Matches `Foundation.JSONDecoder.allowsJSON5`.
         case json5
     }
 

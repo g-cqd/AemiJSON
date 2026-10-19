@@ -220,6 +220,20 @@ enum JSONToken {
                     i += 1
                     continue
                 }
+                if c >= 0x80 {  // Unicode white space: NBSP, the Zs set, U+FEFF, U+2028 / U+2029
+                    switch unsafe JSON5Whitespace.match(p, i, count) {
+                        case .space(let length):
+                            i += length
+                            continue
+                        case .needMore:
+                            // A sequence cut by the buffer end may still become white space: stop at its
+                            // first byte so a streaming reader rescans it with the next feed.
+                            if !complete { return SkipResult(end: i, incomplete: true) }
+                        case .none:
+                            break
+                    }
+                    break
+                }
                 if c == 0x2F {  // '/'
                     // On `.incomplete` we report the comment's *start*, so a streaming reader rescans
                     // it (rather than dropping the `//`/`/*` it had already consumed) on the next feed.
@@ -229,8 +243,7 @@ enum JSONToken {
                         return SkipResult(end: commentStart, incomplete: true)  // might begin a comment
                     }
                     if unsafe p[i + 1] == 0x2F {  // line comment
-                        var k = i + 2
-                        while k < count, unsafe p[k] != 0x0A, unsafe p[k] != 0x0D { k += 1 }
+                        let k = unsafe JSON5Whitespace.lineCommentEnd(p, from: i + 2, count: count)
                         if k >= count && !complete { return SkipResult(end: commentStart, incomplete: true) }
                         i = k
                         continue
@@ -440,7 +453,8 @@ extension JSONString {
         }
     }
 
-    /// Scan a JSON5 unquoted object key (an ECMAScript IdentifierName) starting at `start`.
+    /// Scan a JSON5 unquoted object key (an ECMAScript IdentifierName) starting at `start`. The name ends
+    /// at the first byte that is not an identifier character, including JSON5 white space.
     /// `.ok(end, hasEscape: false)` past the identifier; `.incomplete` (streaming only) if it runs to
     /// the buffer end, where more identifier bytes might still arrive.
     static func scanIdentifier(
@@ -462,6 +476,8 @@ extension JSONString {
                 guard let length = JSONUTF8.leadLength(c) else { return .invalid }
                 if i + length > count { return complete ? .invalid : .incomplete }
                 guard (try? unsafe JSONUTF8.sequenceLength(p, i, count)) != nil else { return .invalid }
+                // JSON5 white space is non-ASCII but not an identifier character: the name ends before it.
+                if case .space = unsafe JSON5Whitespace.match(p, i, count) { return .ok(end: i, hasEscape: false) }
                 i += length
             } else if isIdentStart(c) || (c >= 0x30 && c <= 0x39) {
                 i += 1
