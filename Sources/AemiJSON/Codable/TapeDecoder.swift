@@ -172,8 +172,6 @@ final class DecodeContext {
         return decodeString(s)
     }
 
-    @inlinable func keyString(_ i: Int) -> String { decodeString(slot(i)) }
-
     @inline(__always) @usableFromInline func decodeString(_ s: UInt64) -> String {
         let off = Slot.low(s)
         let len = Slot.length(s)
