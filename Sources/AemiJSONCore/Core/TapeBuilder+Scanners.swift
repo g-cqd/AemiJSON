@@ -360,6 +360,15 @@ extension TapeBuilder {
             guard i > hexStart else { throw JSONError.invalidNumber(at: start) }
             return  // integer
         }
+        try scanDecimalJSON5(&isInt, start: start)
+    }
+
+    // The decimal literal of a JSON5 number (after any sign): digits with an optional leading or trailing
+    // dot, and an optional exponent. ECMAScript's DecimalIntegerLiteral is `0` or a non-zero digit followed
+    // by digits, so a zero that another digit follows (`01`, `-00`, `01.5`) is not a number, which mirrors
+    // `JSONNumber.scanJSON5Lexeme`.
+    private mutating func scanDecimalJSON5(_ isInt: inout UInt64, start: Int) throws(JSONError) {
+        if unsafe p[i] == 0x30, i + 1 < n, unsafe isDigit(p[i + 1]) { throw JSONError.invalidNumber(at: start) }
         var sawDigit = false
         while i < n, unsafe isDigit(p[i]) {
             i += 1

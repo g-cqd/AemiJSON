@@ -130,6 +130,10 @@ extension JSONNumber {
             if i >= count && !complete { return .incomplete }
             return i > hexStart ? .ok(i) : .invalid
         }
+        // A zero that another digit follows is not a JSON5 number (`01`, `-00`, `01.5`); the integer part
+        // is `0` or a non-zero digit then digits. A lone `0` at the buffer end falls through to the
+        // digit run below, which reports `.incomplete` until the next byte shows whether a digit follows.
+        if unsafe p[i] == 0x30, i + 1 < count, unsafe digit(p[i + 1]) { return .invalid }
         var sawDigit = false
         while i < count, unsafe digit(p[i]) {
             i += 1
