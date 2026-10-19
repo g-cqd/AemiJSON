@@ -1,0 +1,6 @@
+{
+  "production": true,
+  "rules": {
+    "referenced-only-by-tests": { "severity": "note" }
+  }
+}

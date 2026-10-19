@@ -1,6 +1,14 @@
 #!/bin/sh
-# Shared pre-push hook — run the test suite before publishing.
+# Shared pre-push hook: the static analyzers, then the suite in RELEASE, before publishing.
 #
 # Enable once per clone:   git config core.hooksPath .githooks
-echo "pre-push: swift test"
-swift test
+#
+# Release is what ships and what the optimizer can break, and it needs testability stated explicitly, so
+# this is not a plain `swift test`. The scratch path is fixed so the release build is reused between pushes.
+# The analyzers come first: they read source and finish in well under a second.
+set -e
+echo "pre-push: Scripts/analyzers.sh"
+Scripts/analyzers.sh
+echo "pre-push: swift test -c release --enable-testable-imports"
+swift test -c release --enable-testable-imports \
+    --scratch-path "${AEMIJSON_RELEASE_SCRATCH:-$HOME/Library/Caches/aemijson/release-build}"

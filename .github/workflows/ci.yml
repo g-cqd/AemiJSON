@@ -49,10 +49,10 @@ jobs:
     # Additional jobs below cover platform builds, fuzzing, benchmarks, and Pages.
     uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@main
     with:
-      # arcleak and dolly GATE (arcleak measured 0 findings family-wide; dolly runs the token
-      # pass against .dolly-baseline.json, so only NEW clones fail). deadwood is report-only —
-      # its syntax-mode dataflow cannot see writes through closures or mutating methods.
-      enable-static-analysis: true
+      # Static analysis is the `static-analysis` job below, not the reusable's: that one installs
+      # arcleak 0.7.1 / dolly 0.6.1 / deadwood 0.7.1, and gates only arcleak because it predates
+      # dolly's repository-relative fingerprints.
+      enable-static-analysis: false
       dev-env-var: AEMIJSON_DEV
       enable-sanitizers: true
       sanitizers: "address thread"
@@ -66,6 +66,18 @@ jobs:
       # The conformance/benchmark suites need fixtures fetched (network) before `swift test`; the
       # reusable build/test legs run this first so fixture-dependent tests don't fail/skip on them.
       fixtures-command: "swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures"
+
+  static-analysis:
+    name: Static analysis (deadwood, dolly, arcleak)
+    # All three gate under --strict, from releases pinned by version and SHA-256 in Scripts/analyzers.sh.
+    # They read source, so no toolchain or build is needed, and a run takes well under a second after the
+    # download. dolly compares against .dolly-baseline.json (the duplication that predates the gate), so
+    # only a NEW clone fails; deadwood and arcleak have no baseline.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run the analyzers
+        run: Scripts/analyzers.sh
 
   changes:
     name: Detect unsafe / concurrency changes

@@ -159,7 +159,34 @@ manifest's ranges and the pinned Aemi revision.
 Committed in `.githooks/` and enabled via `core.hooksPath` (above):
 
 - **pre-commit** → `swift package lint` (check-only; blocks the commit on violations).
-- **pre-push** → `swift test`.
+- **pre-push** → `Scripts/analyzers.sh`, then `swift test -c release --enable-testable-imports` (release
+  is what ships; the scratch path is fixed so the release build is reused between pushes).
+
+## Static analysis
+
+`Scripts/analyzers.sh` runs [deadwood](https://github.com/g-cqd/deadwood) (unused code),
+[dolly](https://github.com/g-cqd/dolly) (duplicated code) and [arcleak](https://github.com/g-cqd/arcleak)
+(retain cycles and leaks) over `Sources` and `Tests` under `--strict`. They are syntax-level, so they need no
+build, and each is pinned to a release **and to the SHA-256 of its macOS arm64 archive** (checked before
+anything runs; a mismatch is exit 2, never a silent skip). Pin changes move version and hash together, and
+the diff of findings is read before committing: fingerprints move between versions.
+
+A finding ends one of three ways: fix it, name the abstraction the duplicate was missing, or accept it where
+it is, with a reason, on the line above the anchor:
+
+```swift
+// @dl:accept -- <why the duplication is intentional>     (dolly)
+// @dw:accept -- <why the declaration must stay>          (deadwood)
+// @al:accept -- <why the capture is safe>                (arcleak)
+```
+
+`.dolly-baseline.json` is the one exception: the duplication that predates the gate (adopted with 96 clone
+groups in `Sources`, and 101 test-code notes). A finding the baseline holds does not fail; a new one does. It is for legacy debt, never
+for new code. Fingerprints hash rule, path, line and column, so an edit above a baselined finding brings it
+back: shrink the baseline by refactoring, and regenerate it only afterwards
+(`dolly analyze --no-cache --relative-to . --write-baseline .dolly-baseline.json Sources Tests`, with the
+pinned dolly). `Benchmarks/` is left out of the corpus: the benchmark plugin finds a global named
+`benchmarks` by name, which no syntax-level analyzer can see, so every benchmark reads as dead code.
 
 ## CI & documentation
 
@@ -172,6 +199,7 @@ the gate passes:
   the job summary, and (advisory) checks against `.benchmarkBaselines/main` when committed.
 - **`platforms`**: a cross-platform compile matrix (iOS / tvOS / watchOS / visionOS), on
   `main` / manual dispatch.
+- **`static-analysis`** (macOS): `Scripts/analyzers.sh`, all three gating (see *Static analysis*).
 - **`sanitizers`**: TSan + ASan passes over `swift test`, on `main` / manual dispatch — and,
   additionally, on any PR that touches the unsafe scanner (`Sources/AemiJSONCore/Core/**`, gated by a
   `dorny/paths-filter` `changes` job). Each pass rebuilds the graph under instrumentation, so other
