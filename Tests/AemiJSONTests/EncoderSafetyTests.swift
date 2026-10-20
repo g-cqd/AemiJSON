@@ -1,6 +1,12 @@
 import AemiJSON
 import Testing
 
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
+
 /// Regression coverage for the encoder/inference fail-safe fixes: a keyed `superEncoder()` must emit
 /// a `"super"` key (not a keyless value), and the recursive `JSONValue(encoding:)` and schema
 /// inference paths must fail closed on pathological depth instead of overflowing the native stack.
@@ -63,5 +69,145 @@ struct EncoderSafetyTests {
         // Must return a bounded schema rather than overflowing the native stack.
         let schema = JSONSchema.infer(from: [root])
         #expect(schema.contains(#""type":"object""#))
+    }
+
+    // MARK: Multiple containers on one encoder (Issue #4)
+
+    private struct MultipleKeyedContainers: Encodable {
+        enum A: String, CodingKey { case type }
+        enum B: String, CodingKey { case extra }
+        func encode(to encoder: any Encoder) throws {
+            var a = encoder.container(keyedBy: A.self)
+            try a.encode("t", forKey: .type)
+            var b = encoder.container(keyedBy: B.self)
+            try b.encode(1, forKey: .extra)
+        }
+    }
+
+    private struct InterleavedKeyedContainers: Encodable {
+        enum A: String, CodingKey { case first, third }
+        enum B: String, CodingKey { case second }
+        func encode(to encoder: any Encoder) throws {
+            var a = encoder.container(keyedBy: A.self)
+            try a.encode("1", forKey: .first)
+            var b = encoder.container(keyedBy: B.self)
+            try b.encode("2", forKey: .second)
+            try a.encode("3", forKey: .third)
+        }
+    }
+
+    private struct NestedThenKeyedContainer: Encodable {
+        enum A: String, CodingKey { case meta }
+        enum B: String, CodingKey { case count }
+        enum MetaKeys: String, CodingKey { case version }
+        func encode(to encoder: any Encoder) throws {
+            var a = encoder.container(keyedBy: A.self)
+            var nested = a.nestedContainer(keyedBy: MetaKeys.self, forKey: .meta)
+            try nested.encode(2, forKey: .version)
+            var b = encoder.container(keyedBy: B.self)
+            try b.encode(42, forKey: .count)
+        }
+    }
+
+    private struct MultipleUnkeyedContainers: Encodable {
+        func encode(to encoder: any Encoder) throws {
+            var a = encoder.unkeyedContainer()
+            try a.encode(1)
+            var b = encoder.unkeyedContainer()
+            try b.encode(2)
+            try a.encode(3)
+        }
+    }
+
+    @Test func multipleKeyedContainersMergeIntoOneObject() throws {
+        var encoder = AemiJSON.JSONEncoder()
+        let compact = try encoder.encode(MultipleKeyedContainers())
+        #expect(String(decoding: compact, as: UTF8.self) == #"{"type":"t","extra":1}"#)
+
+        encoder.options = JSONEncodingOptions(keyOrder: .sorted)
+        let sorted = try encoder.encode(MultipleKeyedContainers())
+        #expect(String(decoding: sorted, as: UTF8.self) == #"{"extra":1,"type":"t"}"#)
+
+        encoder.prettyPrinted = true
+        let pretty = try encoder.encode(MultipleKeyedContainers())
+        #expect(String(decoding: pretty, as: UTF8.self) == "{\n  \"extra\" : 1,\n  \"type\" : \"t\"\n}")
+
+        let direct = try JSONValue(encoding: MultipleKeyedContainers())
+        #expect(direct == .object(["type": .string("t"), "extra": .int(1)]))
+    }
+
+    @Test func interleavedKeyedContainersMergeInOrder() throws {
+        let encoder = AemiJSON.JSONEncoder()
+        let bytes = try encoder.encode(InterleavedKeyedContainers())
+        #expect(String(decoding: bytes, as: UTF8.self) == #"{"first":"1","second":"2","third":"3"}"#)
+
+        let direct = try JSONValue(encoding: InterleavedKeyedContainers())
+        #expect(direct == .object(["first": .string("1"), "second": .string("2"), "third": .string("3")]))
+    }
+
+    @Test func nestedContainerClosesBeforeSubsequentKeyedMember() throws {
+        let encoder = AemiJSON.JSONEncoder()
+        let bytes = try encoder.encode(NestedThenKeyedContainer())
+        #expect(String(decoding: bytes, as: UTF8.self) == #"{"meta":{"version":2},"count":42}"#)
+    }
+
+    @Test func multipleUnkeyedContainersAppendToSameArray() throws {
+        let encoder = AemiJSON.JSONEncoder()
+        let bytes = try encoder.encode(MultipleUnkeyedContainers())
+        #expect(String(decoding: bytes, as: UTF8.self) == "[1,2,3]")
+
+        let direct = try JSONValue(encoding: MultipleUnkeyedContainers())
+        #expect(direct == .array([.int(1), .int(2), .int(3)]))
+    }
+
+    // MARK: userInfo reaches the encoder
+
+    private struct ReadsUserInfo: Encodable {
+        static let key = CodingUserInfoKey(rawValue: "tag")!
+        func encode(to encoder: any Encoder) throws {
+            var c = encoder.singleValueContainer()
+            let tag = encoder.userInfo[Self.key] as? String ?? "missing"
+            try c.encode(tag)
+        }
+    }
+
+    @Test func userInfoReachesTapeEncoder() throws {
+        var encoder = AemiJSON.JSONEncoder()
+        encoder.userInfo[ReadsUserInfo.key] = "hello"
+        let data = try encoder.encode(ReadsUserInfo())
+        #expect(String(decoding: data, as: UTF8.self) == #""hello""#)
+    }
+
+    // MARK: Mismatched container types fail
+
+    private struct MismatchedContainers: Encodable {
+        enum Mode { case keyedThenUnkeyed, keyedThenSingle, unkeyedThenKeyed }
+        let mode: Mode
+        enum K: String, CodingKey { case a }
+        func encode(to encoder: any Encoder) throws {
+            switch mode {
+                case .keyedThenUnkeyed:
+                    _ = encoder.container(keyedBy: K.self)
+                    _ = encoder.unkeyedContainer()
+                case .keyedThenSingle:
+                    _ = encoder.container(keyedBy: K.self)
+                    _ = encoder.singleValueContainer()
+                case .unkeyedThenKeyed:
+                    _ = encoder.unkeyedContainer()
+                    _ = encoder.container(keyedBy: K.self)
+            }
+        }
+    }
+
+    @Test func requestingMismatchedContainerTraps() async {
+        await #expect(processExitsWith: .failure) {
+            _ = try AemiJSON.JSONEncoder().encode(MismatchedContainers(mode: .keyedThenUnkeyed))
+        }
+        await #expect(processExitsWith: .failure) {
+            _ = try AemiJSON.JSONEncoder().encode(MismatchedContainers(mode: .keyedThenSingle))
+        }
+        await #expect(processExitsWith: .failure) {
+            _ = try AemiJSON.JSONEncoder().encode(MismatchedContainers(mode: .unkeyedThenKeyed))
+        }
     }
 }

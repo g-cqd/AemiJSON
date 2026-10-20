@@ -15,6 +15,7 @@ final class EncodeState {
     let w: JSONWriter
     let options: JSONEncodingOptions
     let strategies: EncodeStrategies
+    let userInfo: [CodingUserInfoKey: Any]
     /// Single-pass pretty printing. When set, `beginMember`/`closeDownTo` interleave newline +
     /// `depth * 2` spaces and keys are written `"k" : v`, byte-identical to `JSON.encodedBytes`'
     /// pretty style — so the encoder never re-parses to indent (sorted output still does, since the
@@ -32,11 +33,13 @@ final class EncodeState {
 
     init(
         _ w: JSONWriter, options: JSONEncodingOptions = .rfc8259,
-        strategies: EncodeStrategies = EncodeStrategies(), maxEncodeDepth: Int = 2048, pretty: Bool = false
+        strategies: EncodeStrategies = EncodeStrategies(), userInfo: [CodingUserInfoKey: Any] = [:],
+        maxEncodeDepth: Int = 2048, pretty: Bool = false
     ) {
         self.w = w
         self.options = options
         self.strategies = strategies
+        self.userInfo = userInfo
         self.maxEncodeDepth = maxEncodeDepth
         self.pretty = pretty
     }
@@ -179,23 +182,60 @@ final class EncodeState {
     }
 }
 
-struct TapeEncoder: Encoder {
+final class TapeEncoder: Encoder {
     let state: EncodeState
     var codingPath: [any CodingKey] { [] }
-    var userInfo: [CodingUserInfoKey: Any] { [:] }
+    var userInfo: [CodingUserInfoKey: Any] { state.userInfo }
+
+    private enum ContainerState {
+        case keyed(Int)
+        case unkeyed(Int)
+        case singleValue
+    }
+    private var containerState: ContainerState?
+
+    init(state: EncodeState) {
+        self.state = state
+    }
 
     func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedEncodingContainer<Key> {
-        let frame = state.open(object: true)
+        let frame: Int
+        switch containerState {
+            case .keyed(let existing):
+                frame = existing
+            case .unkeyed, .singleValue:
+                preconditionFailure("Encoder already requested a different container type.")
+            case nil:
+                frame = state.open(object: true)
+                containerState = .keyed(frame)
+        }
         return KeyedEncodingContainer(KeyedTapeEncodingContainer<Key>(state: state, frame: frame))
     }
 
     func unkeyedContainer() -> any UnkeyedEncodingContainer {
-        let frame = state.open(object: false)
+        let frame: Int
+        switch containerState {
+            case .unkeyed(let existing):
+                frame = existing
+            case .keyed, .singleValue:
+                preconditionFailure("Encoder already requested a different container type.")
+            case nil:
+                frame = state.open(object: false)
+                containerState = .unkeyed(frame)
+        }
         return UnkeyedTapeEncodingContainer(state: state, frame: frame)
     }
 
     func singleValueContainer() -> any SingleValueEncodingContainer {
-        SingleValueTapeEncodingContainer(state: state)
+        switch containerState {
+            case .singleValue:
+                break
+            case .keyed, .unkeyed:
+                preconditionFailure("Encoder already requested a different container type.")
+            case nil:
+                containerState = .singleValue
+        }
+        return SingleValueTapeEncodingContainer(state: state)
     }
 }
 

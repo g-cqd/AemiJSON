@@ -107,7 +107,8 @@ extension AemiJSON {
             writer.prettySpaceBeforeColon = options.prettyKeySeparator == .foundation
             if pretty { writer.indentUnit = options.indent.unitBytes }
             let state = EncodeState(
-                writer, options: options, strategies: strategies, maxEncodeDepth: maxEncodingDepth, pretty: pretty)
+                writer, options: options, strategies: strategies, userInfo: userInfo,
+                maxEncodeDepth: maxEncodingDepth, pretty: pretty)
             do {
                 try state.encodeValue(value)
             } catch {
