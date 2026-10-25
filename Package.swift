@@ -87,6 +87,9 @@ let aemiDependency: Package.Dependency = .package(
 
 var packageDependencies: [Package.Dependency] = [
     aemiDependency,
+    // The regular-expression engine behind JSONPath's `match()` and `search()` (RFC 9485 I-Regexp, linear time, no Foundation). Pinned to
+    // one revision like Aemi, so a push to aemiregex cannot change the engine under an existing build.
+    .package(url: "https://github.com/g-cqd/aemiregex.git", revision: "1a1737a3b40dae1413886f9795ad1eeb2046881d"),
     // Wide range: 603 keeps existing consumers resolving; 604 lets strict consumers already on
     // swift-syntax 604 (e.g. AtelierCore) share one resolution.
     .package(url: "https://github.com/swiftlang/swift-syntax.git", "603.0.0" ..< "605.0.0"),
@@ -123,6 +126,8 @@ let orderedCollections: Target.Dependency = .product(name: "OrderedCollections",
 let aemiKernel: Target.Dependency = .product(name: "AemiKernel", package: "aemi")
 // Runtime-dispatched SIMD byte kernels (the string-stop scan accelerates the tape parser's hot loop).
 let aemiKernels: Target.Dependency = .product(name: "AemiKernels", package: "aemi")
+// The I-Regexp engine for JSONPath's `match()` / `search()`. Only the engine target links it.
+let aemiRegex: Target.Dependency = .product(name: "AemiRegex", package: "aemiregex")
 
 // Build-time formatting enforcement attaches to the library only in dev/CI. A build-tool plugin on
 // a library target would otherwise run for everyone who depends on AemiJSON, so it stays gated.
@@ -174,7 +179,7 @@ let package = Package(
         // OrderedCollections (order-preserving eager objects) and AemiKernel (shared byte/number
         // primitives) — both Foundation-free with no transitive package deps, so the core stays portable.
         .target(
-            name: "AemiJSONCore", dependencies: [orderedCollections, aemiKernel, aemiKernels],
+            name: "AemiJSONCore", dependencies: [orderedCollections, aemiKernel, aemiKernels, aemiRegex],
             swiftSettings: kernelSettings),
         .target(
             // `aemiKernel` is declared directly (not only transitively via `AemiJSONCore`) because the

@@ -138,24 +138,50 @@ private let store = doc(
     #expect(try j.query("$..*").compactMap(\.int) == [1, 2, 3])
 }
 
-@Test func regexPatternSafetyAtParseTime() {
-    // Catastrophic-backtracking shapes and non-I-Regexp constructs are rejected when the path is
-    // compiled — before any JSON is matched — so a literal pattern can never reach the backtracking
-    // engine in an unsafe form.
-    let unsafe = [
-        #"$[?match(@.s, "(a+)+$")]"#,  // nested unbounded quantifier
-        #"$[?search(@.s, "(a*)*")]"#,  // nested unbounded quantifier
+@Test func regexPatternGrammarIsCheckedAtParseTime() {
+    // `match()` and `search()` take RFC 9485 I-Regexp. A pattern outside its grammar is rejected when the
+    // path is compiled, before any JSON is matched: backreferences, group extensions and lookaround are not
+    // in I-Regexp, and neither are multi-character escapes such as `\d`.
+    let outside = [
         #"$[?match(@.s, "\\1")]"#,  // backreference (pattern is \1)
         #"$[?match(@.s, "(?=a)")]"#,  // lookahead
-        #"$[?search(@.s, "(?:ab)+")]"#  // non-capturing group extension
+        #"$[?search(@.s, "(?:ab)+")]"#,  // non-capturing group extension
+        #"$[?search(@.s, "\\d+")]"#,  // a multi-character escape
+        #"$[?search(@.s, "[z-a]")]"#,  // a reversed range
+        #"$[?search(@.s, "a{3,2}")]"#  // a repeat count out of order
     ]
-    for q in unsafe { #expect(throws: JSONPathError.self) { try JSONPath(q) } }
+    for q in outside { #expect(throws: JSONPathError.self) { try JSONPath(q) } }
 
-    let safe = [
+    let inside = [
         #"$[?search(@.s, "[AB]")]"#,
         #"$[?search(@.s, "a.*b")]"#,
         #"$[?search(@.s, "(ab)+")]"#,
-        #"$[?match(@.s, "a+b+")]"#
+        #"$[?match(@.s, "a+b+")]"#,
+        #"$[?search(@.s, "\\p{Lu}+")]"#
     ]
-    for q in safe { #expect(throws: Never.self) { try JSONPath(q) } }
+    for q in inside { #expect(throws: Never.self) { try JSONPath(q) } }
+}
+
+@Test func regexNestedQuantifiersAreValidAndRunInLinearTime() throws {
+    // `(a+)+` is valid I-Regexp. The old engine was a backtracker, so the pattern was rejected for its cost;
+    // AemiRegex matches in time linear in the input, so it is accepted and cannot be made to hang. The filter
+    // runs over the children of the root array, so `@` is each string.
+    let bait = String(repeating: "a", count: 100_000) + "!"
+    let doc = try AemiJSON.parse(#"["\#(bait)","aaa"]"#).root
+    #expect(
+        try doc.query(#"$[?match(@, "(a+)+")]"#).count == 1, "only \"aaa\" is a whole-string match; the bait ends in !")
+    #expect(try doc.query(#"$[?search(@, "(a+)+")]"#).count == 2)
+    let clock = ContinuousClock()
+    var none = -1
+    let elapsed = try clock.measure { none = try doc.query(#"$[?search(@, "(a*)*b")]"#).count }
+    #expect(none == 0)
+    #expect(elapsed < .seconds(5), "took \(elapsed)")
+}
+
+@Test func regexAnchorsAreOrdinaryCharactersInIRegexp() throws {
+    // RFC 9485 has no anchors: `^` and `$` are ordinary characters, and `match()` is already whole-string.
+    let doc = try AemiJSON.parse(#"["^x$","x"]"#).root
+    #expect(try doc.query(#"$[?match(@, "^x$")]"#).count == 1)
+    #expect(try doc.query(#"$[?search(@, "x")]"#).count == 2)
+    #expect(try doc.query(#"$[?search(@, "^x")]"#).count == 1, "the caret is a literal: only \"^x$\" contains \"^x\"")
 }

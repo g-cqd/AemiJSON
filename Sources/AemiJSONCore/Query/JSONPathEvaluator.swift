@@ -1,3 +1,5 @@
+import AemiRegex
+
 // Memoizes absolute (`$`-rooted) sub-query results within a single filter application. Such a query
 // is candidate-independent — its nodelist depends only on the document root — so evaluating it once
 // and reusing it across every candidate turns an O(candidates × subquery) filter into
@@ -210,27 +212,21 @@ enum JSONPathEvaluator {
         -> Bool
     {
         guard case .string(let s) = evalComparand(sc, current: current, root: root, cache: cache) else { return false }
-        let re: Regex<AnyRegexOutput>
+        let re: Pattern
         switch pattern {
-            case .compiled(let c):
-                re = c.regex  // literal pattern: validated + compiled once at parse time
+            case .compiled(let compiled):
+                re = compiled  // literal pattern: checked + compiled once at parse time
             case .dynamic(let pc):
-                // A pattern sourced from the (untrusted) JSON document must be re-validated against the
-                // I-Regexp safe subset before it reaches the backtracking engine; an unsafe or malformed
-                // pattern simply doesn't match (eval can't throw).
+                // A pattern sourced from the (untrusted) JSON document is checked against the I-Regexp grammar
+                // here; a malformed pattern simply doesn't match (evaluation can't throw).
                 guard case .string(let pat) = evalComparand(pc, current: current, root: root, cache: cache),
-                    iRegexpRejectionReason(pat) == nil,
-                    let compiled = try? Regex(iRegexpToSwift(pat))
+                    let compiled = try? Pattern(pat, syntax: .iRegexp, matching: anchored ? .wholeString : .search)
                 else { return false }
                 re = compiled
         }
-        // RFC 9535: `match()` is a full (anchored) match; `search()` finds a substring. Swift's
-        // standard-library `Regex` (not Foundation) provides both via `wholeMatch` / `firstMatch`.
-        // `try?` flattens the optional `Match`, so a `nil` result already means "no match".
-        if anchored {
-            return (try? re.wholeMatch(in: s)) != nil
-        }
-        return (try? re.firstMatch(in: s)) != nil
+        // RFC 9535: `match()` is a whole-string match and `search()` finds a substring; the pattern was
+        // compiled in the matching mode that says which.
+        return re.isMatch(in: s)
     }
 
     // RFC 9485 I-Regexp `.` matches any character except U+000A (LF). Swift's `Regex` `.` also

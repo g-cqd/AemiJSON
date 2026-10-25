@@ -1,3 +1,5 @@
+import AemiRegex
+
 // MARK: - AST
 
 enum PathSegment: Sendable {
@@ -22,20 +24,14 @@ indirect enum FilterExpr: Sendable {
     case regex(Comparand, pattern: RegexOperand, anchored: Bool)  // match() / search()
 }
 
-/// The pattern argument of `match()`/`search()`. A string-literal pattern is validated against the
-/// RFC 9485 I-Regexp safe subset and compiled to a `Regex` once at parse time (`compiled`); a
-/// pattern produced by a query/function is untrusted and re-validated + compiled per candidate node
-/// at evaluation time (`dynamic`).
+/// The pattern argument of `match()`/`search()`. A string-literal pattern is checked against the
+/// RFC 9485 I-Regexp grammar and compiled once at parse time (`compiled`); a pattern produced by a
+/// query/function is untrusted and checked + compiled per candidate node at evaluation time
+/// (`dynamic`). An AemiRegex `Pattern` is a `Sendable` value that matches in time linear in the
+/// input for every pattern, so no pattern shape needs rejecting for its cost.
 enum RegexOperand: Sendable {
-    case compiled(CompiledRegex)
+    case compiled(Pattern)
     case dynamic(Comparand)
-}
-
-/// A compiled `Regex` shared (by reference) across every node a filter visits. The compiled program
-/// is immutable and matching never mutates it, so concurrent reads from the `Sendable` AST are safe.
-final class CompiledRegex: @unchecked Sendable {
-    let regex: Regex<AnyRegexOutput>
-    init(_ regex: Regex<AnyRegexOutput>) { self.regex = regex }
 }
 
 enum CompOp: Sendable { case eq, ne, lt, le, gt, ge }
@@ -97,8 +93,8 @@ extension Comparand {
 /// singular relative/absolute queries; existence tests; the `length()`, `count()`,
 /// `value()`, `match()`, and `search()` functions; and the RFC 9535 well-typedness rules
 /// (singular-query operands, function argument types).
-/// Not yet: full I-Regexp (RFC 9485) semantics — `match()`/`search()` use the Swift standard
-/// regex engine, which differs from I-Regexp on a few edge cases (e.g. `.` vs line separators).
+/// `match()` and `search()` use RFC 9485 I-Regexp, checked strictly against its grammar and run by
+/// AemiRegex (whole-string for `match()`, a substring search for `search()`).
 public struct JSONPath: Sendable {
     let segments: [PathSegment]
 

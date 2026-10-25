@@ -1,3 +1,5 @@
+import AemiRegex
+
 // RFC 9535 filter-expression sub-language for `JSONPathParser` — the precedence-climbing recursive
 // descent (`parseOr`→`parseAnd`→`parseNot`→`parsePrimary`→`parseComparand`), comparands, the
 // match / search / length / count / value functions, comparison operators, and the filter-literal
@@ -74,7 +76,7 @@ extension JSONPathParser {
             let b = try parseComparand()
             try expect(0x29)  // ')'
             guard a.isValueType, b.isValueType else { throw err("match()/search() require value-type arguments") }
-            return .regex(a, pattern: try compileRegexOperand(b), anchored: fn == "match")
+            return .regex(a, pattern: try compileRegexOperand(b, anchored: fn == "match"), anchored: fn == "match")
         }
         let left = try parseComparand()
         if let op = parseCompOp() {
@@ -88,17 +90,17 @@ extension JSONPathParser {
         throw err("expected comparison or existence test")
     }
 
-    // A string-literal pattern is known now, so validate it against the I-Regexp safe subset and
-    // compile it once here — closing the ReDoS hole before any JSON is seen and avoiding an O(N)
-    // recompile per filtered node. A non-literal pattern (a query/function result) is untrusted
-    // until evaluation, so it is deferred and re-checked per node there.
-    mutating func compileRegexOperand(_ b: Comparand) throws(JSONPathError) -> RegexOperand {
+    // A string-literal pattern is known now, so check it against the I-Regexp grammar and compile it
+    // once here: a malformed pattern is an error before any JSON is seen, and nothing is recompiled
+    // per filtered node. A non-literal pattern (a query/function result) is untrusted until
+    // evaluation, so it is deferred and checked per node there.
+    mutating func compileRegexOperand(_ b: Comparand, anchored: Bool) throws(JSONPathError) -> RegexOperand {
         guard case .literal(.string(let pat)) = b else { return .dynamic(b) }
-        if let reason = JSONPathEvaluator.iRegexpRejectionReason(pat) { throw err(reason) }
-        guard let re = try? Regex(JSONPathEvaluator.iRegexpToSwift(pat)) else {
-            throw err("invalid regular expression in match()/search()")
+        do {
+            return .compiled(try Pattern(pat, syntax: .iRegexp, matching: anchored ? .wholeString : .search))
+        } catch {
+            throw err("invalid I-Regexp in match()/search(): \(error)")
         }
-        return .compiled(CompiledRegex(re))
     }
 
     // Peeks an ASCII identifier (the only function / keyword names RFC 9535 defines), skipping just
