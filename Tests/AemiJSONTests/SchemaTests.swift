@@ -31,22 +31,52 @@ private func valid(_ schema: JSONSchema, _ json: String) -> Bool { schema.isVali
     #expect(valid(schema(#"{"type":"integer"}"#), "2.0"))
 }
 
-// A catastrophic-backtracking `pattern` / `patternProperties` (ReDoS) must never hang: it falls
-// outside the RFC 9485 I-Regexp safe subset, so it is rejected at compile time and the constraint is
-// simply not enforced. Validating a crafted worst-case instance therefore returns promptly. A safe
-// pattern is still compiled and enforced. (If this ever regresses to a backtracking engine, the test
-// hangs rather than fails — which is itself the signal.)
+// A `pattern` is an ECMA-262 regular expression (with the `u` flag, as Ajv compiles it), run by AemiRegex's budgeted backtracker. A
+// catastrophic-backtracking pattern therefore cannot hang validation: the match runs out of budget and the instance is rejected. Failing
+// closed is the safe side: an input built to exhaust the budget is refused, never let through.
 @Test func schemaPatternIsReDoSSafe() {
     let evil = schema(#"{"type":"string","pattern":"^(a+)+$"}"#)
     let bait = "\"" + String(repeating: "a", count: 40) + "!\""
-    #expect(valid(evil, bait))  // unsafe pattern dropped → the string is valid, and this returns fast
+    #expect(!valid(evil, bait))  // the budget runs out; this returns in milliseconds, not years
+    #expect(valid(evil, #""aaaa""#))  // the same pattern still accepts what it should
 
     let safe = schema(#"{"type":"string","pattern":"^a"}"#)
     #expect(valid(safe, #""abc""#))
     #expect(!valid(safe, #""xyz""#))
 
     let evilProps = schema(#"{"type":"object","patternProperties":{"^(a+)+$":{"type":"integer"}}}"#)
-    #expect(valid(evilProps, #"{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!":"x"}"#))  // returns fast; not applied
+    #expect(valid(evilProps, #"{"aaaa":1}"#))
+    #expect(!valid(evilProps, #"{"aaaa":"x"}"#))
+    // A key that exhausts the budget is not matched by the pattern, so the property is not constrained by it.
+    #expect(valid(evilProps, #"{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!":"x"}"#))
+}
+
+// What the old safe subset refused, and the standard-library `Regex` could not run as ECMAScript does, now works: backreferences,
+// look-around, named groups, Unicode properties and `\d`.
+@Test func schemaPatternIsEcmaScript() {
+    func json(_ text: String) -> String {
+        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+    func check(_ pattern: String, accepts: [String], rejects: [String]) {
+        let s = schema(#"{"type":"string","pattern":\#(json(pattern))}"#)
+        for text in accepts { #expect(valid(s, json(text)), "\(pattern) should accept \(text)") }
+        for text in rejects { #expect(!valid(s, json(text)), "\(pattern) should reject \(text)") }
+    }
+    check(#"^\d{3}-\d{4}$"#, accepts: ["555-1234"], rejects: ["555-12345", "abc-1234"])
+    check(#"^(\w+) \1$"#, accepts: ["hello hello"], rejects: ["hello world"])
+    check(#"^(?<q>["']).*\k<q>$"#, accepts: ["'a'", "\"b\""], rejects: ["'a\""])
+    check(#"^(?=.*\d)(?=.*\p{Lu}).{6,}$"#, accepts: ["abC123", "Zz9zzz"], rejects: ["abc123", "ABCDEF"])
+    check(#"colou?r"#, accepts: ["my color", "colour"], rejects: ["colr"])
+    check(#"^\p{Script=Greek}+$"#, accepts: ["αβγ"], rejects: ["abc"])
+    check(#"^[\w.+-]+@[\w-]+\.[\w.-]+$"#, accepts: ["a.b+c@example.co.uk"], rejects: ["no-at-sign"])
+    // `^` and `$` are anchors here (ECMA-262), unlike in I-Regexp.
+    check("^x$", accepts: ["x"], rejects: ["^x$", "xx"])
+}
+
+@Test func aMalformedSchemaPatternIsNotEnforced() {
+    // "(" is not a regular expression: the constraint is dropped, as before, and validation still works.
+    let s = schema(#"{"type":"string","pattern":"("}"#)
+    #expect(valid(s, #""anything""#))
 }
 
 @Test func validatesEnumConst() {

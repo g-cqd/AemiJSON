@@ -94,7 +94,8 @@ extension Comparand {
 /// `value()`, `match()`, and `search()` functions; and the RFC 9535 well-typedness rules
 /// (singular-query operands, function argument types).
 /// `match()` and `search()` use RFC 9485 I-Regexp, checked strictly against its grammar and run by
-/// AemiRegex (whole-string for `match()`, a substring search for `search()`).
+/// AemiRegex (whole-string for `match()`, a substring search for `search()`), with `^` and `$` as anchors,
+/// which is how the JSONPath compliance suite reads them although the RFC's grammar calls them ordinary characters.
 public struct JSONPath: Sendable {
     let segments: [PathSegment]
 

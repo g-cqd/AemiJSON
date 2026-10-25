@@ -97,7 +97,7 @@ extension JSONPathParser {
     mutating func compileRegexOperand(_ b: Comparand, anchored: Bool) throws(JSONPathError) -> RegexOperand {
         guard case .literal(.string(let pat)) = b else { return .dynamic(b) }
         do {
-            return .compiled(try Pattern(pat, syntax: .iRegexp, matching: anchored ? .wholeString : .search))
+            return .compiled(try Pattern(pat, syntax: .iRegexpWithAnchors, matching: anchored ? .wholeString : .search))
         } catch {
             throw err("invalid I-Regexp in match()/search(): \(error)")
         }

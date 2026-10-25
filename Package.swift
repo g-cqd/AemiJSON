@@ -87,9 +87,10 @@ let aemiDependency: Package.Dependency = .package(
 
 var packageDependencies: [Package.Dependency] = [
     aemiDependency,
-    // The regular-expression engine behind JSONPath's `match()` and `search()` (RFC 9485 I-Regexp, linear time, no Foundation). Pinned to
-    // one revision like Aemi, so a push to aemiregex cannot change the engine under an existing build.
-    .package(url: "https://github.com/g-cqd/aemiregex.git", revision: "1a1737a3b40dae1413886f9795ad1eeb2046881d"),
+    // The regular-expression engine behind JSONPath's `match()` and `search()` (RFC 9485 I-Regexp, linear time) and JSON Schema's `pattern`
+    // (ECMAScript, on a budgeted backtracker). No Foundation. Pinned to one revision like Aemi, so a push to aemiregex cannot change the
+    // engine under an existing build.
+    .package(url: "https://github.com/g-cqd/aemiregex.git", revision: "71e3aac4dba626425691d3464718191afea4334b"),
     // Wide range: 603 keeps existing consumers resolving; 604 lets strict consumers already on
     // swift-syntax 604 (e.g. AtelierCore) share one resolution.
     .package(url: "https://github.com/swiftlang/swift-syntax.git", "603.0.0" ..< "605.0.0"),
@@ -126,7 +127,7 @@ let orderedCollections: Target.Dependency = .product(name: "OrderedCollections",
 let aemiKernel: Target.Dependency = .product(name: "AemiKernel", package: "aemi")
 // Runtime-dispatched SIMD byte kernels (the string-stop scan accelerates the tape parser's hot loop).
 let aemiKernels: Target.Dependency = .product(name: "AemiKernels", package: "aemi")
-// The I-Regexp engine for JSONPath's `match()` / `search()`. Only the engine target links it.
+// The regular-expression engine for JSONPath's `match()` / `search()` and JSON Schema's `pattern`. Only the engine target links it.
 let aemiRegex: Target.Dependency = .product(name: "AemiRegex", package: "aemiregex")
 
 // Build-time formatting enforcement attaches to the library only in dev/CI. A build-tool plugin on
@@ -189,7 +190,7 @@ let package = Package(
             // `TaskProviderSpy` (from the dev-only `AemiTestKit`, which re-exports the same seam).
             name: "AemiJSON",
             dependencies: [
-                "AemiJSONCore", "AemiJSONMacros", orderedCollections, aemiKernel, aemiKernels,
+                "AemiJSONCore", "AemiJSONMacros", orderedCollections, aemiKernel, aemiKernels, aemiRegex,
                 .product(name: "AemiRuntime", package: "aemi")
             ],
             swiftSettings: strictSettings, plugins: aemijsonBuildPlugins),

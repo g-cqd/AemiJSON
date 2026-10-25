@@ -99,7 +99,13 @@ extension SchemaValidator {
         let len = s.unicodeScalars.count
         if let m = node.minLength, len < m { fail("minLength") }
         if let m = node.maxLength, len > m { fail("maxLength") }
-        if let re = node.pattern, !re.matches(s) { fail("pattern") }
+        if let re = node.pattern {
+            switch re.test(s) {
+                case true?: break
+                case false?: fail("pattern")
+                case nil: fail("pattern (the match budget was exceeded)")
+            }
+        }
         return ok
     }
 

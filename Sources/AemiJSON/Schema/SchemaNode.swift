@@ -1,26 +1,31 @@
 import AemiJSONCore
+import AemiRegex
 
-/// A compiled JSON Schema regular expression. The pattern is restricted to the RFC 9485 I-Regexp safe
-/// subset (which JSON Schema also recommends) and compiled to the standard-library `Regex`, so an
-/// attacker-supplied schema `pattern` cannot trigger catastrophic backtracking (ReDoS) and no ICU /
-/// `NSRegularExpression` is involved. An unsafe or malformed pattern fails to compile (`init?` returns
-/// nil) and that constraint is simply not enforced.
+/// A compiled JSON Schema regular expression: an ECMA-262 pattern with the `u` flag (what Ajv compiles `pattern` to), run by AemiRegex's
+/// budgeted backtracker. A catastrophic pattern cannot hang validation: the search runs out of budget and `test` says so. A malformed
+/// pattern fails to compile (`init?` returns nil) and that constraint is simply not enforced.
 ///
-/// `@unchecked Sendable`: a `Regex` is immutable once compiled and matching never mutates it, so
-/// concurrent read-only matching from the `Sendable` `SchemaNode` is safe — the same contract the
-/// JSONPath `CompiledRegex` relies on.
-struct SchemaPattern: @unchecked Sendable {
-    let regex: Regex<AnyRegexOutput>
+/// A value type: a `BacktrackingPattern` is immutable and `Sendable`, so the `Sendable` `SchemaNode` can hold it.
+struct SchemaPattern: Sendable {
+    private let pattern: BacktrackingPattern
+
+    /// What one match may cost: about a thirtieth of a second in the worst case. Validation runs once per string, so the default budget
+    /// (a third of a second) would let a hostile instance cost far more than a hostile schema ever could.
+    private static let budget = BacktrackingPattern.Budget(maxSteps: 1_000_000, maxStackEntries: 100_000)
 
     init?(_ pattern: String) {
-        guard IRegexp.rejectionReason(pattern) == nil, let compiled = try? Regex(IRegexp.toSwift(pattern))
-        else { return nil }
-        regex = compiled
+        guard let compiled = try? BacktrackingPattern(pattern, dialect: .ecmaScript, budget: Self.budget) else {
+            return nil
+        }
+        self.pattern = compiled
     }
 
-    /// JSON Schema `pattern` matches when the expression is found anywhere in the string (ECMA-262
-    /// `RegExp.prototype.test` semantics) — an unanchored search.
-    func matches(_ s: String) -> Bool { (try? regex.firstMatch(in: s)) != nil }
+    /// Whether the expression is found anywhere in `s` (ECMA-262 `RegExp.prototype.test`, an unanchored search).
+    /// - Returns: `nil` when the match ran out of its budget, so the answer is not known.
+    func test(_ s: String) -> Bool? { try? pattern.isMatch(in: s) }
+
+    /// The answer when the budget ran out: not matched. A validator fails closed, so an input built to exhaust the budget is refused.
+    func matches(_ s: String) -> Bool { test(s) ?? false }
 }
 
 /// A compiled schema node. A value type: recursion is expressed as `Int` indices

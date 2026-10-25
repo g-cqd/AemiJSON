@@ -188,8 +188,8 @@ Strict by default. The grammar follows **RFC 8259** / **ECMA-404** / **ISO/IEC 2
 with **RFC 3629** UTF-8 well-formedness (overlongs, surrogates, and code points above U+10FFFF
 rejected). Optional **RFC 7493 (I-JSON)** profile rejects duplicate keys. Query and mutation
 follow **RFC 6901** (Pointer), **RFC 9535** (JSONPath — rejects 100% of the compliance suite's
-invalid selectors and matches 99% of valid-query results; the remainder are I-Regexp `.`
-line-separator edge cases), **RFC 6902** (Patch), **RFC 7396** (Merge Patch), and Relative JSON
+invalid selectors and matches every valid-query result, on the version of the suite in the tests; `match()` and
+`search()` run on AemiRegex, with `^` and `$` as anchors as the suite expects), **RFC 6902** (Patch), **RFC 7396** (Merge Patch), and Relative JSON
 Pointer. Schema targets **JSON Schema Draft 2020-12** (subset).
 
 > **Numbers:** under the default `.swiftShortest`, a value typed `Double(2)` encodes as `2.0`

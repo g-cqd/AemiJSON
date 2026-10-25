@@ -178,10 +178,15 @@ private let store = doc(
     #expect(elapsed < .seconds(5), "took \(elapsed)")
 }
 
-@Test func regexAnchorsAreOrdinaryCharactersInIRegexp() throws {
-    // RFC 9485 has no anchors: `^` and `$` are ordinary characters, and `match()` is already whole-string.
-    let doc = try AemiJSON.parse(#"["^x$","x"]"#).root
-    #expect(try doc.query(#"$[?match(@, "^x$")]"#).count == 1)
-    #expect(try doc.query(#"$[?search(@, "x")]"#).count == 2)
-    #expect(try doc.query(#"$[?search(@, "^x")]"#).count == 1, "the caret is a literal: only \"^x$\" contains \"^x\"")
+@Test func regexAnchorsAnchor() throws {
+    // `^` and `$` are anchors, as the JSONPath compliance suite expects (RFC 9485's grammar calls them ordinary characters; AemiRegex's
+    // `iRegexpWithAnchors` is the reading the suite and the other implementations share). `match()` is whole-string, `search()` a search.
+    let doc = try AemiJSON.parse(#"["abc","axc","ab","xab","^x$"]"#).root
+    func hits(_ query: String) throws -> [String] { try doc.query(query).compactMap(\.string) }
+    let expected: [(String, [String])] = [
+        (#"$[?match(@, "^ab.*")]"#, ["abc", "ab"]), (#"$[?match(@, ".*bc$")]"#, ["abc"]),
+        (#"$[?search(@, "^ab")]"#, ["abc", "ab"]), (#"$[?search(@, "ab$")]"#, ["ab", "xab"]),
+        (#"$[?search(@, "x")]"#, ["axc", "xab", "^x$"]), (#"$[?match(@, "\\^x[$]")]"#, ["^x$"])
+    ]
+    for (query, strings) in expected { #expect(try hits(query) == strings, "\(query)") }
 }
