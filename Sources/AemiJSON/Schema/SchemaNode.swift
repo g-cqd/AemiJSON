@@ -13,16 +13,29 @@ struct SchemaPattern: Sendable {
     /// (a third of a second) would let a hostile instance cost far more than a hostile schema ever could.
     private static let budget = BacktrackingPattern.Budget(maxSteps: 1_000_000, maxStackEntries: 100_000)
 
+    private let linear: Pattern?
+
     init?(_ pattern: String) {
         guard let compiled = try? BacktrackingPattern(pattern, dialect: .ecmaScript, budget: Self.budget) else {
             return nil
         }
         self.pattern = compiled
+        if !pattern.contains(#"\p"#) && !pattern.contains(#"\P"#) && !pattern.contains(#"\u"#)
+            && !pattern.contains(#"\s"#) && !pattern.contains(#"\S"#),
+            let lin = try? Pattern(pattern)
+        {
+            self.linear = lin
+        } else {
+            self.linear = nil
+        }
     }
 
     /// Whether the expression is found anywhere in `s` (ECMA-262 `RegExp.prototype.test`, an unanchored search).
     /// - Returns: `nil` when the match ran out of its budget, so the answer is not known.
-    func test(_ s: String) -> Bool? { try? pattern.isMatch(in: s) }
+    func test(_ s: String) -> Bool? {
+        if let linear { return linear.isMatch(in: s) }
+        return try? pattern.isMatch(in: s)
+    }
 
     /// The answer when the budget ran out: not matched. A validator fails closed, so an input built to exhaust the budget is refused.
     func matches(_ s: String) -> Bool { test(s) ?? false }
