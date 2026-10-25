@@ -47,7 +47,7 @@ jobs:
   quality:
     # Shared build/test and quality checks resolve the published Aemi dependency.
     # Additional jobs below cover platform builds, fuzzing, benchmarks, and Pages.
-    uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@afc1be3d578045b381e76f6b1712a81b39956ced # aemi afc1be3
+    uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@4f270e05473accace718446ee31c7b03d60a61ae # aemi 4f270e0
     with:
       # Static analysis is the `static-analysis` job below, not the reusable's: that one installs
       # arcleak 0.7.1 / dolly 0.6.1 / deadwood 0.7.1, and gates only arcleak because it predates
