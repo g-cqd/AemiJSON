@@ -360,13 +360,15 @@ extension JSONString {
 
     /// Four hex digits at `at` (caller guarantees `at + 4` in bounds), or `nil` if any byte is not a
     /// hex digit. Uses the shared `Hex.value` table, like the tape scanner's `hex4`.
+    ///
+    /// The four digits are read one by one rather than in a `for k in 0 ..< 4` loop: in a debug build
+    /// that loop allocated once per iteration, four times per `\uXXXX` escape the scanner validates
+    /// (`UnicodeEscapeScanAllocationTests`). Release code is the same either way.
     static func hex4(_ p: UnsafePointer<UInt8>, _ at: Int) -> UInt16? {
-        var value: UInt16 = 0
-        for k in 0 ..< 4 {
-            guard let digit = unsafe Hex.value(p[at + k]) else { return nil }
-            value = (value << 4) | UInt16(digit)
-        }
-        return value
+        guard let d0 = unsafe Hex.value(p[at]), let d1 = unsafe Hex.value(p[at + 1]),
+            let d2 = unsafe Hex.value(p[at + 2]), let d3 = unsafe Hex.value(p[at + 3])
+        else { return nil }
+        return UInt16(d0) << 12 | UInt16(d1) << 8 | UInt16(d2) << 4 | UInt16(d3)
     }
 
     // One hex-digit definition for the whole engine: AemiKernel's `Hex.value` table (nil = not a hex digit).
