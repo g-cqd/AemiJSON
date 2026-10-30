@@ -158,6 +158,9 @@ let package = Package(
         // OrderedCollections and AemiKernel, are themselves Foundation-free with no transitive deps):
         // tape parsing, lazy navigation, JSONValue, and JSONPath/Pointer/Patch. For a lean core.
         .library(name: "AemiJSONCore", targets: ["AemiJSONCore"]),
+        // JSON-RPC 2.0 over the engine: Content-Length (LSP) and newline (MCP stdio) framing, messages, and a connection that matches
+        // responses to requests (roadmap 0006).
+        .library(name: "AemiJSONRPC", targets: ["AemiJSONRPC"]),
         .library(name: "ADJSON", targets: ["ADJSON"]),
         .library(name: "ADJSONCore", targets: ["ADJSONCore"])
     ],
@@ -194,6 +197,16 @@ let package = Package(
                 .product(name: "AemiRuntime", package: "aemi")
             ],
             swiftSettings: strictSettings, plugins: aemijsonBuildPlugins),
+        // JSON-RPC 2.0 (roadmap 0006). Framing, messages and the connection need only the engine; the stdio reader runs its blocking
+        // reads on AemiRuntime's offload pool.
+        .target(
+            name: "AemiJSONRPC",
+            dependencies: ["AemiJSONCore", aemiKernels, .product(name: "AemiRuntime", package: "aemi")],
+            swiftSettings: strictSettings + [.strictMemorySafety()], plugins: aemijsonBuildPlugins),
+        .testTarget(
+            name: "AemiJSONRPCTests",
+            dependencies: ["AemiJSONRPC", "AemiJSONCore", .product(name: "AemiRuntime", package: "aemi")],
+            swiftSettings: testSettings),
         .testTarget(
             name: "AemiJSONCompatibilityTests",
             dependencies: ["AemiJSON", "AemiJSONCore", "ADJSON", "ADJSONCore"],
