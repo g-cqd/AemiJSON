@@ -53,52 +53,43 @@ public struct _FastDecodeCursor {
         self.index = index
     }
 
-    @inlinable public func string(_ key: StaticString) throws -> String {
-        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), let s = ctx.string(vi) else {
+    /// The value of `key` read by `read`; `keyNotFound` when the key is absent or `read` gives nil (roadmap 0009 is
+    /// to tell a wrong type from an absent key).
+    @inlinable func required<T>(_ key: StaticString, _ read: (Int) -> T?) throws -> T {
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), let value = read(vi) else {
             throw missing(key)
         }
-        return s
+        return value
     }
+
+    /// The value of `key` read by `read`; nil when the key is absent or null.
+    @inlinable func optional<T>(_ key: StaticString, _ read: (Int) -> T?) throws -> T? {
+        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
+        return read(vi)
+    }
+
+    @inlinable public func string(_ key: StaticString) throws -> String { try required(key) { ctx.string($0) } }
 
     @inlinable public func stringIfPresent(_ key: StaticString) throws -> String? {
-        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
-        return ctx.string(vi)
+        try optional(key) { ctx.string($0) }
     }
 
-    @inlinable public func bool(_ key: StaticString) throws -> Bool {
-        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), let b = ctx.bool(vi) else {
-            throw missing(key)
-        }
-        return b
-    }
+    @inlinable public func bool(_ key: StaticString) throws -> Bool { try required(key) { ctx.bool($0) } }
 
-    @inlinable public func boolIfPresent(_ key: StaticString) throws -> Bool? {
-        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
-        return ctx.bool(vi)
-    }
+    @inlinable public func boolIfPresent(_ key: StaticString) throws -> Bool? { try optional(key) { ctx.bool($0) } }
 
-    @inlinable public func double(_ key: StaticString) throws -> Double {
-        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), let d = ctx.double(vi) else {
-            throw missing(key)
-        }
-        return d
-    }
+    @inlinable public func double(_ key: StaticString) throws -> Double { try required(key) { ctx.double($0) } }
 
     @inlinable public func doubleIfPresent(_ key: StaticString) throws -> Double? {
-        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
-        return ctx.double(vi)
+        try optional(key) { ctx.double($0) }
     }
 
     @inlinable public func integer<T: FixedWidthInteger>(_ key: StaticString, _ type: T.Type) throws -> T {
-        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), let n = ctx.integer(vi, type) else {
-            throw missing(key)
-        }
-        return n
+        try required(key) { ctx.integer($0, type) }
     }
 
     @inlinable public func integerIfPresent<T: FixedWidthInteger>(_ key: StaticString, _ type: T.Type) throws -> T? {
-        guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
-        return ctx.integer(vi, type)
+        try optional(key) { ctx.integer($0, type) }
     }
 
     @inlinable public func decode<T: Decodable>(_ type: T.Type, _ key: StaticString) throws -> T {

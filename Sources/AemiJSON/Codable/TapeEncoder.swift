@@ -293,46 +293,23 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
         member(key)
         try state.under(codingPath + [key]) { try state.appendFloat(v) }
     }
-    mutating func encode(_ v: Int, forKey key: Key) {
+    /// An integer member: every fixed-width integer is written the same way.
+    @inline(__always) private mutating func integer(_ v: some FixedWidthInteger, _ key: Key) {
         member(key)
         state.w.writeInteger(v)
     }
-    mutating func encode(_ v: Int8, forKey key: Key) {
-        member(key)
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: Int16, forKey key: Key) {
-        member(key)
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: Int32, forKey key: Key) {
-        member(key)
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: Int64, forKey key: Key) {
-        member(key)
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: UInt, forKey key: Key) {
-        member(key)
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: UInt8, forKey key: Key) {
-        member(key)
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: UInt16, forKey key: Key) {
-        member(key)
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: UInt32, forKey key: Key) {
-        member(key)
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: UInt64, forKey key: Key) {
-        member(key)
-        state.w.writeInteger(v)
-    }
+    // @dolly:disable near-clone -- the ten fixed-width integer requirements of the Codable container protocol, one line each; no default implementations exist
+    mutating func encode(_ v: Int, forKey key: Key) { integer(v, key) }
+    mutating func encode(_ v: Int8, forKey key: Key) { integer(v, key) }
+    mutating func encode(_ v: Int16, forKey key: Key) { integer(v, key) }
+    mutating func encode(_ v: Int32, forKey key: Key) { integer(v, key) }
+    mutating func encode(_ v: Int64, forKey key: Key) { integer(v, key) }
+    mutating func encode(_ v: UInt, forKey key: Key) { integer(v, key) }
+    mutating func encode(_ v: UInt8, forKey key: Key) { integer(v, key) }
+    mutating func encode(_ v: UInt16, forKey key: Key) { integer(v, key) }
+    mutating func encode(_ v: UInt32, forKey key: Key) { integer(v, key) }
+    mutating func encode(_ v: UInt64, forKey key: Key) { integer(v, key) }
+    // @dolly:enable near-clone
 
     mutating func encode<T: Encodable>(_ v: T, forKey key: Key) throws {
         member(key)
@@ -399,46 +376,23 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
         elem()
         try state.under(codingPath + [IndexKey(position)]) { try state.appendFloat(v) }
     }
-    mutating func encode(_ v: Int) {
+    /// An integer element: every fixed-width integer is written the same way.
+    @inline(__always) private mutating func integer(_ v: some FixedWidthInteger) {
         elem()
         state.w.writeInteger(v)
     }
-    mutating func encode(_ v: Int8) {
-        elem()
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: Int16) {
-        elem()
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: Int32) {
-        elem()
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: Int64) {
-        elem()
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: UInt) {
-        elem()
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: UInt8) {
-        elem()
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: UInt16) {
-        elem()
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: UInt32) {
-        elem()
-        state.w.writeInteger(v)
-    }
-    mutating func encode(_ v: UInt64) {
-        elem()
-        state.w.writeInteger(v)
-    }
+    // @dolly:disable near-clone -- the ten fixed-width integer requirements of the Codable container protocol, one line each; no default implementations exist
+    mutating func encode(_ v: Int) { integer(v) }
+    mutating func encode(_ v: Int8) { integer(v) }
+    mutating func encode(_ v: Int16) { integer(v) }
+    mutating func encode(_ v: Int32) { integer(v) }
+    mutating func encode(_ v: Int64) { integer(v) }
+    mutating func encode(_ v: UInt) { integer(v) }
+    mutating func encode(_ v: UInt8) { integer(v) }
+    mutating func encode(_ v: UInt16) { integer(v) }
+    mutating func encode(_ v: UInt32) { integer(v) }
+    mutating func encode(_ v: UInt64) { integer(v) }
+    // @dolly:enable near-clone
 
     mutating func encode<T: Encodable>(_ v: T) throws {
         let position = count
@@ -482,6 +436,7 @@ private struct SingleValueTapeEncodingContainer: SingleValueEncodingContainer {
     mutating func encode(_ v: Float) throws {
         try state.under(codingPath) { try state.appendFloat(v) }
     }
+    // @dolly:disable near-clone -- the ten fixed-width integer requirements of the Codable container protocol, one line each; no default implementations exist
     mutating func encode(_ v: Int) { state.w.writeInteger(v) }
     mutating func encode(_ v: Int8) { state.w.writeInteger(v) }
     mutating func encode(_ v: Int16) { state.w.writeInteger(v) }
@@ -492,6 +447,7 @@ private struct SingleValueTapeEncodingContainer: SingleValueEncodingContainer {
     mutating func encode(_ v: UInt16) { state.w.writeInteger(v) }
     mutating func encode(_ v: UInt32) { state.w.writeInteger(v) }
     mutating func encode(_ v: UInt64) { state.w.writeInteger(v) }
+    // @dolly:enable near-clone
 
     mutating func encode<T: Encodable>(_ v: T) throws {
         try state.under(codingPath) { try state.encodeValue(v) }
