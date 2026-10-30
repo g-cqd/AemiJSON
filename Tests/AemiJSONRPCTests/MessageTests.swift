@@ -2,11 +2,11 @@ import AemiJSONCore
 import AemiJSONRPC
 import Testing
 
-private func parse(_ text: String) throws(JSONRPCError) -> JSONRPCMessage {
+private func parse(_ text: String) throws(JSONRPCMessage.Invalid) -> JSONRPCMessage {
     try JSONRPCMessage(parsing: Array(text.utf8))
 }
 
-private func refusal(_ text: String) -> JSONRPCError? {
+private func refusal(_ text: String) -> JSONRPCMessage.Invalid? {
     do {
         _ = try parse(text)
         return nil
@@ -71,7 +71,7 @@ private func refusal(_ text: String) -> JSONRPCError? {
     }
 
     @Test func refusesWhatIsNotJSON() {
-        #expect(refusal("{oops")?.code == JSONRPCError.parseError)
+        #expect(refusal("{oops")?.error.code == JSONRPCError.parseError)
     }
 
     @Test(arguments: [
@@ -87,11 +87,15 @@ private func refusal(_ text: String) -> JSONRPCError? {
         #"{"jsonrpc":"2.0","id":1,"error":{"message":"m"}}"#
     ])
     func refusesAnInvalidMessage(text: String) {
-        #expect(refusal(text)?.code == JSONRPCError.invalidRequest)
+        #expect(refusal(text)?.error.code == JSONRPCError.invalidRequest)
     }
 
-    @Test func keepsTheIDOfAnInvalidRequest() {
-        #expect(refusal(#"{"jsonrpc":"2.0","id":"q","method":3}"#)?.data == ["id": "q"])
+    @Test func keepsTheIDOfAnInvalidRequest() throws {
+        let invalid = refusal(#"{"jsonrpc":"2.0","id":"q","method":3}"#)
+        #expect(invalid?.id == .string("q"))
+        let answer = try invalid?.response() ?? []
+        #expect(
+            String(decoding: answer, as: UTF8.self).hasPrefix(#"{"jsonrpc":"2.0","id":"q","error":{"code":-32600,"#))
     }
 }
 
@@ -99,7 +103,7 @@ private func refusal(_ text: String) -> JSONRPCError? {
     private func reparse(_ bytes: [UInt8]) throws -> JSONRPCMessage { try JSONRPCMessage(parsing: bytes) }
 
     @Test func writesARequest() throws {
-        let bytes = JSONRPC.request(id: .number(4), method: "m", params: ["k": "v"])
+        let bytes = try JSONRPC.request(id: .number(4), method: "m", params: ["k": "v"])
         guard case .request(let request) = try reparse(bytes) else {
             Issue.record("not a request")
             return
@@ -109,18 +113,18 @@ private func refusal(_ text: String) -> JSONRPCError? {
     }
 
     @Test func writesANotificationWithoutParams() throws {
-        let bytes = JSONRPC.notification(method: "n")
+        let bytes = try JSONRPC.notification(method: "n")
         #expect(String(decoding: bytes, as: UTF8.self) == #"{"jsonrpc":"2.0","method":"n"}"#)
     }
 
     @Test func writesAResultForAStringID() throws {
-        let bytes = JSONRPC.response(id: .string("a\"b"), result: .null)
+        let bytes = try JSONRPC.response(id: .string("a\"b"), result: .null)
         #expect(String(decoding: bytes, as: UTF8.self) == #"{"jsonrpc":"2.0","id":"a\"b","result":null}"#)
     }
 
     @Test func writesAnErrorForANullID() throws {
         let error = JSONRPCError(code: JSONRPCError.methodNotFound, message: "no", data: [1])
-        let bytes = JSONRPC.response(id: nil, error: error)
+        let bytes = try JSONRPC.response(id: nil, error: error)
         guard case .response(let id, let result) = try reparse(bytes) else {
             Issue.record("not a response")
             return
