@@ -81,7 +81,7 @@ private func requestID(_ message: JSONRPCMessage) -> Int64? {
     return id
 }
 
-@Suite struct JSONRPCConnectionTests {
+@Suite(.timeLimit(.minutes(1))) struct JSONRPCConnectionTests {
     @Test func matchesResponsesToRequestsByIDInAnyOrder() async throws {
         let held = Mutex<[JSONRPCMessage]>([])
         let peer = ScriptedPeer { message, peer in
@@ -236,7 +236,7 @@ private func requestID(_ message: JSONRPCMessage) -> Int64? {
 
     @Test func aCancelledCallerTellsTheMCPServer() async throws {
         let received = AsyncStream.makeStream(of: Void.self)
-        let peer = ScriptedPeer { _, _ in received.continuation.yield() }
+        let peer = ScriptedPeer(framing: .lines) { _, _ in received.continuation.yield() }
         let connection = JSONRPCConnection(sink: peer, framing: .lines, cancellation: .modelContextProtocol)
         let reader = Task { await connection.run(reading: peer.output) }
         let caller = Task { try await connection.request("slow") }
@@ -272,7 +272,7 @@ private func requestID(_ message: JSONRPCMessage) -> Int64? {
     }
 
     @Test func notifiesWithoutAnID() async throws {
-        let peer = ScriptedPeer { _, _ in }
+        let peer = ScriptedPeer(framing: .lines) { _, _ in }
         let connection = JSONRPCConnection(sink: peer, framing: .lines)
         try await connection.notify("initialized", [:])
         #expect(peer.sent("initialized").count == 1)

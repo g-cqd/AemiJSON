@@ -201,7 +201,9 @@ let package = Package(
         // reads on AemiRuntime's offload pool.
         .target(
             name: "AemiJSONRPC",
-            dependencies: ["AemiJSONCore", aemiKernels, .product(name: "AemiRuntime", package: "aemi")],
+            dependencies: [
+                "AemiJSONCore", orderedCollections, aemiKernels, .product(name: "AemiRuntime", package: "aemi")
+            ],
             swiftSettings: strictSettings + [.strictMemorySafety()], plugins: aemijsonBuildPlugins),
         .testTarget(
             name: "AemiJSONRPCTests",
