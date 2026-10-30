@@ -49,6 +49,17 @@ final class DecodeContext {
     /// of an array repeat the same keys, so each distinct key is converted once per decode rather than
     /// once per object. Capped, so a document of ever-new keys cannot grow it without bound.
     var convertedKeys: [String: String] = [:]
+    // Keyed containers' places in their objects, a ring by decode depth (see MemberHints.swift): the object, the member to compare
+    // first, and its ordinal. Vectors so that the ring and the key table below live in the context without an allocation of their own.
+    // Exempt from the run-time exclusivity check: each access is a single element read or written in place, never borrowed across a call.
+    @exclusivity(unchecked) var hintObject = SIMD8<Int>(repeating: -1)
+    @exclusivity(unchecked) var hintKey = SIMD8<Int>()
+    @exclusivity(unchecked) var hintOrdinal = SIMD8<Int>()
+    /// The table that checks the keys of an object of up to `inlineMembers` members are distinct.
+    @exclusivity(unchecked) var inlineKeyTable = SIMD64<Int32>()
+    /// The same for larger objects, allocated by the first and reused.
+    @exclusivity(unchecked) var keyTable: UnsafeMutablePointer<Int32>?
+    @exclusivity(unchecked) var keyTableCapacity = 0
     #if DEBUG
         /// The comparison counter bound when the decode began (see `KeyComparisonCounter`).
         @usableFromInline let keyComparisons = KeyComparisonCounter.current
@@ -77,6 +88,8 @@ final class DecodeContext {
         self.strategies = strategies
         self.maxDecodeDepth = maxDecodeDepth
     }
+
+    deinit { keyTable?.deallocate() }
 
     /// Traps when this context is used after the decode that created it returned (see `isLive`).
     @inline(__always) @inlinable func checkLive() {
@@ -186,6 +199,19 @@ final class DecodeContext {
         return doc.isJSON5 ? JSONString.unescapeJSON5(bytes, off, len) : JSONString.unescape(bytes, off, len)
     }
 
+    /// Whether the member key at tape index `i` is `key`, compared on raw bytes (decoded only when escaped). Every keyed lookup's
+    /// comparison, so debug builds count them here (see `KeyComparisonCounter`).
+    @inline(__always) func keyMatches(at i: Int, _ key: String) -> Bool {
+        let ks = uncheckedSlot(i)
+        let koff = Slot.low(ks)
+        let klen = Slot.length(ks)
+        assertBytes(koff, klen)
+        #if DEBUG
+            keyComparisons?.count += 1
+        #endif
+        return JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, json5: doc.isJSON5, key)
+    }
+
     /// Index of the value slot for `key` within the object at `obj`, or nil, matching the JSON keys'
     /// raw bytes. Under a key-decoding strategy the keyed container looks keys up in
     /// `convertedMembers(of:)` instead.
@@ -196,15 +222,8 @@ final class DecodeContext {
         var i = obj + 1
         var found: Int? = nil
         for _ in 0 ..< c {
-            let ks = uncheckedSlot(i)
             let valIdx = i + 1
-            let koff = Slot.low(ks)
-            let klen = Slot.length(ks)
-            assertBytes(koff, klen)
-            #if DEBUG
-                keyComparisons?.count += 1
-            #endif
-            if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, json5: doc.isJSON5, key) {
+            if keyMatches(at: i, key) {
                 found = valIdx
                 if keysAreUnique { break }  // unique keys → first match is the only match
             }
@@ -263,8 +282,10 @@ struct TapeDecoder: Decoder {
     func container<Key: CodingKey>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> {
         guard ctx.tag(index) == JSONKind.object.rawValue else { throw ctx.objectExpected(codingPath: codingPath) }
         let converted = ctx.keyConversionActive ? ctx.convertedMembers(of: index) : nil
+        let hint = converted == nil ? ctx.openMemberHint(of: index) : -1
         return KeyedDecodingContainer(
-            KeyedTapeDecodingContainer<Key>(ctx: ctx, index: index, codingPath: codingPath, convertedMembers: converted)
+            KeyedTapeDecodingContainer<Key>(
+                ctx: ctx, index: index, codingPath: codingPath, convertedMembers: converted, hint: hint)
         )
     }
 
@@ -290,6 +311,8 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
     /// Under a key-decoding strategy, the object's members by converted key (see `convertedMembers`);
     /// nil without one, when keys are matched on their raw bytes.
     let convertedMembers: [String: Int]?
+    /// The context's hint slot for this object (see MemberHints.swift), or -1 to scan from the first member.
+    let hint: Int
 
     var allKeys: [Key] {
         var out: [Key] = []
@@ -369,7 +392,12 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
     }
 
     @inline(__always) private func memberValueIndex(_ key: Key) -> Int? {
-        guard let convertedMembers else { return ctx.memberValueIndex(of: index, key: key.stringValue) }
+        guard let convertedMembers else {
+            if hint >= 0, let found = ctx.hintedMemberValueIndex(of: index, key: key.stringValue, slot: hint) {
+                return found
+            }
+            return ctx.memberValueIndex(of: index, key: key.stringValue)
+        }
         return convertedMembers[key.stringValue]
     }
 
