@@ -197,12 +197,23 @@ private func encodePaths<T: Encodable>(_ value: T) -> (mine: [String], theirs: [
 
     // Foundation's encoder drops a nested container's own key or position (`["a", "0", "x"]` and `["b", "1"]` on this toolchain) where its
     // decoder keeps them; AemiJSON keeps them on both sides.
-    @Test func encodingANaNThroughNestedContainers() {
-        let keyed = encodePaths(["a": [Meta(x: .infinity)]])
-        #expect(keyed.theirs == ["a", "0", "x"])
-        #expect(keyed.mine == ["a", "0", "meta", "x"])
-        let unkeyed = encodePaths(["b": InList(values: [1, .nan])])
-        #expect(unkeyed.theirs == ["b", "1"])
-        #expect(unkeyed.mine == ["b", "0", "1"])
+    // Each value is typed before the call: inferring the dictionary literals inside the generic call took 113 ms, over
+    // the package's 100 ms budget.
+    @Test func encodingANaNThroughANestedKeyedContainer() {
+        let value: [String: [Meta]] = ["a": [Meta(x: .infinity)]]
+        let keyed = encodePaths(value)
+        let expectedTheirs: [String] = ["a", "0", "x"]
+        let expectedMine: [String] = ["a", "0", "meta", "x"]
+        #expect(keyed.theirs == expectedTheirs)
+        #expect(keyed.mine == expectedMine)
+    }
+
+    @Test func encodingANaNThroughANestedUnkeyedContainer() {
+        let value: [String: InList] = ["b": InList(values: [1, .nan])]
+        let unkeyed = encodePaths(value)
+        let expectedTheirs: [String] = ["b", "1"]
+        let expectedMine: [String] = ["b", "0", "1"]
+        #expect(unkeyed.theirs == expectedTheirs)
+        #expect(unkeyed.mine == expectedMine)
     }
 }

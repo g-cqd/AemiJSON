@@ -81,12 +81,23 @@ struct JSON5LeadingZeroTests {
         #expect(lexeme(text, complete: true) == .invalid)
     }
 
+    /// A zero the scanner must still accept: the text, whether the input is complete, and the outcome. A typed table
+    /// rather than five `#expect` comparisons, each inferred inside the macro: the body took 88–113 ms to type-check,
+    /// against the package's 100 ms budget.
+    private static let zeros: [(text: String, complete: Bool, outcome: JSONNumber.ScanOutcome)] = [
+        ("0", false, .incomplete),  // a digit may still follow
+        ("0", true, .ok(1)),
+        ("0]", false, .ok(1)),
+        ("0.5]", false, .ok(3)),
+        ("0x01]", false, .ok(4))
+    ]
+
     @Test func theSharedLexemeScannerStillScansAZeroThatIsNotFollowedByADigit() {
-        #expect(lexeme("0", complete: false) == .incomplete)  // a digit may still follow
-        #expect(lexeme("0", complete: true) == .ok(1))
-        #expect(lexeme("0]", complete: false) == .ok(1))
-        #expect(lexeme("0.5]", complete: false) == .ok(3))
-        #expect(lexeme("0x01]", complete: false) == .ok(4))
+        for zero in Self.zeros {
+            let outcome: JSONNumber.ScanOutcome = lexeme(zero.text, complete: zero.complete)
+            let matches: Bool = outcome == zero.outcome
+            #expect(matches, "\(zero.text) complete: \(zero.complete)")
+        }
     }
 
     @Test func lenientStillAcceptsALeadingZeroAndStrictStillRejectsIt() {
