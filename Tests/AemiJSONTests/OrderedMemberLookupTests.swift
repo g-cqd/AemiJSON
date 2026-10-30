@@ -20,7 +20,7 @@ private struct IndexKey: CodingKey {
 
 /// Reads `k0` … `k(count-1)`, forward or backward, from a keyed container.
 private struct Wide: Decodable {
-    static let count = 64
+    nonisolated(unsafe) static var count = 64
     nonisolated(unsafe) static var reversed = false
     var values: [Int]
 
@@ -79,6 +79,29 @@ private func counting<T>(_ body: () throws -> T) rethrows -> (T, Int) {
         #expect(wide.values[4] == 40)
     }
 
+    // Up to 32 members the keys are checked in the context's inline table, past it in a heap table: both must see a duplicate.
+    @Test func theLastDuplicateWinsInASmallObject() throws {
+        Wide.reversed = false
+        Wide.count = 20
+        defer { Wide.count = 64 }
+        var text = String(decoding: wideDocument(20), as: UTF8.self)
+        text.removeLast()
+        text += #","k19":999}"#
+        let (wide, comparisons) = try counting { try AemiJSON.JSONDecoder().decode(Wide.self, from: Array(text.utf8)) }
+        #expect(wide.values[19] == 999)
+        #expect(wide.values[18] == 180)
+        #expect(comparisons == 20 * 21, "a duplicate makes every lookup scan the whole object")
+    }
+
+    @Test func aSmallObjectInOrderIsLinear() throws {
+        Wide.reversed = false
+        Wide.count = 20
+        defer { Wide.count = 64 }
+        let (wide, comparisons) = try counting { try AemiJSON.JSONDecoder().decode(Wide.self, from: wideDocument(20)) }
+        #expect(wide.values == (0 ..< 20).map { $0 * 10 })
+        #expect(comparisons <= 2 * 20, "\(comparisons) comparisons for 20 keys in order")
+    }
+
     @Test func anEscapedSpellingOfAKeyIsStillADuplicate() throws {
         Wide.reversed = false
         var text = String(decoding: wideDocument(), as: UTF8.self)
@@ -87,6 +110,16 @@ private func counting<T>(_ body: () throws -> T) rethrows -> (T, Int) {
         let wide = try AemiJSON.JSONDecoder().decode(Wide.self, from: Array(text.utf8))
         #expect(wide.values[5] == 555)
         #expect(wide.values[6] == 60)
+    }
+
+    @Test func anEscapedKeyIsFoundWhenDuplicatesAreErrors() throws {
+        Wide.reversed = false
+        let text = String(decoding: wideDocument(), as: UTF8.self)
+            .replacingOccurrences(of: #""k7":"#, with: #""\u006b7":"#)
+        var decoder = AemiJSON.JSONDecoder()
+        decoder.options.duplicateKeys = .throwError
+        let wide = try decoder.decode(Wide.self, from: Array(text.utf8))
+        #expect(wide.values == (0 ..< Wide.count).map { $0 * 10 })
     }
 
     @Test func missingAndPresentKeysInterleave() throws {
