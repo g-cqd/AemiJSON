@@ -89,7 +89,7 @@ func echo(_ buffer: ByteBuffer) throws -> ByteBuffer {
 }
 ```
 
-**Requirements:** Swift 6.3+ toolchain (built and tested on 6.3); macOS 15+ / iOS 18+ /
+**Requirements:** Swift 6.4 toolchain (built and tested on 6.4.0, the version `.swift-version` pins); macOS 15+ / iOS 18+ /
 tvOS 18+ / watchOS 11+ / visionOS 2+ (the floor is set by the Synchronization framework's
 `Atomic`/`Mutex`).
 
