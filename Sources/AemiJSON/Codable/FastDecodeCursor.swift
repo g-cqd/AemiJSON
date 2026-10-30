@@ -103,12 +103,21 @@ public struct _FastDecodeCursor {
 
     @inlinable public func decode<T: Decodable>(_ type: T.Type, _ key: StaticString) throws -> T {
         guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key) else { throw missing(key) }
-        return try ctx.decodeValue(type, at: vi)
+        return try field(type, vi, key)
     }
 
     @inlinable public func decodeIfPresent<T: Decodable>(_ type: T.Type, _ key: StaticString) throws -> T? {
         guard let vi = try ctx.memberValueIndex(of: index, keyBytes: key), !ctx.isNull(vi) else { return nil }
-        return try ctx.decodeValue(type, at: vi)
+        return try field(type, vi, key)
+    }
+
+    /// The field `key` at value index `vi`, an error in it reported under the field.
+    @inlinable func field<T: Decodable>(_ type: T.Type, _ vi: Int, _ key: StaticString) throws -> T {
+        do {
+            return try ctx.decodeValue(type, at: vi)
+        } catch let error as DecodingError {
+            throw error.prefixed(field: key)
+        }
     }
 
     @usableFromInline func missing(_ key: StaticString) -> DecodingError {
@@ -132,8 +141,12 @@ extension _FastDecodeCursor {
         // containers (`[[[Int]]]`, recursive `@JSONCodable` types) would recurse unguarded.
         try ctx.pushDepth()
         defer { ctx.popDepth() }
-        for _ in 0 ..< count {
-            out.append(try U.__adjsonDecode(_FastDecodeCursor(ctx: ctx, index: i)))
+        for position in 0 ..< count {
+            do {
+                out.append(try U.__adjsonDecode(_FastDecodeCursor(ctx: ctx, index: i)))
+            } catch let error as DecodingError {
+                throw error.prefixed(index: position)
+            }
             i = ctx.uncheckedNextIndex(after: i)
         }
         return out
@@ -179,7 +192,11 @@ extension _FastDecodeCursor {
         defer { ctx.popDepth() }
         for _ in 0 ..< count {
             let key = ctx.decodeString(ctx.uncheckedSlot(i))
-            out[key] = try V.__adjsonDecode(_FastDecodeCursor(ctx: ctx, index: i + 1))
+            do {
+                out[key] = try V.__adjsonDecode(_FastDecodeCursor(ctx: ctx, index: i + 1))
+            } catch let error as DecodingError {
+                throw error.prefixed(member: key)
+            }
             i = ctx.uncheckedNextIndex(after: i + 1)
         }
         return out
@@ -277,7 +294,7 @@ extension _FastDecodeCursor {
     }
     @inlinable public func decodeAt<T: Decodable>(_ type: T.Type, _ vi: Int, _ key: StaticString) throws -> T {
         guard vi >= 0 else { throw missing(key) }
-        return try ctx.decodeValue(type, at: vi)
+        return try field(type, vi, key)
     }
     @inlinable public func decodeIfPresentAt<T: Decodable>(_ type: T.Type, _ vi: Int) throws -> T? {
         guard vi >= 0, !ctx.isNull(vi) else { return nil }

@@ -370,7 +370,12 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
     func decode(_ type: UInt64.Type, forKey key: Key) throws -> UInt64 { try integer(type, key) }
 
     func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T {
-        try ctx.decodeValue(T.self, at: try requireIndex(key))
+        let vi = try requireIndex(key)
+        do {
+            return try ctx.decodeValue(T.self, at: vi)
+        } catch let error as DecodingError {
+            throw error.prefixed(codingPath + [key])
+        }
     }
 
     func nestedContainer<NK: CodingKey>(keyedBy type: NK.Type, forKey key: Key) throws -> KeyedDecodingContainer<NK> {
@@ -475,27 +480,31 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
     mutating func decode<T: Decodable>(_ type: T.Type) throws -> T {
         guard !isAtEnd else { throw end(type) }
         let at = cursor
+        let position = currentIndex
         advance()
-        return try ctx.decodeValue(T.self, at: at)
+        do {
+            return try ctx.decodeValue(T.self, at: at)
+        } catch let error as DecodingError {
+            throw error.prefixed(codingPath + [IndexKey(position)])
+        }
     }
 
     mutating func nestedContainer<NK: CodingKey>(keyedBy type: NK.Type) throws -> KeyedDecodingContainer<NK> {
-        guard !isAtEnd else { throw end(Any.self) }
-        let decoder = TapeDecoder(ctx: ctx, index: cursor, codingPath: codingPath)
-        advance()
+        let decoder = try nextDecoder()
         return try decoder.container(keyedBy: type)
     }
 
     mutating func nestedUnkeyedContainer() throws -> any UnkeyedDecodingContainer {
-        guard !isAtEnd else { throw end(Any.self) }
-        let decoder = TapeDecoder(ctx: ctx, index: cursor, codingPath: codingPath)
-        advance()
+        let decoder = try nextDecoder()
         return try decoder.unkeyedContainer()
     }
 
-    mutating func superDecoder() throws -> any Decoder {
+    mutating func superDecoder() throws -> any Decoder { try nextDecoder() }
+
+    /// A decoder for the next element, whose path ends with the element's position.
+    private mutating func nextDecoder() throws -> TapeDecoder {
         guard !isAtEnd else { throw end(Any.self) }
-        let decoder = TapeDecoder(ctx: ctx, index: cursor, codingPath: codingPath)
+        let decoder = TapeDecoder(ctx: ctx, index: cursor, codingPath: codingPath + [IndexKey(currentIndex)])
         advance()
         return decoder
     }
@@ -506,7 +515,8 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
         let at = cursor
         guard let result = extract(c, at) else {
             throw DecodingError.typeMismatch(
-                T.self, .init(codingPath: codingPath, debugDescription: "Expected \(T.self)"))
+                T.self, .init(codingPath: codingPath + [IndexKey(currentIndex)], debugDescription: "Expected \(T.self)")
+            )
         }
         advance()
         return result
@@ -514,7 +524,8 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
 
     private func end(_ type: Any.Type) -> DecodingError {
         DecodingError.valueNotFound(
-            type, .init(codingPath: codingPath, debugDescription: "Unkeyed container is at end"))
+            type,
+            .init(codingPath: codingPath + [IndexKey(currentIndex)], debugDescription: "Unkeyed container is at end"))
     }
 }
 
@@ -543,7 +554,11 @@ private struct SingleValueTapeDecodingContainer: SingleValueDecodingContainer {
     func decode(_ type: UInt64.Type) throws -> UInt64 { try value(ctx.integer(index, type), type) }
 
     func decode<T: Decodable>(_ type: T.Type) throws -> T {
-        try ctx.decodeValue(T.self, at: index)
+        do {
+            return try ctx.decodeValue(T.self, at: index)
+        } catch let error as DecodingError {
+            throw error.prefixed(codingPath)
+        }
     }
 
     private func value<T>(_ v: T?, _ type: Any.Type) throws -> T {
