@@ -140,11 +140,17 @@ final class DecodeContext {
         }
     }
 
-    @inline(__always) @inlinable func double(_ i: Int) -> Double? {
+    /// The offset and length of the number lexeme at `i`, or nil for a non-number node.
+    @inline(__always) @inlinable func numberSpan(_ i: Int) -> (offset: Int, length: Int)? {
         let s = slot(i)
         guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
         assertBytes(Slot.low(s), Slot.length(s))
-        return JSONNumber.parseDouble(bytes, Slot.low(s), Slot.length(s))
+        return (Slot.low(s), Slot.length(s))
+    }
+
+    @inline(__always) @inlinable func double(_ i: Int) -> Double? {
+        guard let (off, len) = numberSpan(i) else { return nil }
+        return JSONNumber.parseDouble(bytes, off, len)
     }
 
     /// Parse the number node at `i` straight to `Float`, correctly rounded to the nearest `Float`.
@@ -152,18 +158,12 @@ final class DecodeContext {
     /// pattern than rounding the source decimal directly (double rounding). The encoder writes the
     /// shortest `Float` decimal, so this single-rounded parse is what round-trips its exact bits.
     @inline(__always) @inlinable func float(_ i: Int) -> Float? {
-        let s = slot(i)
-        guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
-        assertBytes(Slot.low(s), Slot.length(s))
-        return JSONNumber.parseFloat(bytes, Slot.low(s), Slot.length(s))
+        guard let (off, len) = numberSpan(i) else { return nil }
+        return JSONNumber.parseFloat(bytes, off, len)
     }
 
     @inline(__always) @inlinable func integer<T: FixedWidthInteger>(_ i: Int, _ type: T.Type) -> T? {
-        let s = slot(i)
-        guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
-        let off = Slot.low(s)
-        let len = Slot.length(s)
-        assertBytes(off, len)
+        guard let (off, len) = numberSpan(i) else { return nil }
         if let v = JSONNumber.parseInteger(bytes, off, len, type) { return v }
         // Foundation parity: a Codable integer decode accepts an integral-valued number written in
         // float syntax (`100.0`, `1e2`) — `JSONDecoder` coerces via `T(exactly: Double)`. The exact
@@ -175,11 +175,7 @@ final class DecodeContext {
     /// The raw number lexeme at `i` (the exact source digits), or nil for a non-number node. Lets the
     /// decoder build a `Decimal` at full precision instead of routing through `Double`.
     @inline(__always) @inlinable func numberLexeme(_ i: Int) -> String? {
-        let s = slot(i)
-        guard Slot.tag(s) == JSONKind.number.rawValue else { return nil }
-        let off = Slot.low(s)
-        let len = Slot.length(s)
-        assertBytes(off, len)
+        guard let (off, len) = numberSpan(i) else { return nil }
         return String(decoding: UnsafeBufferPointer(start: bytes + off, count: len), as: UTF8.self)
     }
 
@@ -334,30 +330,24 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
         return ctx.isNull(vi)
     }
 
-    func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool {
+    /// The value of `key` read by `read`, a type mismatch when `read` gives nil.
+    @inline(__always) private func scalar<T>(_ type: T.Type, _ key: Key, _ read: (Int) -> T?) throws -> T {
         let vi = try requireIndex(key)
-        guard let b = ctx.bool(vi) else { throw mismatch(type, key) }
-        return b
+        guard let value = read(vi) else { throw mismatch(type, key) }
+        return value
     }
 
-    func decode(_ type: String.Type, forKey key: Key) throws -> String {
-        let vi = try requireIndex(key)
-        guard let s = ctx.string(vi) else { throw mismatch(type, key) }
-        return s
-    }
+    func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool { try scalar(type, key) { ctx.bool($0) } }
+
+    func decode(_ type: String.Type, forKey key: Key) throws -> String { try scalar(type, key) { ctx.string($0) } }
 
     func decode(_ type: Double.Type, forKey key: Key) throws -> Double {
-        let vi = try requireIndex(key)
-        guard let d = ctx.decodeFloatingPoint(vi) else { throw mismatch(type, key) }
-        return d
+        try scalar(type, key) { ctx.decodeFloatingPoint($0) }
     }
 
-    func decode(_ type: Float.Type, forKey key: Key) throws -> Float {
-        let vi = try requireIndex(key)
-        guard let f = ctx.decodeFloat(vi) else { throw mismatch(type, key) }
-        return f
-    }
+    func decode(_ type: Float.Type, forKey key: Key) throws -> Float { try scalar(type, key) { ctx.decodeFloat($0) } }
 
+    // @dolly:disable near-clone -- the ten fixed-width integer requirements of the Codable container protocol, one line each; no default implementations exist
     func decode(_ type: Int.Type, forKey key: Key) throws -> Int { try integer(type, key) }
     func decode(_ type: Int8.Type, forKey key: Key) throws -> Int8 { try integer(type, key) }
     func decode(_ type: Int16.Type, forKey key: Key) throws -> Int16 { try integer(type, key) }
@@ -368,6 +358,7 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
     func decode(_ type: UInt16.Type, forKey key: Key) throws -> UInt16 { try integer(type, key) }
     func decode(_ type: UInt32.Type, forKey key: Key) throws -> UInt32 { try integer(type, key) }
     func decode(_ type: UInt64.Type, forKey key: Key) throws -> UInt64 { try integer(type, key) }
+    // @dolly:enable near-clone
 
     func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T {
         let vi = try requireIndex(key)
@@ -466,6 +457,7 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
     mutating func decode(_ type: Float.Type) throws -> Float {
         try scalar { c, i in c.decodeFloat(i) }
     }
+    // @dolly:disable near-clone -- the ten fixed-width integer requirements of the Codable container protocol, one line each; no default implementations exist
     mutating func decode(_ type: Int.Type) throws -> Int { try scalar { c, i in c.integer(i, type) } }
     mutating func decode(_ type: Int8.Type) throws -> Int8 { try scalar { c, i in c.integer(i, type) } }
     mutating func decode(_ type: Int16.Type) throws -> Int16 { try scalar { c, i in c.integer(i, type) } }
@@ -476,6 +468,7 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
     mutating func decode(_ type: UInt16.Type) throws -> UInt16 { try scalar { c, i in c.integer(i, type) } }
     mutating func decode(_ type: UInt32.Type) throws -> UInt32 { try scalar { c, i in c.integer(i, type) } }
     mutating func decode(_ type: UInt64.Type) throws -> UInt64 { try scalar { c, i in c.integer(i, type) } }
+    // @dolly:enable near-clone
 
     mutating func decode<T: Decodable>(_ type: T.Type) throws -> T {
         guard !isAtEnd else { throw end(type) }
@@ -542,6 +535,7 @@ private struct SingleValueTapeDecodingContainer: SingleValueDecodingContainer {
     func decode(_ type: String.Type) throws -> String { try value(ctx.string(index), type) }
     func decode(_ type: Double.Type) throws -> Double { try value(ctx.decodeFloatingPoint(index), type) }
     func decode(_ type: Float.Type) throws -> Float { try value(ctx.decodeFloat(index), type) }
+    // @dolly:disable near-clone -- the ten fixed-width integer requirements of the Codable container protocol, one line each; no default implementations exist
     func decode(_ type: Int.Type) throws -> Int { try value(ctx.integer(index, type), type) }
     func decode(_ type: Int8.Type) throws -> Int8 { try value(ctx.integer(index, type), type) }
     func decode(_ type: Int16.Type) throws -> Int16 { try value(ctx.integer(index, type), type) }
@@ -552,6 +546,7 @@ private struct SingleValueTapeDecodingContainer: SingleValueDecodingContainer {
     func decode(_ type: UInt16.Type) throws -> UInt16 { try value(ctx.integer(index, type), type) }
     func decode(_ type: UInt32.Type) throws -> UInt32 { try value(ctx.integer(index, type), type) }
     func decode(_ type: UInt64.Type) throws -> UInt64 { try value(ctx.integer(index, type), type) }
+    // @dolly:enable near-clone
 
     func decode<T: Decodable>(_ type: T.Type) throws -> T {
         do {
