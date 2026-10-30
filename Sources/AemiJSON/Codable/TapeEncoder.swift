@@ -107,13 +107,22 @@ final class EncodeState {
         let base = encoders.count
         encoders.append(Self.noContainer)
         defer { encoders.removeLast(encoders.count - base) }
-        try body(TapeEncoder(state: self, slot: base))
+        try body(TapeEncoder(state: self, slot: base, codingPath: []))
     }
 
     /// An encoder for a `superEncoder` call, whose use the protocol does not scope: its slot lives until the enclosing value ends.
-    func makeEncoder() -> TapeEncoder {
+    func makeEncoder(codingPath: [any CodingKey]) -> TapeEncoder {
         encoders.append(Self.noContainer)
-        return TapeEncoder(state: self, slot: encoders.count - 1)
+        return TapeEncoder(state: self, slot: encoders.count - 1, codingPath: codingPath)
+    }
+
+    /// Runs `body`, an `EncodingError` from it reported under `prefix` (see CodingPaths.swift). The prefix is built only on that error.
+    @inline(__always) func under<R>(_ prefix: @autoclosure () -> [any CodingKey], _ body: () throws -> R) throws -> R {
+        do {
+            return try body()
+        } catch let error as EncodingError {
+            throw error.prefixed(prefix())
+        }
     }
 
     func encodeDate(_ date: Date) throws {
@@ -207,11 +216,12 @@ final class EncodeState {
     }
 }
 
-/// The `Encoder` handed to `encode(to:)`: the shared state and a slot in its `encoders`, two words, so the existential holds it inline.
+/// The `Encoder` handed to `encode(to:)`: the shared state, a slot in its `encoders` and the path below the value being encoded (empty but
+/// for a `superEncoder`), three words, so the existential holds it inline.
 struct TapeEncoder: Encoder {
     let state: EncodeState
     let slot: Int
-    var codingPath: [any CodingKey] { [] }
+    let codingPath: [any CodingKey]
     var userInfo: [CodingUserInfoKey: Any] { state.userInfo }
 
     func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedEncodingContainer<Key> {
@@ -224,7 +234,8 @@ struct TapeEncoder: Encoder {
             precondition(current >= 0 && current & 1 == 1, "Encoder already requested a different container type.")
             frame = current >> 1
         }
-        return KeyedEncodingContainer(KeyedTapeEncodingContainer<Key>(state: state, frame: frame))
+        return KeyedEncodingContainer(
+            KeyedTapeEncodingContainer<Key>(state: state, frame: frame, codingPath: codingPath))
     }
 
     func unkeyedContainer() -> any UnkeyedEncodingContainer {
@@ -237,7 +248,7 @@ struct TapeEncoder: Encoder {
             precondition(current >= 0 && current & 1 == 0, "Encoder already requested a different container type.")
             frame = current >> 1
         }
-        return UnkeyedTapeEncodingContainer(state: state, frame: frame)
+        return UnkeyedTapeEncodingContainer(state: state, frame: frame, codingPath: codingPath)
     }
 
     func singleValueContainer() -> any SingleValueEncodingContainer {
@@ -246,7 +257,7 @@ struct TapeEncoder: Encoder {
             current == EncodeState.noContainer || current == EncodeState.singleValueSlot,
             "Encoder already requested a different container type.")
         state.encoders[slot] = EncodeState.singleValueSlot
-        return SingleValueTapeEncodingContainer(state: state)
+        return SingleValueTapeEncodingContainer(state: state, codingPath: codingPath)
     }
 }
 
@@ -255,7 +266,7 @@ struct TapeEncoder: Encoder {
 private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContainerProtocol {
     let state: EncodeState
     let frame: Int
-    var codingPath: [any CodingKey] { [] }
+    let codingPath: [any CodingKey]
 
     @inline(__always) func member(_ key: Key) {
         state.beginMember(frame)
@@ -276,11 +287,11 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
     }
     mutating func encode(_ v: Double, forKey key: Key) throws {
         member(key)
-        try state.appendDouble(v)
+        try state.under(codingPath + [key]) { try state.appendDouble(v) }
     }
     mutating func encode(_ v: Float, forKey key: Key) throws {
         member(key)
-        try state.appendFloat(v)
+        try state.under(codingPath + [key]) { try state.appendFloat(v) }
     }
     mutating func encode(_ v: Int, forKey key: Key) {
         member(key)
@@ -325,7 +336,7 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
 
     mutating func encode<T: Encodable>(_ v: T, forKey key: Key) throws {
         member(key)
-        try state.encodeValue(v)
+        try state.under(codingPath + [key]) { try state.encodeValue(v) }
     }
 
     mutating func nestedContainer<NK: CodingKey>(
@@ -333,13 +344,14 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
     ) -> KeyedEncodingContainer<NK> {
         member(key)
         let f = state.open(object: true)
-        return KeyedEncodingContainer(KeyedTapeEncodingContainer<NK>(state: state, frame: f))
+        return KeyedEncodingContainer(
+            KeyedTapeEncodingContainer<NK>(state: state, frame: f, codingPath: codingPath + [key]))
     }
 
     mutating func nestedUnkeyedContainer(forKey key: Key) -> any UnkeyedEncodingContainer {
         member(key)
         let f = state.open(object: false)
-        return UnkeyedTapeEncodingContainer(state: state, frame: f)
+        return UnkeyedTapeEncodingContainer(state: state, frame: f, codingPath: codingPath + [key])
     }
 
     mutating func superEncoder() -> any Encoder {
@@ -347,11 +359,11 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
         // encoder would write a value into the open object with no preceding key — malformed JSON.
         state.beginMember(frame)
         state.writeMemberKey(state.transformedKey("super"))
-        return state.makeEncoder()
+        return state.makeEncoder(codingPath: codingPath + [MemberKey("super")])
     }
     mutating func superEncoder(forKey key: Key) -> any Encoder {
         member(key)
-        return state.makeEncoder()
+        return state.makeEncoder(codingPath: codingPath + [key])
     }
 }
 
@@ -360,7 +372,7 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
 private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
     let state: EncodeState
     let frame: Int
-    var codingPath: [any CodingKey] { [] }
+    let codingPath: [any CodingKey]
     var count: Int { state.counts[frame] }
 
     @inline(__always) func elem() { state.beginMember(frame) }
@@ -378,12 +390,14 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
         state.w.writeString(v)
     }
     mutating func encode(_ v: Double) throws {
+        let position = count
         elem()
-        try state.appendDouble(v)
+        try state.under(codingPath + [IndexKey(position)]) { try state.appendDouble(v) }
     }
     mutating func encode(_ v: Float) throws {
+        let position = count
         elem()
-        try state.appendFloat(v)
+        try state.under(codingPath + [IndexKey(position)]) { try state.appendFloat(v) }
     }
     mutating func encode(_ v: Int) {
         elem()
@@ -427,25 +441,29 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
     }
 
     mutating func encode<T: Encodable>(_ v: T) throws {
+        let position = count
         elem()
-        try state.encodeValue(v)
+        try state.under(codingPath + [IndexKey(position)]) { try state.encodeValue(v) }
     }
 
     mutating func nestedContainer<NK: CodingKey>(keyedBy keyType: NK.Type) -> KeyedEncodingContainer<NK> {
+        let path = codingPath + [IndexKey(count)]
         elem()
         let f = state.open(object: true)
-        return KeyedEncodingContainer(KeyedTapeEncodingContainer<NK>(state: state, frame: f))
+        return KeyedEncodingContainer(KeyedTapeEncodingContainer<NK>(state: state, frame: f, codingPath: path))
     }
 
     mutating func nestedUnkeyedContainer() -> any UnkeyedEncodingContainer {
+        let path = codingPath + [IndexKey(count)]
         elem()
         let f = state.open(object: false)
-        return UnkeyedTapeEncodingContainer(state: state, frame: f)
+        return UnkeyedTapeEncodingContainer(state: state, frame: f, codingPath: path)
     }
 
     mutating func superEncoder() -> any Encoder {
+        let path = codingPath + [IndexKey(count)]
         elem()
-        return state.makeEncoder()
+        return state.makeEncoder(codingPath: path)
     }
 }
 
@@ -453,16 +471,16 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
 
 private struct SingleValueTapeEncodingContainer: SingleValueEncodingContainer {
     let state: EncodeState
-    var codingPath: [any CodingKey] { [] }
+    let codingPath: [any CodingKey]
 
     mutating func encodeNil() { state.w.writeNull() }
     mutating func encode(_ v: Bool) { state.w.writeBool(v) }
     mutating func encode(_ v: String) { state.w.writeString(v) }
     mutating func encode(_ v: Double) throws {
-        try state.appendDouble(v)
+        try state.under(codingPath) { try state.appendDouble(v) }
     }
     mutating func encode(_ v: Float) throws {
-        try state.appendFloat(v)
+        try state.under(codingPath) { try state.appendFloat(v) }
     }
     mutating func encode(_ v: Int) { state.w.writeInteger(v) }
     mutating func encode(_ v: Int8) { state.w.writeInteger(v) }
@@ -476,6 +494,6 @@ private struct SingleValueTapeEncodingContainer: SingleValueEncodingContainer {
     mutating func encode(_ v: UInt64) { state.w.writeInteger(v) }
 
     mutating func encode<T: Encodable>(_ v: T) throws {
-        try state.encodeValue(v)
+        try state.under(codingPath) { try state.encodeValue(v) }
     }
 }
