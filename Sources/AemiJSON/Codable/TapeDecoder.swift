@@ -49,6 +49,10 @@ final class DecodeContext {
     /// of an array repeat the same keys, so each distinct key is converted once per decode rather than
     /// once per object. Capped, so a document of ever-new keys cannot grow it without bound.
     var convertedKeys: [String: String] = [:]
+    #if DEBUG
+        /// The comparison counter bound when the decode began (see `KeyComparisonCounter`).
+        @usableFromInline let keyComparisons = KeyComparisonCounter.current
+    #endif
 
     // INVARIANT: `bytes`/`tape` are borrowed from `doc`'s storage for the duration of one
     // `withBuffers` scope (see Bytes.swift), and are valid only inside it: a `ByteSource` may lend a
@@ -197,6 +201,9 @@ final class DecodeContext {
             let koff = Slot.low(ks)
             let klen = Slot.length(ks)
             assertBytes(koff, klen)
+            #if DEBUG
+                keyComparisons?.count += 1
+            #endif
             if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, json5: doc.isJSON5, key) {
                 found = valIdx
                 if keysAreUnique { break }  // unique keys → first match is the only match
