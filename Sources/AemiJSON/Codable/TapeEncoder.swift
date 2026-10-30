@@ -1,4 +1,5 @@
 import AemiJSONCore
+
 #if canImport(FoundationEssentials)
     import FoundationEssentials
 #else
@@ -21,14 +22,16 @@ final class EncodeState {
     /// pretty style — so the encoder never re-parses to indent (sorted output still does, since the
     /// streaming writer can't reorder members).
     let pretty: Bool
-    var kinds: [Bool] = []  // true = object, false = array
-    var counts: [Int] = []
+    // The frame stacks and the depth are exempt from the run-time exclusivity check, like the writer's buffer (roadmap 0003): each access
+    // is a push, a pop, or one element read or bumped in place, and none spans a call into user code.
+    @exclusivity(unchecked) var kinds: [Bool] = []  // true = object, false = array
+    @exclusivity(unchecked) var counts: [Int] = []
     // Symmetric with the decoder's `maxDecodeDepth`: the Codable encode path is unavoidably
     // recursive (`encodeValue` → `value.encode(to:)` → a container → `encodeValue`), so a
     // recursive / self-referential `Encodable` would overflow the native stack. `encodeValue` bumps
     // `encodeDepth` on entry and throws past `maxEncodeDepth`. The depth is threaded across the
     // `EncodeState` ↔ `_JSONByteWriter` (fast-path) boundary so it can't be reset mid-recursion.
-    var encodeDepth = 0
+    @exclusivity(unchecked) var encodeDepth = 0
     let maxEncodeDepth: Int
 
     init(
