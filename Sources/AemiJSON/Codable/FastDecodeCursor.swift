@@ -29,6 +29,9 @@ extension DecodeContext {
             let koff = Slot.low(ks)
             let klen = Slot.length(ks)
             assertBytes(koff, klen)
+            #if DEBUG
+                keyComparisons?.count += 1
+            #endif
             if JSONKey.matches(bytes, koff, klen, escaped: Slot.flags(ks) & 1 == 1, json5: doc.isJSON5, lit) {
                 found = valIdx
                 if keysAreUnique { break }  // unique keys → first match is the only match
