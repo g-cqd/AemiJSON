@@ -1,0 +1,19 @@
+import AemiJSON
+import Foundation
+struct P: Codable { var n: Int }
+struct U: Codable { var id: Int; var p: P; var tags: [Int] }
+let bad = Data(#"[{"id":1,"p":{"n":1},"tags":[1]},{"id":2,"p":{"n":"x"},"tags":[1]}]"#.utf8)
+let bad2 = Data(#"[{"id":1,"p":{"n":1},"tags":[1,"y"]}]"#.utf8)
+let bad3 = Data(#"[{"id":1,"p":{}, "tags":[]}]"#.utf8)
+for d in [bad, bad2, bad3] {
+  for (name, f) in [("Foundation", { try Foundation.JSONDecoder().decode([U].self, from: d) }), ("AemiJSON", { try AemiJSON.JSONDecoder().decode([U].self, from: d) })] as [(String, () throws -> [U])] {
+    do { _ = try f() } catch let e as DecodingError {
+      switch e { case .typeMismatch(_, let c), .valueNotFound(_, let c), .keyNotFound(_, let c), .dataCorrupted(let c):
+        print(name, c.codingPath.map { $0.intValue.map(String.init) ?? $0.stringValue }) ; @unknown default: break }
+    } catch { print(name, error) }
+  }
+}
+struct E: Encodable { var v: [Double] }
+for (name, f) in [("Foundation", { _ = try Foundation.JSONEncoder().encode([E(v: [1, .nan])]) }), ("AemiJSON", { _ = try AemiJSON.JSONEncoder().encode([E(v: [1, .nan])]) })] as [(String, () throws -> Void)] {
+  do { try f() } catch let e as EncodingError { if case .invalidValue(_, let c) = e { print(name, "encode", c.codingPath.map { $0.intValue.map(String.init) ?? $0.stringValue }) } } catch { print(error) }
+}
