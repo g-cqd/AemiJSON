@@ -33,6 +33,12 @@ final class EncodeState {
     // `EncodeState` ↔ `_JSONByteWriter` (fast-path) boundary so it can't be reset mid-recursion.
     @exclusivity(unchecked) var encodeDepth = 0
     let maxEncodeDepth: Int
+    /// The container each live `TapeEncoder` has opened, by its slot: `noContainer`, `singleValueSlot`, or a frame shifted left once
+    /// with the low bit set for an object. Encoders are values (an encoder per value was a class, and half a Codable encode's mallocs),
+    /// so the state they used to hold lives here. Exempt from the run-time exclusivity check like the frame stacks.
+    @exclusivity(unchecked) var encoders: [Int] = []
+    static let noContainer = -1
+    static let singleValueSlot = -2
 
     init(
         _ w: JSONWriter, options: JSONEncodingOptions = .rfc8259,
@@ -77,33 +83,43 @@ final class EncodeState {
     func encodeValue<T: Encodable>(_ value: T) throws {
         encodeDepth += 1
         defer { encodeDepth -= 1 }
-        guard encodeDepth <= maxEncodeDepth else {
-            throw EncodingError.invalidValue(
-                value,
-                .init(
-                    codingPath: [], debugDescription: "Encoding exceeded the maximum nesting depth (\(maxEncodeDepth))")
-            )
-        }
-        if let date = value as? Date {
+        guard encodeDepth <= maxEncodeDepth else { throw EncodingError.nestingTooDeep(value, maxDepth: maxEncodeDepth) }
+        // Metatype compares first: a cast to `Date` or to an existential is a runtime call per value, and a cast that succeeds into
+        // `any AemiJSONFastEncodable` boxes a value larger than the existential's inline buffer.
+        if T.self == Date.self, let date = value as? Date {
             try encodeDate(date)
-        } else if let data = value as? Data {
+        } else if T.self == Data.self, let data = value as? Data {
             try encodeData(data)
-        } else if let decimal = value as? Decimal {
+        } else if T.self == Decimal.self, let decimal = value as? Decimal {
             try encodeDecimal(decimal)
-        } else if !pretty, !keyStrategyActive, let fast = value as? any AemiJSONFastEncodable {
+        } else if !pretty, !keyStrategyActive, let fastType = T.self as? any AemiJSONFastEncodable.Type {
             // The fast writer (`_JSONByteWriter`) is compact-only, so pretty output takes the generic
             // container path (which threads the indent through `beginMember`/`closeDownTo`); a
             // `@JSONCodable` type keeps its standard `Encodable` conformance for exactly this fallback.
-            try encodeFast(fast)
+            try encodeFast(value, as: fastType)
         } else {
-            try value.encode(to: TapeEncoder(state: self))
+            try withEncoder { try value.encode(to: $0) }
         }
+    }
+
+    /// Runs `body` with a fresh encoder; its slot, and those of any encoder handed out below it (`superEncoder`), end with the call.
+    @inline(__always) func withEncoder(_ body: (TapeEncoder) throws -> Void) rethrows {
+        let base = encoders.count
+        encoders.append(Self.noContainer)
+        defer { encoders.removeLast(encoders.count - base) }
+        try body(TapeEncoder(state: self, slot: base))
+    }
+
+    /// An encoder for a `superEncoder` call, whose use the protocol does not scope: its slot lives until the enclosing value ends.
+    func makeEncoder() -> TapeEncoder {
+        encoders.append(Self.noContainer)
+        return TapeEncoder(state: self, slot: encoders.count - 1)
     }
 
     func encodeDate(_ date: Date) throws {
         switch strategies.date {
             case .deferredToDate:
-                try date.encode(to: TapeEncoder(state: self))
+                try withEncoder { try date.encode(to: $0) }
             case .secondsSince1970:
                 try appendDouble(date.timeIntervalSince1970)
             case .millisecondsSince1970:
@@ -117,18 +133,18 @@ final class EncodeState {
                     w.writeString(formatter.string(from: date))
             #endif
             case .custom(let body):
-                try body(date, TapeEncoder(state: self))
+                try withEncoder { try body(date, $0) }
         }
     }
 
     func encodeData(_ data: Data) throws {
         switch strategies.data {
             case .deferredToData:
-                try data.encode(to: TapeEncoder(state: self))
+                try withEncoder { try data.encode(to: $0) }
             case .base64:
                 w.writeString(data.base64EncodedString())
             case .custom(let body):
-                try body(data, TapeEncoder(state: self))
+                try withEncoder { try body(data, $0) }
         }
     }
 
@@ -176,7 +192,13 @@ final class EncodeState {
 
     /// Bridge a fast-path value nested inside a generic encode: move the shared buffer
     /// into a value `_JSONByteWriter` (so its appends don't trigger CoW), then move back.
-    @inline(__always) func encodeFast(_ fast: any AemiJSONFastEncodable) throws {
+    @inline(__always) func encodeFast<T, F: AemiJSONFastEncodable>(_ value: T, as _: F.Type) throws {
+        // `T` is `F`: the cast only names the conformance, without boxing the value.
+        guard let fast = value as? F else { preconditionFailure("AemiJSON: \(T.self) is not \(F.self)") }
+        try encodeFast(fast)
+    }
+
+    @inline(__always) func encodeFast<F: AemiJSONFastEncodable>(_ fast: F) throws {
         var bw = _JSONByteWriter(adopting: w.bytes, options: options, maxDepth: maxEncodeDepth)
         bw.depth = encodeDepth  // continue the depth count into the fast writer (no reset)
         w.bytes = []
@@ -185,59 +207,45 @@ final class EncodeState {
     }
 }
 
-final class TapeEncoder: Encoder {
+/// The `Encoder` handed to `encode(to:)`: the shared state and a slot in its `encoders`, two words, so the existential holds it inline.
+struct TapeEncoder: Encoder {
     let state: EncodeState
+    let slot: Int
     var codingPath: [any CodingKey] { [] }
     var userInfo: [CodingUserInfoKey: Any] { state.userInfo }
 
-    private enum ContainerState {
-        case keyed(Int)
-        case unkeyed(Int)
-        case singleValue
-    }
-    private var containerState: ContainerState?
-
-    init(state: EncodeState) {
-        self.state = state
-    }
-
     func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedEncodingContainer<Key> {
+        let current = state.encoders[slot]
         let frame: Int
-        switch containerState {
-            case .keyed(let existing):
-                frame = existing
-            case .unkeyed, .singleValue:
-                preconditionFailure("Encoder already requested a different container type.")
-            case nil:
-                frame = state.open(object: true)
-                containerState = .keyed(frame)
+        if current == EncodeState.noContainer {
+            frame = state.open(object: true)
+            state.encoders[slot] = frame << 1 | 1
+        } else {
+            precondition(current >= 0 && current & 1 == 1, "Encoder already requested a different container type.")
+            frame = current >> 1
         }
         return KeyedEncodingContainer(KeyedTapeEncodingContainer<Key>(state: state, frame: frame))
     }
 
     func unkeyedContainer() -> any UnkeyedEncodingContainer {
+        let current = state.encoders[slot]
         let frame: Int
-        switch containerState {
-            case .unkeyed(let existing):
-                frame = existing
-            case .keyed, .singleValue:
-                preconditionFailure("Encoder already requested a different container type.")
-            case nil:
-                frame = state.open(object: false)
-                containerState = .unkeyed(frame)
+        if current == EncodeState.noContainer {
+            frame = state.open(object: false)
+            state.encoders[slot] = frame << 1
+        } else {
+            precondition(current >= 0 && current & 1 == 0, "Encoder already requested a different container type.")
+            frame = current >> 1
         }
         return UnkeyedTapeEncodingContainer(state: state, frame: frame)
     }
 
     func singleValueContainer() -> any SingleValueEncodingContainer {
-        switch containerState {
-            case .singleValue:
-                break
-            case .keyed, .unkeyed:
-                preconditionFailure("Encoder already requested a different container type.")
-            case nil:
-                containerState = .singleValue
-        }
+        let current = state.encoders[slot]
+        precondition(
+            current == EncodeState.noContainer || current == EncodeState.singleValueSlot,
+            "Encoder already requested a different container type.")
+        state.encoders[slot] = EncodeState.singleValueSlot
         return SingleValueTapeEncodingContainer(state: state)
     }
 }
@@ -339,11 +347,11 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
         // encoder would write a value into the open object with no preceding key — malformed JSON.
         state.beginMember(frame)
         state.writeMemberKey(state.transformedKey("super"))
-        return TapeEncoder(state: state)
+        return state.makeEncoder()
     }
     mutating func superEncoder(forKey key: Key) -> any Encoder {
         member(key)
-        return TapeEncoder(state: state)
+        return state.makeEncoder()
     }
 }
 
@@ -437,7 +445,7 @@ private struct UnkeyedTapeEncodingContainer: UnkeyedEncodingContainer {
 
     mutating func superEncoder() -> any Encoder {
         elem()
-        return TapeEncoder(state: state)
+        return state.makeEncoder()
     }
 }
 

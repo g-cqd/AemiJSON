@@ -70,10 +70,7 @@ public struct _JSONByteWriter {
     @inlinable public mutating func encode<T: Encodable>(_ v: T) throws {
         depth += 1
         defer { depth -= 1 }
-        guard depth <= maxDepth else {
-            throw EncodingError.invalidValue(
-                v, .init(codingPath: [], debugDescription: "Encoding exceeded the maximum nesting depth (\(maxDepth))"))
-        }
+        guard depth <= maxDepth else { throw EncodingError.nestingTooDeep(v, maxDepth: maxDepth) }
         if let fast = v as? any AemiJSONFastEncodable {
             try fast.__adjsonEncode(into: &self)
         } else {
@@ -91,8 +88,20 @@ public struct _JSONByteWriter {
         bytes = []
         let state = EncodeState(writer, options: options, maxEncodeDepth: maxDepth)
         state.encodeDepth = depth  // continue the depth count into the generic encoder (no reset)
-        try v.encode(to: TapeEncoder(state: state))
+        try state.withEncoder { try v.encode(to: $0) }
         state.closeDownTo(0)
         bytes = writer.bytes
+    }
+}
+
+extension EncodingError {
+    /// The error every encoder throws past its `maxEncodingDepth`, so a recursive value fails rather than overflowing the stack.
+    @usableFromInline static func nestingTooDeep(_ value: Any, maxDepth: Int, codingPath: [any CodingKey] = [])
+        -> EncodingError
+    {
+        .invalidValue(
+            value,
+            .init(codingPath: codingPath, debugDescription: "Encoding exceeded the maximum nesting depth (\(maxDepth))")
+        )
     }
 }
