@@ -12,7 +12,7 @@
 # Exit: 0 clean, 1 a tool found something, 2 a tool could not be installed or run.
 set -eu
 
-AEMI=7558abfc44989ff84299dea9b3e70f599eb9bf7e
+AEMI=1580771faf9133ef8c72d0dc290b1d236678177d
 
 # Benchmarks/ is left out: the Benchmark plugin finds a global named `benchmarks` by name, which no syntax-level
 # analyzer can see, so every benchmark looks like dead code. The corpus is otherwise the whole package: reachability
