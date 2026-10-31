@@ -49,9 +49,9 @@ jobs:
     # Additional jobs below cover platform builds, fuzzing, benchmarks, and Pages.
     uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@1580771faf9133ef8c72d0dc290b1d236678177d # aemi 1580771
     with:
-      # Static analysis is the `static-analysis` job below, not the reusable's: that one installs
-      # arcleak 0.7.1 / dolly 0.6.1 / deadwood 0.7.1, and gates only arcleak because it predates
-      # dolly's repository-relative fingerprints.
+      # Static analysis is the `static-analysis` job below, not the reusable's: that job runs
+      # Scripts/analyzers.sh, the family's script with aemi's lock (deadwood 0.13.0, dolly 0.13.0,
+      # arcleak 0.14.0), and this repository's baselines.
       enable-static-analysis: false
       dev-env-var: AEMIJSON_DEV
       # Sanitizers run in the path-gated `sanitizers` job below, which also covers UBSan; the reusable's copy
