@@ -47,11 +47,11 @@ jobs:
   quality:
     # Shared build/test and quality checks resolve the published Aemi dependency.
     # Additional jobs below cover platform builds, fuzzing, benchmarks, and Pages.
-    uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@45a62fdf58401cfb35a0b03d69ef395da9dfa7ae # aemi 45a62fd
+    uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@b3101fee9486b1af7ee414165589ecc548708df5 # aemi b3101fe
     with:
       # Static analysis is the `static-analysis` job below, not the reusable's: that job runs
       # Scripts/analyzers.sh, the family's script with aemi's lock (deadwood 0.13.0, dolly 0.13.0,
-      # arcleak 0.14.0), and this repository's baselines.
+      # arcleak 0.15.0), and this repository's baselines.
       enable-static-analysis: false
       dev-env-var: AEMIJSON_DEV
       # Sanitizers run in the path-gated `sanitizers` job below, which also covers UBSan; the reusable's copy
