@@ -20,10 +20,16 @@ extension Array: AemiJSONFastDecodable where Element: AemiJSONFastDecodable {
 extension Array: AemiJSONFastEncodable where Element: AemiJSONFastEncodable {
     @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) throws {
         w.beginArray()
-        var first = true
-        for e in self {
-            if first { first = false } else { w.comma() }
-            try e.__adjsonEncode(into: &w)
+        // One `do` around the loop: a `do` per element costs more on success than the position does (roadmap 0005).
+        var position = 0
+        do {
+            for e in self {
+                if position > 0 { w.comma() }
+                try e.__adjsonEncode(into: &w)
+                position += 1
+            }
+        } catch let error as EncodingError {
+            throw error.prefixed(index: position)
         }
         w.endArray()
     }
@@ -104,11 +110,18 @@ extension Dictionary: AemiJSONFastDecodable where Key == String, Value: AemiJSON
 extension Dictionary: AemiJSONFastEncodable where Key == String, Value: AemiJSONFastEncodable {
     @inlinable public func __adjsonEncode(into w: inout _JSONByteWriter) throws {
         w.beginObject()
-        var first = true
-        for (key, value) in self {
-            if first { first = false } else { w.comma() }
-            w.dynamicKey(key)
-            try value.__adjsonEncode(into: &w)
+        // As for arrays, one `do` around the loop. A dictionary iterates in index order, so the failing member's key is read back from
+        // its position.
+        var position = 0
+        do {
+            for (key, value) in self {
+                if position > 0 { w.comma() }
+                w.dynamicKey(key)
+                try value.__adjsonEncode(into: &w)
+                position += 1
+            }
+        } catch let error as EncodingError {
+            throw error.prefixed(member: self[index(startIndex, offsetBy: position)].key)
         }
         w.endObject()
     }

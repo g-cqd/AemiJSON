@@ -52,6 +52,12 @@ extension EncodingError {
             )
         )
     }
+
+    /// This error under the array position `index`.
+    @usableFromInline func prefixed(index: Int) -> EncodingError { prefixed([IndexKey(index)]) }
+
+    /// This error under the dictionary member `key`.
+    @usableFromInline func prefixed(member key: String) -> EncodingError { prefixed([MemberKey(key)]) }
 }
 
 /// A member key of a decoded dictionary, for a coding path.

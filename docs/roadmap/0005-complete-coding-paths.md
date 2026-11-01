@@ -43,7 +43,16 @@ mismatch or an exhausted container reports the current position. A keyed `superE
 **Measured.** The probe's in-process minimums against `9b3ed2d` were within 1–2% on both sides: decode 6.62–7.49 vs 6.56–7.43 ms,
 encode 5.60–5.69 vs 5.50–6.29 ms. p50 values meant nothing at load average 117. 459 tests pass. Lint and analyzers are as at base.
 
+**Fast-path encodes (2026-11-01).** The fast path's `Array` and `[String: Value]` encodes threw without the element's position or the
+member's key: a NaN at `v[1]` came out as `["0", "v"]`. They now put it in front, `["0", "v", "1"]`, as both decoders do for the same
+shape. One `do` wraps each loop; a `do` per element cost 12% more instructions on a typed-array encode, the loop-wide one 0.3%.
+Foundation's own encoder is not stable on this case: `["0", "v", "1"]` on macOS 26, `["0", "v"]` on macOS 27 and Linux. The test
+accepts either for Foundation and asserts AemiJSON's.
+
 ## Not done
+
+- **`@JSONCodable` field encodes.** The generated `__adjsonEncode` writes `w.key(...)` and the value without a `do`, so an error from a
+  field's value lacks the field's key. Fixing it changes every expansion `SchemableMacroTests` and the macro tests compare.
 
 - **Absolute `codingPath` reads.** A type that reads `decoder.codingPath` or `encoder.codingPath` in its own `init(from:)` or
   `encode(to:)` still sees the path below the nearest generic `decode`/`encode`, usually `[]`. The errors are right; the property is not.
