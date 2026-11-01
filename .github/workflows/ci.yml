@@ -47,7 +47,7 @@ jobs:
   quality:
     # Shared build/test and quality checks resolve the published Aemi dependency.
     # Additional jobs below cover platform builds, fuzzing, benchmarks, and Pages.
-    uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@0ef4279dce0c90ecb234c0a10e56c189608f343e # aemi 0ef4279
+    uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@2a0ce71b93918ffdcc961ba4db8d01b66e5915f1 # aemi 2a0ce71
     with:
       # Static analysis is the `static-analysis` job below, not the reusable's: that job runs
       # Scripts/analyzers.sh, the family's script with aemi's lock (deadwood 0.13.0, dolly 0.13.0,
