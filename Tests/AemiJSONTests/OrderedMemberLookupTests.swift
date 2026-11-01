@@ -37,11 +37,16 @@ private func wideDocument(_ n: Int = Wide.count) -> [UInt8] {
     Array(("{" + (0 ..< n).map { "\"k\($0)\":\($0 * 10)" }.joined(separator: ",") + "}").utf8)
 }
 
-/// Decodes with the comparison counter bound and returns the result and the count.
-private func counting<T>(_ body: () throws -> T) rethrows -> (T, Int) {
-    let counter = KeyComparisonCounter()
-    let value = try KeyComparisonCounter.$current.withValue(counter) { try body() }
-    return (value, counter.count)
+/// Decodes with the comparison counter bound and returns the result and the count. The counter exists in debug builds only; release
+/// builds return no count, and the tests check the decoded values alone.
+private func counting<T>(_ body: () throws -> T) rethrows -> (T, Int?) {
+    #if DEBUG
+        let counter = KeyComparisonCounter()
+        let value = try KeyComparisonCounter.$current.withValue(counter) { try body() }
+        return (value, counter.count)
+    #else
+        return (try body(), nil)
+    #endif
 }
 
 @Suite(.serialized) struct OrderedMemberLookupTests {
@@ -49,7 +54,9 @@ private func counting<T>(_ body: () throws -> T) rethrows -> (T, Int) {
         Wide.reversed = false
         let (wide, comparisons) = try counting { try AemiJSON.JSONDecoder().decode(Wide.self, from: wideDocument()) }
         #expect(wide.values == (0 ..< Wide.count).map { $0 * 10 })
-        #expect(comparisons <= 2 * Wide.count, "\(comparisons) comparisons for \(Wide.count) keys in order")
+        if let comparisons {
+            #expect(comparisons <= 2 * Wide.count, "\(comparisons) comparisons for \(Wide.count) keys in order")
+        }
     }
 
     @Test func inOrderLookupIsLinearWhenDuplicatesAreErrors() throws {
@@ -58,7 +65,9 @@ private func counting<T>(_ body: () throws -> T) rethrows -> (T, Int) {
         decoder.options.duplicateKeys = .throwError
         let (wide, comparisons) = try counting { try decoder.decode(Wide.self, from: wideDocument()) }
         #expect(wide.values == (0 ..< Wide.count).map { $0 * 10 })
-        #expect(comparisons <= 2 * Wide.count, "\(comparisons) comparisons for \(Wide.count) keys in order")
+        if let comparisons {
+            #expect(comparisons <= 2 * Wide.count, "\(comparisons) comparisons for \(Wide.count) keys in order")
+        }
     }
 
     @Test func reverseOrderLookupStillFindsEveryKey() throws {
@@ -90,7 +99,9 @@ private func counting<T>(_ body: () throws -> T) rethrows -> (T, Int) {
         let (wide, comparisons) = try counting { try AemiJSON.JSONDecoder().decode(Wide.self, from: Array(text.utf8)) }
         #expect(wide.values[19] == 999)
         #expect(wide.values[18] == 180)
-        #expect(comparisons == 20 * 21, "a duplicate makes every lookup scan the whole object")
+        if let comparisons {
+            #expect(comparisons == 20 * 21, "a duplicate makes every lookup scan the whole object")
+        }
     }
 
     @Test func aSmallObjectInOrderIsLinear() throws {
@@ -99,7 +110,9 @@ private func counting<T>(_ body: () throws -> T) rethrows -> (T, Int) {
         defer { Wide.count = 64 }
         let (wide, comparisons) = try counting { try AemiJSON.JSONDecoder().decode(Wide.self, from: wideDocument(20)) }
         #expect(wide.values == (0 ..< 20).map { $0 * 10 })
-        #expect(comparisons <= 2 * 20, "\(comparisons) comparisons for 20 keys in order")
+        if let comparisons {
+            #expect(comparisons <= 2 * 20, "\(comparisons) comparisons for 20 keys in order")
+        }
     }
 
     @Test func anEscapedSpellingOfAKeyIsStillADuplicate() throws {
@@ -156,7 +169,9 @@ private func counting<T>(_ body: () throws -> T) rethrows -> (T, Int) {
         }
         let i = Inner(p: 1, q: 2, r: 3, s: 4, t: 5)
         #expect(outer == Outer(a: 1, b: i, c: 3, d: i, e: 5))
-        #expect(comparisons <= 2 * 15, "\(comparisons) comparisons for 15 keys in order")
+        if let comparisons {
+            #expect(comparisons <= 2 * 15, "\(comparisons) comparisons for 15 keys in order")
+        }
     }
 
     // The macro path resolves its fields in one walk of the object and is not bounded here (roadmap 0008).
