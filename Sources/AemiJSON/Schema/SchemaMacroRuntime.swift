@@ -17,7 +17,9 @@ import AemiJSONCore
 // Fragment for a property whose declared type is a nested `@Schemable` object.
 // `title` / `description` (plain, unescaped text) are spliced in as the object's first members.
 public func __adjsonSchemaFragment<T: AemiJSONSchemaProviding>(
-    for _: T.Type, description: String? = nil, title: String? = nil
+    for _: T.Type,
+    description: String? = nil,
+    title: String? = nil
 ) -> String {
     __adjsonApplyingAnnotations(T.__adjsonSchemaText, title: title, description: description)
 }
@@ -29,7 +31,9 @@ public func __adjsonSchemaFragment<T: AemiJSONSchemaProviding>(
 // protocols, so the two overloads stay unambiguous. (A type *manually* conforming to both would
 // make the generated call ambiguous — a loud compile error rather than wrong output.)
 public func __adjsonSchemaFragment<T: CaseIterable & RawRepresentable>(
-    for _: T.Type, description: String? = nil, title: String? = nil
+    for _: T.Type,
+    description: String? = nil,
+    title: String? = nil
 ) -> String where T.RawValue == String {
     var s = "{"
     if let title { s += "\"title\":" + __adjsonJSONString(title) + "," }

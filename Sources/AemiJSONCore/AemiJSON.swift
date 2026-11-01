@@ -19,9 +19,12 @@ public enum AemiJSON {
             .get()
         AemiJSON.Metrics.record(bytes: bytes.count)
         return JSONDocument(
-            backing: .bytes(bytes), tape: built.slots,
-            keysAreUnique: options.duplicateKeys == .throwError, isJSON5: options.isJSON5,
-            containerSpans: built.spans)
+            backing: .bytes(bytes),
+            tape: built.slots,
+            keysAreUnique: options.duplicateKeys == .throwError,
+            isJSON5: options.isJSON5,
+            containerSpans: built.spans
+        )
     }
 
     /// Parse a `String` into an immutable, lazily-navigable document.
@@ -34,7 +37,8 @@ public enum AemiJSON {
     // untouched is what makes a single unmatched brace still a parse error. A leading byte-order mark
     // is dropped before wrapping, since inside the braces it would no longer lead the input.
     static func parseAssumingTopLevelDictionary(
-        _ bytes: [UInt8], options: JSONParseOptions
+        _ bytes: [UInt8],
+        options: JSONParseOptions
     ) throws(JSONError) -> JSONDocument {
         var plain = options
         plain.assumesTopLevelDictionary = false

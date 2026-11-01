@@ -32,7 +32,8 @@ struct CoverageCheckPlugin: CommandPlugin {
         let profile = binDir.appending(path: "codecov/default.profdata")
         guard fileManager.fileExists(atPath: profile.path) else {
             Diagnostics.error(
-                "no coverage profile at \(profile.path); run `swift test --enable-code-coverage` first")
+                "no coverage profile at \(profile.path); run `swift test --enable-code-coverage` first"
+            )
             throw CoverageError.noProfile
         }
         guard

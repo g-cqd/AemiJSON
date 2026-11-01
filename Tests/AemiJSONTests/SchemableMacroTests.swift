@@ -51,11 +51,17 @@ private func parsed(_ s: String) -> JSON { try! AemiJSON.parse(s).root }
 
 @Test func schemableMatchesReflectionDescribe() {
     let sample = SPerson(
-        name: "Ada", age: 30, nickname: "A", addr: SAddr(city: "London", zip: 1),
-        scores: [1.0, 2.0], labels: ["a": 1])
+        name: "Ada",
+        age: 30,
+        nickname: "A",
+        addr: SAddr(city: "London", zip: 1),
+        scores: [1.0, 2.0],
+        labels: ["a": 1]
+    )
     let viaDescribe = try! JSONSchema(parsing: JSONSchema.describe(sample))
     let doc = parsed(
-        #"{"name":"Ada","age":31,"nickname":"B","addr":{"city":"NYC","zip":2},"scores":[3.0],"labels":{"b":2}}"#)
+        #"{"name":"Ada","age":31,"nickname":"B","addr":{"city":"NYC","zip":2},"scores":[3.0],"labels":{"b":2}}"#
+    )
     #expect(SPerson.jsonSchema.isValid(doc))
     #expect(viaDescribe.isValid(doc))
 }

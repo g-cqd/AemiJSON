@@ -55,7 +55,9 @@ extension DecodeContext {
             throw DecodingError.dataCorrupted(
                 .init(
                     codingPath: [],
-                    debugDescription: "Decoding exceeded the maximum nesting depth (\(maxDecodeDepth))"))
+                    debugDescription: "Decoding exceeded the maximum nesting depth (\(maxDecodeDepth))"
+                )
+            )
         }
     }
 

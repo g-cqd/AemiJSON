@@ -172,7 +172,9 @@ extension _FastDecodeCursor {
     @inlinable public func fastDictionary<V: AemiJSONFastDecodable>(_ type: V.Type) throws -> [String: V] {
         guard ctx.tag(index) == JSONKind.object.rawValue else {
             throw DecodingError.typeMismatch(
-                [String: V].self, .init(codingPath: [], debugDescription: "Expected object"))
+                [String: V].self,
+                .init(codingPath: [], debugDescription: "Expected object")
+            )
         }
         let count = ctx.count(index)
         var out = [String: V](minimumCapacity: count)
@@ -241,7 +243,11 @@ extension _FastDecodeCursor {
         for _ in 0 ..< c {
             let ks = ctx.uncheckedSlot(i)
             let key = _FastKey(
-                ctx: ctx, off: Slot.low(ks), len: Slot.length(ks), escaped: Slot.flags(ks) & 1 == 1)
+                ctx: ctx,
+                off: Slot.low(ks),
+                len: Slot.length(ks),
+                escaped: Slot.flags(ks) & 1 == 1
+            )
             body(key, i + 1)
             i = ctx.uncheckedNextIndex(after: i + 1)
         }
@@ -272,7 +278,9 @@ extension _FastDecodeCursor {
         return ctx.double(vi)
     }
     @inlinable public func integerAt<T: FixedWidthInteger>(
-        _ vi: Int, _ key: StaticString, _ type: T.Type
+        _ vi: Int,
+        _ key: StaticString,
+        _ type: T.Type
     )
         throws -> T
     {

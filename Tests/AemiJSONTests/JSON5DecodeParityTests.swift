@@ -34,27 +34,42 @@ private let json5Cases: [JSON5Case] = [
     .init(name: "CRLF continuation", source: "{value:'a\\\r\nb'}", expected: .string("ab"), foundationSupports: false),
     .init(name: "CR continuation", source: "{value:'a\\\rb'}", expected: .string("ab"), foundationSupports: false),
     .init(
-        name: "Unicode line continuation", source: "{value:'a\\\u{2028}b'}", expected: .string("ab"),
-        foundationSupports: false),
+        name: "Unicode line continuation",
+        source: "{value:'a\\\u{2028}b'}",
+        expected: .string("ab"),
+        foundationSupports: false
+    ),
     .init(
-        name: "Unicode paragraph continuation", source: "{value:'a\\\u{2029}b'}", expected: .string("ab"),
-        foundationSupports: false),
+        name: "Unicode paragraph continuation",
+        source: "{value:'a\\\u{2029}b'}",
+        expected: .string("ab"),
+        foundationSupports: false
+    ),
     // Foundation rejects these JSON5 escapes as invalid escape sequences.
     .init(name: "NUL escape", source: #"{value:'a\0b'}"#, expected: .string("a\0b"), foundationSupports: false),
     .init(
-        name: "vertical tab escape", source: #"{value:'a\vb'}"#, expected: .string("a\u{0B}b"),
-        foundationSupports: false),
+        name: "vertical tab escape",
+        source: #"{value:'a\vb'}"#,
+        expected: .string("a\u{0B}b"),
+        foundationSupports: false
+    ),
     .init(name: "identity escape", source: #"{value:'a\qb'}"#, expected: .string("aqb"), foundationSupports: false),
     .init(
-        name: "multibyte identity escape", source: "{value:'a\\éb'}", expected: .string("aéb"),
-        foundationSupports: false),
+        name: "multibyte identity escape",
+        source: "{value:'a\\éb'}",
+        expected: .string("aéb"),
+        foundationSupports: false
+    ),
     .init(name: "single-quoted string", source: "{\"value\":'text'}", expected: .string("text")),
     .init(name: "single-quoted key", source: "{'value':'text'}", expected: .string("text")),
     .init(name: "unquoted identifier key", source: "{value:\"text\"}", expected: .string("text")),
     .init(name: "escaped single-quoted key", source: #"{'val\x75e':'text'}"#, expected: .string("text")),
     .init(
-        name: "continued single-quoted key", source: "{'val\\\nue':'text'}", expected: .string("text"),
-        foundationSupports: false),
+        name: "continued single-quoted key",
+        source: "{'val\\\nue':'text'}",
+        expected: .string("text"),
+        foundationSupports: false
+    ),
     .init(name: "hex integer", source: "{value:0x2A}", expected: .integer(42)),
     .init(name: "leading decimal point", source: "{value:.5}", expected: .number(0.5)),
     .init(name: "trailing decimal point", source: "{value:5.}", expected: .number(5)),
@@ -105,7 +120,11 @@ private func checkInteger(_ expected: Int, _ data: Data, _ lazy: JSON, _ name: S
 }
 
 private func checkIntegerArray(
-    _ expected: [Int], _ data: Data, _ lazy: JSON, _ name: String, _ foundationSupports: Bool
+    _ expected: [Int],
+    _ data: Data,
+    _ lazy: JSON,
+    _ name: String,
+    _ foundationSupports: Bool
 )
     throws
 {

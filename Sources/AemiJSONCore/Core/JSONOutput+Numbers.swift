@@ -25,7 +25,8 @@ extension JSONOutput {
     /// formatter — byte-identical to Swift's `Double.description`), written straight into a 24-byte stack
     /// span with **no** intermediate `String` allocation. `body` is non-escaping (runs inside the span).
     static func withShortestDigits(
-        _ v: Double, _ body: (_ negative: Bool, _ digits: UnsafeBufferPointer<UInt8>, _ pointPos: Int) -> Void
+        _ v: Double,
+        _ body: (_ negative: Bool, _ digits: UnsafeBufferPointer<UInt8>, _ pointPos: Int) -> Void
     ) {
         let (negative, significand, exponent) = DecimalFloat.shortestDouble(v)
         withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 24) { digits in
@@ -119,7 +120,9 @@ extension JSONOutput {
     /// `Double.description` — the one spot a future direct byte formatter would replace.
     @inlinable
     public static func appendFiniteDouble(
-        _ v: Double, numberFormat: JSONEncodingOptions.NumberFormat, to bytes: inout [UInt8]
+        _ v: Double,
+        numberFormat: JSONEncodingOptions.NumberFormat,
+        to bytes: inout [UInt8]
     ) {
         switch numberFormat {
             case .ecma262: appendECMANumber(v, to: &bytes)
@@ -136,13 +139,18 @@ extension JSONOutput {
             switch options.nonFinite {
                 case .throw:
                     throw EncodingError.invalidValue(
-                        v, .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
+                        v,
+                        .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON")
+                    )
                 case .null:
                     appendNull(to: &bytes)
                 case .stringLiterals(let pos, let neg, let nan):
                     appendString(
-                        v.isNaN ? nan : (v > 0 ? pos : neg), to: &bytes,
-                        escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+                        v.isNaN ? nan : (v > 0 ? pos : neg),
+                        to: &bytes,
+                        escapeSlashes: options.escapeSlashes,
+                        escapeHTMLUnsafe: options.escapeHTMLUnsafe
+                    )
             }
             return
         }
@@ -155,7 +163,9 @@ extension JSONOutput {
     /// (JS / SQLite), so they widen to `Double` — documented, not the default path.
     @inlinable
     public static func appendFiniteFloat(
-        _ v: Float, numberFormat: JSONEncodingOptions.NumberFormat, to bytes: inout [UInt8]
+        _ v: Float,
+        numberFormat: JSONEncodingOptions.NumberFormat,
+        to bytes: inout [UInt8]
     ) {
         switch numberFormat {
             case .ecma262: appendECMANumber(Double(v), to: &bytes)
@@ -173,13 +183,18 @@ extension JSONOutput {
             switch options.nonFinite {
                 case .throw:
                     throw EncodingError.invalidValue(
-                        v, .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON"))
+                        v,
+                        .init(codingPath: [], debugDescription: "Non-finite \(v) cannot be encoded as JSON")
+                    )
                 case .null:
                     appendNull(to: &bytes)
                 case .stringLiterals(let pos, let neg, let nan):
                     appendString(
-                        v.isNaN ? nan : (v > 0 ? pos : neg), to: &bytes,
-                        escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+                        v.isNaN ? nan : (v > 0 ? pos : neg),
+                        to: &bytes,
+                        escapeSlashes: options.escapeSlashes,
+                        escapeHTMLUnsafe: options.escapeHTMLUnsafe
+                    )
             }
             return
         }

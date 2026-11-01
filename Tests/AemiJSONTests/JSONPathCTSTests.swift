@@ -49,7 +49,8 @@ func jsonPathComplianceSuite() throws {
     let rate = validTotal == 0 ? 0 : Double(validOK) / Double(validTotal)
     print(
         "JSONPath CTS: valid \(validOK)/\(validTotal) (\(Int(rate * 100))%), "
-            + "invalid rejected \(invalidRejected)/\(invalidTotal)")
+            + "invalid rejected \(invalidRejected)/\(invalidTotal)"
+    )
     #expect(validTotal > 100)
     #expect(invalidRejected == invalidTotal, "every invalid selector must be rejected")
     #expect(rate >= 0.98, "JSONPath CTS valid-query pass rate regressed")

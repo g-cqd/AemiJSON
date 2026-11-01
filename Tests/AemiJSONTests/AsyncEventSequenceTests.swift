@@ -40,7 +40,8 @@ private func asyncEvents(_ json: String, chunkSize: Int) async throws -> [JSONEv
         events == [
             .beginObject, .key("a"), .number(1), .key("b"), .beginArray,
             .bool(true), .null, .string("x"), .endArray, .endObject
-        ])
+        ]
+    )
 }
 
 @Test func asyncSequenceMatchesSyncAcrossChunkSizes() async throws {
@@ -67,7 +68,10 @@ private func asyncEvents(_ json: String, chunkSize: Int) async throws -> [JSONEv
     let json = String(repeating: "[", count: depth) + "1" + String(repeating: "]", count: depth)
     var begins = 0
     let seq = JSONEventAsyncSequence(
-        ByteStream(bytes: Array(json.utf8)), options: JSONParseOptions(maxDepth: depth + 1), chunkSize: 256)
+        ByteStream(bytes: Array(json.utf8)),
+        options: JSONParseOptions(maxDepth: depth + 1),
+        chunkSize: 256
+    )
     for try await event in seq where event == .beginArray { begins += 1 }
     #expect(begins == depth)
 }

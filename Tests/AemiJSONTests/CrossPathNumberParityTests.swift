@@ -183,7 +183,8 @@ struct CrossPathNumberParityTests {
             let viaDouble = Float(Double(s)!)
             #expect(
                 direct.bitPattern != viaDouble.bitPattern,
-                "fixture \(s) no longer diverges: Float(s) and Float(Double(s)) agree — pick another")
+                "fixture \(s) no longer diverges: Float(s) and Float(Double(s)) agree — pick another"
+            )
         }
     }
 
@@ -231,7 +232,8 @@ struct CrossPathNumberParityTests {
             let viaBytes = try AemiJSON.JSONDecoder().decode(FloatBox.self, from: json)
             #expect(
                 viaBytes.f.bitPattern == f.bitPattern,
-                "round-trip lost bits for \(f) → \(String(decoding: json, as: UTF8.self))")
+                "round-trip lost bits for \(f) → \(String(decoding: json, as: UTF8.self))"
+            )
             // Re-decode through the single-value/array path too.
             let arr = try AemiJSON.JSONEncoder().encode([f])
             let viaArray = try AemiJSON.JSONDecoder().decode([Float].self, from: arr)
@@ -254,7 +256,10 @@ struct CrossPathNumberParityTests {
         // nonConformingFloat string literals decode to Float-width inf/nan.
         var decoder = AemiJSON.JSONDecoder()
         decoder.nonConformingFloatDecodingStrategy = .convertFromString(
-            positiveInfinity: "Inf", negativeInfinity: "-Inf", nan: "NaN")
+            positiveInfinity: "Inf",
+            negativeInfinity: "-Inf",
+            nan: "NaN"
+        )
         let inf = try decoder.decode(PlainFloatBox.self, from: Data(#"{"f":"Inf"}"#.utf8))
         #expect(inf.f == .infinity)
         let negInf = try decoder.decode(PlainFloatBox.self, from: Data(#"{"f":"-Inf"}"#.utf8))

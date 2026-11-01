@@ -46,8 +46,11 @@ extension EncodingError {
         return .invalidValue(
             value,
             .init(
-                codingPath: prefix + context.codingPath, debugDescription: context.debugDescription,
-                underlyingError: context.underlyingError))
+                codingPath: prefix + context.codingPath,
+                debugDescription: context.debugDescription,
+                underlyingError: context.underlyingError
+            )
+        )
     }
 }
 

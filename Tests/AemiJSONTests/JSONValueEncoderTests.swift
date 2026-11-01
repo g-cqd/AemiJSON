@@ -43,14 +43,16 @@ struct JSONValueEncoderTests {
                     "name": .string("p"),
                     "point": .object(["x": .int(3), "y": .int(4)]),
                     "tags": .array([.string("a"), .string("b")])
-                ]))
+                ])
+        )
     }
 
     @Test func matchesEncodeThenParse() throws {
         let value = Nested(name: "q", point: Point(x: -1, y: 9), tags: [])
         let direct = try JSONValue(encoding: value)
         let viaBytes = try JSONValue(
-            parsing: String(decoding: AemiJSON.JSONEncoder().encodeToBytes(value), as: UTF8.self))
+            parsing: String(decoding: AemiJSON.JSONEncoder().encodeToBytes(value), as: UTF8.self)
+        )
         #expect(direct == viaBytes)
     }
 

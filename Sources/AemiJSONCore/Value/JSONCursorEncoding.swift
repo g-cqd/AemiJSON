@@ -15,13 +15,17 @@ extension JSON {
     /// whose children + separators are pushed onto `stack` in reverse for the iterative
     /// walk. Throws past `maxEncodingDepth`.
     private func emitValue(
-        _ node: JSON, depth: Int, into bytes: inout [UInt8], stack: inout [WriteOp],
+        _ node: JSON,
+        depth: Int,
+        into bytes: inout [UInt8],
+        stack: inout [WriteOp],
         options: JSONEncodingOptions
     ) throws {
         guard depth <= JSONValue.maxEncodingDepth else {
             throw EncodingError.invalidValue(
                 node,
-                .init(codingPath: [], debugDescription: "Nesting exceeds \(JSONValue.maxEncodingDepth)"))
+                .init(codingPath: [], debugDescription: "Nesting exceeds \(JSONValue.maxEncodingDepth)")
+            )
         }
         let pretty = options.prettyPrinted
         let escapeSlashes = options.escapeSlashes
@@ -38,13 +42,22 @@ extension JSON {
             try JSONValue.writeNumber(d, into: &bytes, options: options)
         } else if let s = node.string {
             JSONOutput.appendString(
-                s, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
+                s,
+                to: &bytes,
+                escapeSlashes: escapeSlashes,
+                escapeHTMLUnsafe: escapeHTMLUnsafe
+            )
         } else if node.isArray {
             emitArray(node.arrayValue, depth: depth, into: &bytes, stack: &stack, pretty: pretty)
         } else if node.isObject {
             emitObject(
-                node, depth: depth, into: &bytes, stack: &stack, pretty: pretty,
-                sorted: options.keyOrder == .sorted)
+                node,
+                depth: depth,
+                into: &bytes,
+                stack: &stack,
+                pretty: pretty,
+                sorted: options.keyOrder == .sorted
+            )
         } else {
             JSONOutput.appendNull(to: &bytes)  // missing sentinel → null (matches scalarValue)
         }
@@ -52,7 +65,11 @@ extension JSON {
 
     /// Emits a `[`-array: pushes the closing `]`, then each element + separator in reverse.
     private func emitArray(
-        _ elements: [JSON], depth: Int, into bytes: inout [UInt8], stack: inout [WriteOp], pretty: Bool
+        _ elements: [JSON],
+        depth: Int,
+        into bytes: inout [UInt8],
+        stack: inout [WriteOp],
+        pretty: Bool
     ) {
         bytes.append(0x5B)
         if elements.isEmpty {
@@ -76,7 +93,11 @@ extension JSON {
     /// Emits a `{`-object (members sorted when `sorted`): pushes the closing `}`, then each
     /// value + key + separator in reverse.
     private func emitObject(
-        _ node: JSON, depth: Int, into bytes: inout [UInt8], stack: inout [WriteOp], pretty: Bool,
+        _ node: JSON,
+        depth: Int,
+        into bytes: inout [UInt8],
+        stack: inout [WriteOp],
+        pretty: Bool,
         sorted: Bool
     ) {
         var pairs: [(String, JSON)] = []
@@ -125,7 +146,11 @@ extension JSON {
                     bytes.append(b)
                 case .key(let k, let pretty):
                     JSONOutput.appendString(
-                        k, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
+                        k,
+                        to: &bytes,
+                        escapeSlashes: escapeSlashes,
+                        escapeHTMLUnsafe: escapeHTMLUnsafe
+                    )
                     if pretty {
                         if spaceBeforeColon { bytes.append(0x20) }  // `"k" : ` (Foundation) vs `"k": ` (JS)
                         bytes.append(0x3A)

@@ -70,7 +70,8 @@ private struct Single: Encodable {
         theirs.outputFormatting = [.prettyPrinted, .sortedKeys]
         #expect(
             String(decoding: try pretty.encode(Twice()), as: UTF8.self)
-                == String(decoding: try theirs.encode(Twice()), as: UTF8.self))
+                == String(decoding: try theirs.encode(Twice()), as: UTF8.self)
+        )
     }
 
     @Test func customDateAndDataStrategiesStillGetAnEncoder() throws {
@@ -89,7 +90,8 @@ private struct Single: Encodable {
             try c.encode(data.count, forKey: StaticKey(stringValue: "n"))
         }
         let text = String(
-            decoding: try encoder.encode(Stamped(at: Date(timeIntervalSince1970: 7), blob: Data([1, 2]))), as: UTF8.self
+            decoding: try encoder.encode(Stamped(at: Date(timeIntervalSince1970: 7), blob: Data([1, 2]))),
+            as: UTF8.self
         )
         #expect(text == #"{"at":[7,"s"],"blob":{"n":2}}"#)
     }

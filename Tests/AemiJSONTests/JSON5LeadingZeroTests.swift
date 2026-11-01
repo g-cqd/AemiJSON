@@ -61,7 +61,10 @@ struct JSON5LeadingZeroTests {
             let document = Array(text.utf8)
             for cut in 0 ... document.count {
                 let value = ReadRoute.pushValue(
-                    of: document, chunks: [0 ..< cut, cut ..< document.count], options: .json5)
+                    of: document,
+                    chunks: [0 ..< cut, cut ..< document.count],
+                    options: .json5
+                )
                 #expect(value == expected, "\(text) cut at byte \(cut) read as \(String(describing: value))")
             }
         }

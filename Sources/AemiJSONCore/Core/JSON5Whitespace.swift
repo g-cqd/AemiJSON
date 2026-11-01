@@ -59,7 +59,11 @@ enum JSON5Whitespace {
     /// A three-byte space whose second and third bytes are fixed (`E1 9A 80`, `E3 80 80`, `EF BB BF`), cut
     /// short or not: `.needMore` while the bytes present are still a prefix of it.
     private static func threeByte(
-        _ p: UnsafePointer<UInt8>, _ i: Int, _ available: Int, second: UInt8, third: UInt8
+        _ p: UnsafePointer<UInt8>,
+        _ i: Int,
+        _ available: Int,
+        second: UInt8,
+        third: UInt8
     ) -> Match {
         guard unsafe available < 2 || p[i + 1] == second else { return .none }
         guard available >= 3 else { return .needMore }

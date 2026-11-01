@@ -30,10 +30,16 @@ extension JSONDocument {
     /// tasks at once. Checks for cancellation of the current task every 256 elements, starting
     /// with the first, and throws `CancellationError` once it is cancelled.
     func decodeElementRange<T: Decodable>(
-        _ type: T.Type, _ lo: Int, _ hi: Int, _ starts: [Int], maxDecodingDepth: Int
+        _ type: T.Type,
+        _ lo: Int,
+        _ hi: Int,
+        _ starts: [Int],
+        maxDecodingDepth: Int
     ) throws -> [T] {
         try withDecodeContext(
-            userInfo: [:], strategies: DecodeStrategies(), maxDecodeDepth: maxDecodingDepth
+            userInfo: [:],
+            strategies: DecodeStrategies(),
+            maxDecodeDepth: maxDecodingDepth
         ) { ctx in
             var out: [T] = []
             out.reserveCapacity(hi - lo)
@@ -69,15 +75,23 @@ extension AemiJSON {
     ///   date strategy, or `userInfo`, decode serially with a configured ``AemiJSON/JSONDecoder``, or
     ///   pre-transform the element types so the default mapping suffices.
     public static func decodeArrayConcurrently<T: Decodable & Sendable>(
-        _ type: T.Type, from data: Data, minimumBatch: Int = 512,
+        _ type: T.Type,
+        from data: Data,
+        minimumBatch: Int = 512,
         maxDecodingDepth: Int = concurrentDecodeDefaultDepth
     ) async throws -> [T] {
         try await decodeArrayConcurrently(
-            type, from: try AemiJSON.parse(data), minimumBatch: minimumBatch, maxDecodingDepth: maxDecodingDepth)
+            type,
+            from: try AemiJSON.parse(data),
+            minimumBatch: minimumBatch,
+            maxDecodingDepth: maxDecodingDepth
+        )
     }
 
     public static func decodeArrayConcurrently<T: Decodable & Sendable>(
-        _ type: T.Type, from document: JSONDocument, minimumBatch: Int = 512,
+        _ type: T.Type,
+        from document: JSONDocument,
+        minimumBatch: Int = 512,
         maxDecodingDepth: Int = concurrentDecodeDefaultDepth
     ) async throws -> [T] {
         guard let starts = document.topLevelArrayElementStarts() else {
@@ -117,19 +131,33 @@ extension AemiJSON {
 
     @available(*, deprecated, message: "The batches run in a task group; the task provider is no longer used")
     public static func decodeArrayConcurrently<T: Decodable & Sendable>(
-        _ type: T.Type, from data: Data, minimumBatch: Int = 512,
-        maxDecodingDepth: Int = concurrentDecodeDefaultDepth, taskProvider: any TaskProvider
+        _ type: T.Type,
+        from data: Data,
+        minimumBatch: Int = 512,
+        maxDecodingDepth: Int = concurrentDecodeDefaultDepth,
+        taskProvider: any TaskProvider
     ) async throws -> [T] {
         try await decodeArrayConcurrently(
-            type, from: data, minimumBatch: minimumBatch, maxDecodingDepth: maxDecodingDepth)
+            type,
+            from: data,
+            minimumBatch: minimumBatch,
+            maxDecodingDepth: maxDecodingDepth
+        )
     }
 
     @available(*, deprecated, message: "The batches run in a task group; the task provider is no longer used")
     public static func decodeArrayConcurrently<T: Decodable & Sendable>(
-        _ type: T.Type, from document: JSONDocument, minimumBatch: Int = 512,
-        maxDecodingDepth: Int = concurrentDecodeDefaultDepth, taskProvider: any TaskProvider
+        _ type: T.Type,
+        from document: JSONDocument,
+        minimumBatch: Int = 512,
+        maxDecodingDepth: Int = concurrentDecodeDefaultDepth,
+        taskProvider: any TaskProvider
     ) async throws -> [T] {
         try await decodeArrayConcurrently(
-            type, from: document, minimumBatch: minimumBatch, maxDecodingDepth: maxDecodingDepth)
+            type,
+            from: document,
+            minimumBatch: minimumBatch,
+            maxDecodingDepth: maxDecodingDepth
+        )
     }
 }

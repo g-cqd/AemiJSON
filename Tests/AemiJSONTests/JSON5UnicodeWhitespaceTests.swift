@@ -98,7 +98,10 @@ struct JSON5UnicodeWhitespaceTests {
         let document = Array("{a:".utf8) + bytes(space) + Array("1".utf8) + bytes(space) + Array("}".utf8)
         for cut in 0 ... document.count {
             let value = ReadRoute.pushValue(
-                of: document, chunks: [0 ..< cut, cut ..< document.count], options: .json5)
+                of: document,
+                chunks: [0 ..< cut, cut ..< document.count],
+                options: .json5
+            )
             #expect(value == oneInA, "\(hex(space)) cut at byte \(cut) read as \(String(describing: value))")
         }
     }
@@ -108,7 +111,10 @@ struct JSON5UnicodeWhitespaceTests {
         let document = Array("// c".utf8) + bytes(terminator) + Array("{a: 1}".utf8)
         for cut in 0 ... document.count {
             let value = ReadRoute.pushValue(
-                of: document, chunks: [0 ..< cut, cut ..< document.count], options: .json5)
+                of: document,
+                chunks: [0 ..< cut, cut ..< document.count],
+                options: .json5
+            )
             #expect(value == oneInA, "\(hex(terminator)) cut at byte \(cut) read as \(String(describing: value))")
         }
     }

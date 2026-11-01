@@ -308,11 +308,14 @@ extension DecodeContext {
             case .base64:
                 guard let s = string(index) else {
                     throw DecodingError.typeMismatch(
-                        Data.self, .init(codingPath: [], debugDescription: "Expected a Base64 string"))
+                        Data.self,
+                        .init(codingPath: [], debugDescription: "Expected a Base64 string")
+                    )
                 }
                 guard let data = DateDataDecoding.base64(s) else {
                     throw DecodingError.dataCorrupted(
-                        .init(codingPath: [], debugDescription: DateDataDecoding.invalidBase64))
+                        .init(codingPath: [], debugDescription: DateDataDecoding.invalidBase64)
+                    )
                 }
                 return data
             case .custom(let body):
@@ -328,7 +331,9 @@ extension DecodeContext {
         let raw = slot(index)
         guard Slot.tag(raw) == JSONKind.number.rawValue else {
             throw DecodingError.typeMismatch(
-                Decimal.self, .init(codingPath: [], debugDescription: "Expected a number for Decimal"))
+                Decimal.self,
+                .init(codingPath: [], debugDescription: "Expected a number for Decimal")
+            )
         }
         let off = Slot.low(raw)
         let len = Slot.length(raw)
@@ -340,7 +345,8 @@ extension DecodeContext {
         guard let value = Decimal(string: String(decoding: buffer, as: UTF8.self), locale: AemiJSONDecimal.posixLocale)
         else {
             throw DecodingError.dataCorrupted(
-                .init(codingPath: [], debugDescription: "Number is out of Decimal's representable range"))
+                .init(codingPath: [], debugDescription: "Number is out of Decimal's representable range")
+            )
         }
         return value
     }

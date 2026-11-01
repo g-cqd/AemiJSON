@@ -57,7 +57,8 @@ public func LLVMFuzzerTestOneInput(_ start: UnsafePointer<UInt8>?, _ count: Int)
         do { while try reader.next() != nil {} } catch { saxAccepts = false }
         precondition(
             tapeAccepts == saxAccepts,
-            "grammar divergence (\(mode)): tape=\(tapeAccepts) sax=\(saxAccepts)")
+            "grammar divergence (\(mode)): tape=\(tapeAccepts) sax=\(saxAccepts)"
+        )
     }
 
     // Value-model parse from the same bytes interpreted as UTF-8.

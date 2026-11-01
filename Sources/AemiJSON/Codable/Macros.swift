@@ -7,8 +7,10 @@
 /// would otherwise use the wrong keys).
 @attached(
     extension,
-    conformances: AemiJSONFastDecodable, AemiJSONFastEncodable,
-    names: named(__adjsonDecode(_:)), named(__adjsonEncode(into:))
+    conformances: AemiJSONFastDecodable,
+    AemiJSONFastEncodable,
+    names: named(__adjsonDecode(_:)),
+    named(__adjsonEncode(into:))
 )
 public macro JSONCodable() = #externalMacro(module: "AemiJSONMacros", type: "JSONCodableMacro")
 

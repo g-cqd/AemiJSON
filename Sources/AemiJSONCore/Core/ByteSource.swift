@@ -25,7 +25,8 @@ extension AemiJSON {
     /// ``JSONParseOptions/assumesTopLevelDictionary`` set, the bytes are copied instead, since
     /// wrapping them in braces needs a buffer of its own.
     public static func parse(
-        _ source: some ByteSource & Sendable, options: JSONParseOptions = .strict
+        _ source: some ByteSource & Sendable,
+        options: JSONParseOptions = .strict
     ) throws(JSONError) -> JSONDocument {
         if options.assumesTopLevelDictionary {
             // Wrapping the input in braces needs a buffer of its own, so this path copies the bytes
@@ -43,7 +44,10 @@ extension AemiJSON {
                 guard raw.count > 0, let rawBase = raw.baseAddress else { return .failure(.unexpectedEndOfInput) }
                 guard UInt64(raw.count) <= 0xFFFF_FFFF else { return .failure(.documentTooLarge) }
                 var builder = unsafe TapeBuilder(
-                    rawBase.assumingMemoryBound(to: UInt8.self), raw.count, options: options)
+                    rawBase.assumingMemoryBound(to: UInt8.self),
+                    raw.count,
+                    options: options
+                )
                 return Result { () throws(JSONError) in
                     let tape = try builder.build()
                     return (tape.slots, tape.spans, raw.count)
@@ -52,9 +56,12 @@ extension AemiJSON {
             .get()
         AemiJSON.Metrics.record(bytes: built.count)
         return JSONDocument(
-            backing: .source(source, count: built.count), tape: built.slots,
-            keysAreUnique: options.duplicateKeys == .throwError, isJSON5: options.isJSON5,
-            containerSpans: built.spans)
+            backing: .source(source, count: built.count),
+            tape: built.slots,
+            keysAreUnique: options.duplicateKeys == .throwError,
+            isJSON5: options.isJSON5,
+            containerSpans: built.spans
+        )
     }
 
     /// Parse a **caller-owned, borrowed** raw buffer with no copy: the resulting ``JSONDocument``
@@ -69,7 +76,8 @@ extension AemiJSON {
     ///   copy into `[UInt8]` and use ``parse(_:options:)-(_,_)`` instead. The `RawSpan` overload (a
     ///   lifetime-checked form) is the safer long-term entry where available.
     public static func parse(
-        _ buffer: UnsafeRawBufferPointer, options: JSONParseOptions = .strict
+        _ buffer: UnsafeRawBufferPointer,
+        options: JSONParseOptions = .strict
     ) throws(JSONError) -> JSONDocument {
         unsafe try parse(BorrowedRawBytes(buffer), options: options)
     }

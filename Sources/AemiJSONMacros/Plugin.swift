@@ -42,7 +42,8 @@ struct JSONCodableMacro: ExtensionMacro {
                     \(raw: decodeMember(props))
                     \(raw: encodeMember(props))
                 }
-                """)
+                """
+            )
         ]
     }
 }
@@ -65,7 +66,8 @@ struct JSONDecodableMacro: ExtensionMacro {
                 extension \(raw: type.trimmedDescription): AemiJSONFastDecodable {
                     \(raw: decodeMember(props))
                 }
-                """)
+                """
+            )
         ]
     }
 }
@@ -87,7 +89,8 @@ struct JSONEncodableMacro: ExtensionMacro {
                 extension \(raw: type.trimmedDescription): AemiJSONFastEncodable {
                     \(raw: encodeMember(props))
                 }
-                """)
+                """
+            )
         ]
     }
 }
@@ -96,18 +99,25 @@ struct JSONEncodableMacro: ExtensionMacro {
 // property types. On any miss it diagnoses (the type keeps standard Codable) and returns nil; on
 // success it returns the stored properties the decode/encode generators consume.
 private func fastCodableProps(
-    of node: AttributeSyntax, _ declaration: some DeclGroupSyntax, _ macroName: String,
+    of node: AttributeSyntax,
+    _ declaration: some DeclGroupSyntax,
+    _ macroName: String,
     in context: some MacroExpansionContext
 ) -> [Property]? {
     guard let structDecl = declaration.as(StructDeclSyntax.self) else {
         context.diagnose(
-            SyntaxExtract.note(node, macroName, "@\(macroName) only supports structs; the type keeps standard Codable"))
+            SyntaxExtract.note(node, macroName, "@\(macroName) only supports structs; the type keeps standard Codable")
+        )
         return nil
     }
     if SyntaxExtract.declaresCodingKeys(structDecl) {
         context.diagnose(
             SyntaxExtract.note(
-                node, macroName, "@\(macroName) skips types with custom CodingKeys; keeping standard Codable"))
+                node,
+                macroName,
+                "@\(macroName) skips types with custom CodingKeys; keeping standard Codable"
+            )
+        )
         return nil
     }
     guard let props = storedProperties(structDecl) else {
@@ -154,8 +164,13 @@ private func storedProperties(_ decl: StructDeclSyntax) -> [Property]? {
             if let optional = typeSyntax.as(OptionalTypeSyntax.self) {
                 props.append(
                     Property(
-                        name: name, key: key, type: typeSyntax.trimmedDescription, isOptional: true,
-                        wrapped: optional.wrappedType.trimmedDescription))
+                        name: name,
+                        key: key,
+                        type: typeSyntax.trimmedDescription,
+                        isOptional: true,
+                        wrapped: optional.wrappedType.trimmedDescription
+                    )
+                )
             } else {
                 let full = typeSyntax.trimmedDescription
                 props.append(Property(name: name, key: key, type: full, isOptional: false, wrapped: full))
@@ -266,7 +281,8 @@ private func makeEncodeBody(_ props: [Property]) -> String {
                 lines.append("w.key(\(key)); \(writeValue("self.\(p.name)", p.wrapped))")
             } else if p.isOptional {
                 lines.append(
-                    "if let __v = self.\(p.name) { w.comma(); w.key(\(key)); \(writeValue("__v", p.wrapped)) }")
+                    "if let __v = self.\(p.name) { w.comma(); w.key(\(key)); \(writeValue("__v", p.wrapped)) }"
+                )
             } else {
                 lines.append("w.comma(); w.key(\(key)); \(writeValue("self.\(p.name)", p.wrapped))")
             }

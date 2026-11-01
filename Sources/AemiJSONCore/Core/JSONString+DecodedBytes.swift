@@ -23,7 +23,10 @@ extension JSONString {
     /// - Precondition: The scanner validated `p[offset ..< offset + length]` and its escapes.
     /// - Complexity: O(length) time; O(length) space the first time, none once `output` has grown.
     static func appendUnescaped(
-        _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, json5: Bool,
+        _ p: UnsafePointer<UInt8>,
+        _ offset: Int,
+        _ length: Int,
+        json5: Bool,
         replacing output: inout ContiguousArray<UInt8>
     ) {
         // Caller owns `p[offset ..< offset + length]` for this call; reads stay in that range and `p`
@@ -65,7 +68,10 @@ extension JSONString {
 
     /// The JSON5 escapes beyond the JSON set; `escape` is the byte after the backslash and `j` is past it.
     private static func appendJSON5Escape(
-        _ escape: UInt8, _ p: UnsafePointer<UInt8>, _ j: inout Int, _ end: Int,
+        _ escape: UInt8,
+        _ p: UnsafePointer<UInt8>,
+        _ j: inout Int,
+        _ end: Int,
         to output: inout ContiguousArray<UInt8>
     ) {
         switch escape {
@@ -91,7 +97,10 @@ extension JSONString {
     /// An identity-escaped multi-byte scalar, or a U+2028 / U+2029 line continuation (which is elided).
     /// `j` is just past the lead byte.
     private static func appendMultiByteIdentityEscape(
-        _ lead: UInt8, _ p: UnsafePointer<UInt8>, _ j: inout Int, _ end: Int,
+        _ lead: UInt8,
+        _ p: UnsafePointer<UInt8>,
+        _ j: inout Int,
+        _ end: Int,
         to output: inout ContiguousArray<UInt8>
     ) {
         if unsafe JSON5Whitespace.isLineSeparator(p, j - 1, end) {

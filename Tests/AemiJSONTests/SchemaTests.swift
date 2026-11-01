@@ -8,7 +8,8 @@ private func valid(_ schema: JSONSchema, _ json: String) -> Bool { schema.isVali
 
 @Test func validatesTypeRequiredProperties() {
     let s = schema(
-        #"{"type":"object","required":["id"],"properties":{"id":{"type":"integer"},"name":{"type":"string"}}}"#)
+        #"{"type":"object","required":["id"],"properties":{"id":{"type":"integer"},"name":{"type":"string"}}}"#
+    )
     #expect(valid(s, #"{"id":1,"name":"x"}"#))
     #expect(valid(s, #"{"id":1}"#))
     #expect(!valid(s, #"{"name":"x"}"#))

@@ -89,7 +89,11 @@ extension DecodeContext {
     }
 
     @inline(__always) private func insertKeys(
-        of obj: Int, count c: Int, mask: Int, load: (Int) -> Int32, store: (Int, Int32) -> Void
+        of obj: Int,
+        count c: Int,
+        mask: Int,
+        load: (Int) -> Int32,
+        store: (Int, Int32) -> Void
     ) -> Bool {
         var i = obj + 1
         for _ in 0 ..< c {

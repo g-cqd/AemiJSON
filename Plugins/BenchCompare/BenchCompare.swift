@@ -40,7 +40,8 @@ struct BenchComparePlugin: CommandPlugin {
             guard FileManager.default.isExecutableFile(atPath: binary.path) else {
                 Diagnostics.error(
                     "no AemiJSONSuite binary at \(binary.path); build it first: "
-                        + "AEMIJSON_DEV=1 swift build -c \(config) --product AemiJSONSuite")
+                        + "AEMIJSON_DEV=1 swift build -c \(config) --product AemiJSONSuite"
+                )
                 throw BenchCompareError.noBinary
             }
             var runArguments = ["--quiet", "true"]
@@ -165,10 +166,12 @@ enum BenchComparison {
         lines.append("")
         lines.append(
             "_\(rows) comparisons · p50 wall-clock · Speedup = Foundation ÷ AemiJSON "
-                + "(higher = AemiJSON faster; ⚠︎ = AemiJSON slower)._")
+                + "(higher = AemiJSON faster; ⚠︎ = AemiJSON slower)._"
+        )
         lines.append(
             "_Lazy/partial AemiJSON variants (`tape`, `read 2 fields`, `lazy sum`, `walk`) do less work than a "
-                + "full typed decode — read them as upper bounds, not like-for-like._")
+                + "full typed decode — read them as upper bounds, not like-for-like._"
+        )
         lines.append("_Mallocs = total allocations per op; requires jemalloc, shown as “—” when unavailable._")
         return lines.joined(separator: "\n")
     }

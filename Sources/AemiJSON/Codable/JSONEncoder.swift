@@ -63,7 +63,9 @@ extension AemiJSON {
                         codingPath: [],
                         debugDescription:
                             "AemiJSON.JSONEncoder can't honor nilStrategy: .null on the Codable path (omitted "
-                            + "nils are never observed); use JSONValue.encoded(options:) instead."))
+                            + "nils are never observed); use JSONValue.encoded(options:) instead."
+                    )
+                )
             }
             let pretty = options.prettyPrinted || prettyPrinted
             // Sorted keys can't be produced in a single streaming pass (the writer can't reorder an
@@ -92,7 +94,10 @@ extension AemiJSON {
             if case .useDefaultKeys = keyEncodingStrategy { keyStrategyActive = false }
             if !pretty, !keyStrategyActive, let fast = value as? any AemiJSONFastEncodable {
                 var w = _JSONByteWriter(
-                    adopting: EncoderBufferPool.take(), options: options, maxDepth: maxEncodingDepth)
+                    adopting: EncoderBufferPool.take(),
+                    options: options,
+                    maxDepth: maxEncodingDepth
+                )
                 do {
                     try fast.__adjsonEncode(into: &w)
                 } catch {
@@ -107,8 +112,13 @@ extension AemiJSON {
             writer.prettySpaceBeforeColon = options.prettyKeySeparator == .foundation
             if pretty { writer.indentUnit = options.indent.unitBytes }
             let state = EncodeState(
-                writer, options: options, strategies: strategies, userInfo: userInfo,
-                maxEncodeDepth: maxEncodingDepth, pretty: pretty)
+                writer,
+                options: options,
+                strategies: strategies,
+                userInfo: userInfo,
+                maxEncodeDepth: maxEncodingDepth,
+                pretty: pretty
+            )
             do {
                 try state.encodeValue(value)
             } catch {

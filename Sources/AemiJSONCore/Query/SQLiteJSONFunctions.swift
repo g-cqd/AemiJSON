@@ -124,15 +124,26 @@ extension SQLiteJSON {
             root.forEachElement { child in
                 rows.append(
                     SQLiteJSONRow(
-                        key: nil, index: idx, value: child, type: type(child) ?? "null", path: "$[\(idx)]"))
+                        key: nil,
+                        index: idx,
+                        value: child,
+                        type: type(child) ?? "null",
+                        path: "$[\(idx)]"
+                    )
+                )
                 idx += 1
             }
         } else if root.isObject {
             root.forEachMember { key, child in
                 rows.append(
                     SQLiteJSONRow(
-                        key: key, index: nil, value: child, type: type(child) ?? "null",
-                        path: "$" + pathKeySegment(key)))
+                        key: key,
+                        index: nil,
+                        value: child,
+                        type: type(child) ?? "null",
+                        path: "$" + pathKeySegment(key)
+                    )
+                )
             }
         } else if root.exists {
             rows.append(SQLiteJSONRow(key: nil, index: nil, value: root, type: type(root) ?? "null", path: "$"))
@@ -202,8 +213,13 @@ public struct JSONTreeSequence: Sequence, Sendable {
                 node.forEachElement { child in
                     kids.append(
                         SQLiteJSONRow(
-                            key: nil, index: idx, value: child, type: SQLiteJSON.type(child) ?? "null",
-                            path: row.path + "[\(idx)]"))
+                            key: nil,
+                            index: idx,
+                            value: child,
+                            type: SQLiteJSON.type(child) ?? "null",
+                            path: row.path + "[\(idx)]"
+                        )
+                    )
                     idx += 1
                 }
                 stack.append(contentsOf: kids.reversed())
@@ -212,8 +228,13 @@ public struct JSONTreeSequence: Sequence, Sendable {
                 node.forEachMember { key, child in
                     kids.append(
                         SQLiteJSONRow(
-                            key: key, index: nil, value: child, type: SQLiteJSON.type(child) ?? "null",
-                            path: row.path + SQLiteJSON.pathKeySegment(key)))
+                            key: key,
+                            index: nil,
+                            value: child,
+                            type: SQLiteJSON.type(child) ?? "null",
+                            path: row.path + SQLiteJSON.pathKeySegment(key)
+                        )
+                    )
                 }
                 stack.append(contentsOf: kids.reversed())
             }

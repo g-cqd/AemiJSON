@@ -99,7 +99,9 @@ private func path(_ error: any Error) -> [String] {
 }
 
 private func decodePaths<T: Decodable>(
-    _ type: T.Type, _ json: String, snake: Bool = false
+    _ type: T.Type,
+    _ json: String,
+    snake: Bool = false
 ) -> (mine: [String], theirs: [String]) {
     let data = Data(json.utf8)
     var mine = AemiJSON.JSONDecoder()

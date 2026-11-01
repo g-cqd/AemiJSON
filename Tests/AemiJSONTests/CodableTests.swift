@@ -21,8 +21,12 @@ private struct Sample: Codable, Equatable {
 
 @Test func decodesCodableMatchingFoundation() throws {
     let value = Sample(
-        id: 7, name: "héllo", ok: true, score: 3.5,
-        tags: ["a", "b\"c"], inner: Inner(k: "v", n: nil),
+        id: 7,
+        name: "héllo",
+        ok: true,
+        score: 3.5,
+        tags: ["a", "b\"c"],
+        inner: Inner(k: "v", n: nil),
         widths: [-9_000_000_000, 9_000_000_000],
         unsigned: 18_000_000_000_000_000_000
     )

@@ -38,7 +38,12 @@ public enum JSONKey {
     /// - Complexity: O(len + the string's UTF-8 length) time and O(1) extra space.
     @inlinable
     public static func matches(
-        _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, json5: Bool = false, _ key: String
+        _ p: UnsafePointer<UInt8>,
+        _ off: Int,
+        _ len: Int,
+        escaped: Bool,
+        json5: Bool = false,
+        _ key: String
     ) -> Bool {
         // Caller owns `p[off ..< off + len]` for this call; `p` is read-only and never escapes.
         assert(off >= 0 && len >= 0, "key match requires a non-negative byte range")
@@ -68,7 +73,12 @@ public enum JSONKey {
     /// - Complexity: O(len) time and O(1) extra space.
     @inlinable
     public static func matches(
-        _ p: UnsafePointer<UInt8>, _ off: Int, _ len: Int, escaped: Bool, json5: Bool = false, _ key: StaticString
+        _ p: UnsafePointer<UInt8>,
+        _ off: Int,
+        _ len: Int,
+        escaped: Bool,
+        json5: Bool = false,
+        _ key: StaticString
     ) -> Bool {
         if escaped {
             if json5 {

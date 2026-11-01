@@ -78,8 +78,11 @@ public final class JSONRPCConnection: Sendable {
     private let state = Mutex(State())
 
     public init(
-        sink: any JSONRPCSink, framing: JSONRPCFraming, cancellation: JSONRPCCancellation? = nil,
-        onRequest: RequestHandler? = nil, onNotification: NotificationHandler? = nil
+        sink: any JSONRPCSink,
+        framing: JSONRPCFraming,
+        cancellation: JSONRPCCancellation? = nil,
+        onRequest: RequestHandler? = nil,
+        onNotification: NotificationHandler? = nil
     ) {
         self.sink = sink
         self.framing = framing

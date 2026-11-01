@@ -138,7 +138,10 @@ public enum JSONString {
     /// `j`, and emits the scalar's UTF-8 — U+FFFD for an unpaired or out-of-range surrogate.
     @inline(__always)
     private static func emitUnicodeEscape(
-        _ p: UnsafePointer<UInt8>, _ j: inout Int, _ end: Int, _ emit: (UInt8) -> Void
+        _ p: UnsafePointer<UInt8>,
+        _ j: inout Int,
+        _ end: Int,
+        _ emit: (UInt8) -> Void
     ) {
         let hi = unsafe readHex4(p, j, end)
         j += 4
@@ -177,7 +180,9 @@ public enum JSONString {
 
     @inline(__always)
     private static func emitJSON5Scalar(
-        _ scalar: UInt32, _ output: UnsafeMutableBufferPointer<UInt8>, _ index: inout Int
+        _ scalar: UInt32,
+        _ output: UnsafeMutableBufferPointer<UInt8>,
+        _ index: inout Int
     ) {
         func emit(_ byte: UInt8) {
             unsafe output[index] = byte
@@ -204,7 +209,11 @@ public enum JSONString {
     /// - Precondition: The parser validated the source range and its escapes; the target range is valid.
     /// - Complexity: O(length) time and O(1) extra space.
     public static func unescapedEquals(
-        _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, _ target: UnsafePointer<UInt8>, _ targetLength: Int
+        _ p: UnsafePointer<UInt8>,
+        _ offset: Int,
+        _ length: Int,
+        _ target: UnsafePointer<UInt8>,
+        _ targetLength: Int
     ) -> Bool {
         assert(offset >= 0 && length >= 0 && targetLength >= 0, "unescapedEquals requires non-negative ranges")
         var t = 0
@@ -247,7 +256,10 @@ public enum JSONString {
     /// advancing `j`, and feeds the scalar's UTF-8 bytes to `emit` — U+FFFD for an
     /// unpaired / out-of-range surrogate, matching `unescape`. Returns false on a mismatch.
     private static func decodeUnicodeEscape(
-        _ p: UnsafePointer<UInt8>, _ j: inout Int, _ end: Int, _ emit: (UInt8) -> Bool
+        _ p: UnsafePointer<UInt8>,
+        _ j: inout Int,
+        _ end: Int,
+        _ emit: (UInt8) -> Bool
     ) -> Bool {
         let hi = unsafe readHex4(p, j, end)
         j += 4

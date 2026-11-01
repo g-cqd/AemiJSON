@@ -107,7 +107,8 @@ struct SQLiteJSONFunctionTests {
         #expect(SQLiteJSON.extract(j, [spath("$.i")]) == .number(5))  // single → the value
         #expect(
             SQLiteJSON.extract(j, [spath("$.i"), spath("$.s"), spath("$.missing")])
-                == .array([.number(5), .string("hi"), .null]))  // multi → array, missing → null
+                == .array([.number(5), .string("hi"), .null])
+        )  // multi → array, missing → null
     }
 
     private let base = jvalue(#"{"a":1,"b":[10,20]}"#)

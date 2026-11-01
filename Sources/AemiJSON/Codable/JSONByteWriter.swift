@@ -46,13 +46,21 @@ public struct _JSONByteWriter {
     /// A runtime object key (escaped) followed by `:`. Used for `Dictionary` keys.
     @inlinable public mutating func dynamicKey(_ k: String) {
         JSONOutput.appendString(
-            k, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+            k,
+            to: &bytes,
+            escapeSlashes: options.escapeSlashes,
+            escapeHTMLUnsafe: options.escapeHTMLUnsafe
+        )
         bytes.append(0x3A)
     }
 
     @inlinable public mutating func string(_ v: String) {
         JSONOutput.appendString(
-            v, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+            v,
+            to: &bytes,
+            escapeSlashes: options.escapeSlashes,
+            escapeHTMLUnsafe: options.escapeHTMLUnsafe
+        )
     }
 
     @inlinable public mutating func integer<T: FixedWidthInteger>(_ v: T) {

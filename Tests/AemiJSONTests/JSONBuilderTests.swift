@@ -55,7 +55,8 @@ struct JSONBuilderTests {
             ("meta", .makeObject { ("ok", true) })
         }
         let expected = try JSONValue(
-            AemiJSON.parse(#"{"id":42,"name":"Ada","tags":["swift","json"],"email":"a@b.c","meta":{"ok":true}}"#).root)
+            AemiJSON.parse(#"{"id":42,"name":"Ada","tags":["swift","json"],"email":"a@b.c","meta":{"ok":true}}"#).root
+        )
         #expect(value == expected)
         #expect(objectKeys(value) == ["id", "name", "tags", "email", "meta"])
     }

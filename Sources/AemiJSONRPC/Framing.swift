@@ -60,7 +60,8 @@ public struct ContentLengthFraming: Sendable {
     private(set) var bytesScanned = 0
 
     public init(
-        maximumHeaderLength: Int = defaultMaximumHeaderLength, maximumContentLength: Int = defaultMaximumContentLength
+        maximumHeaderLength: Int = defaultMaximumHeaderLength,
+        maximumContentLength: Int = defaultMaximumContentLength
     ) {
         self.maximumHeaderLength = maximumHeaderLength
         self.maximumContentLength = maximumContentLength

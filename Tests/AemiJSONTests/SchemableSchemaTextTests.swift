@@ -241,13 +241,15 @@ private func property(_ text: String, _ name: String) -> JSONValue? {
     #expect(property(text, "closed") == (try! JSONValue(parsing: #"{"type":"integer","minimum":1,"maximum":100}"#)))
     #expect(
         property(text, "halfOpen")
-            == (try! JSONValue(parsing: #"{"type":"integer","minimum":1,"exclusiveMaximum":100}"#)))
+            == (try! JSONValue(parsing: #"{"type":"integer","minimum":1,"exclusiveMaximum":100}"#))
+    )
     #expect(property(text, "fromOnly") == (try! JSONValue(parsing: #"{"type":"integer","minimum":1}"#)))
     #expect(property(text, "throughOnly") == (try! JSONValue(parsing: #"{"type":"integer","maximum":100}"#)))
     #expect(property(text, "upToOnly") == (try! JSONValue(parsing: #"{"type":"integer","exclusiveMaximum":100}"#)))
     #expect(
         property(text, "comboMultiple")
-            == (try! JSONValue(parsing: #"{"type":"integer","minimum":0,"maximum":10,"multipleOf":5}"#)))
+            == (try! JSONValue(parsing: #"{"type":"integer","minimum":0,"maximum":10,"multipleOf":5}"#))
+    )
     #expect(property(text, "comboType") == (try! JSONValue(parsing: #"{"type":"number","minimum":0}"#)))
 }
 

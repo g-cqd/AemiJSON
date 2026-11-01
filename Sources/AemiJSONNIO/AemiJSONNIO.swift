@@ -18,7 +18,8 @@ extension AemiJSON {
     /// document holds keeps its bytes stable for the document's lifetime even if the caller mutates
     /// theirs (a write triggers a copy). This mirrors `parse(_ source: some ByteSource & Sendable)`.
     public static func parse(
-        _ buffer: ByteBuffer, options: JSONParseOptions = .strict
+        _ buffer: ByteBuffer,
+        options: JSONParseOptions = .strict
     ) throws(JSONError) -> JSONDocument {
         try parse(NIOByteBufferSource(buffer), options: options)
     }

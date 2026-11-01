@@ -129,7 +129,10 @@ public struct JSONEncodingOptions: Sendable {
     /// number formatting. For the indented forms (`JSON.stringify(value, null, space)`), use the
     /// `javaScript(space:)` / `javaScript(indent:)` factories.
     public static let javaScript = JSONEncodingOptions(
-        nonFinite: .null, numberFormat: .ecma262, prettyKeySeparator: .javaScript)
+        nonFinite: .null,
+        numberFormat: .ecma262,
+        prettyKeySeparator: .javaScript
+    )
 
     /// JavaScript `JSON.stringify(value, null, space)` with a numeric `space`: indent each nesting
     /// level by `space` spaces, clamped to `0...10` exactly as the spec does (`Math.min(10, space)`,
@@ -138,8 +141,12 @@ public struct JSONEncodingOptions: Sendable {
     public static func javaScript(space: Int) -> JSONEncodingOptions {
         let width = min(10, max(0, space))
         return JSONEncodingOptions(
-            nonFinite: .null, numberFormat: .ecma262, prettyPrinted: width > 0,
-            prettyKeySeparator: .javaScript, indent: .spaces(width))
+            nonFinite: .null,
+            numberFormat: .ecma262,
+            prettyPrinted: width > 0,
+            prettyKeySeparator: .javaScript,
+            indent: .spaces(width)
+        )
     }
 
     /// JavaScript `JSON.stringify(value, null, space)` with a string `space`: indent each nesting
@@ -148,8 +155,12 @@ public struct JSONEncodingOptions: Sendable {
     public static func javaScript(indent: String) -> JSONEncodingOptions {
         let unit = String(indent.prefix(10))
         return JSONEncodingOptions(
-            nonFinite: .null, numberFormat: .ecma262, prettyPrinted: !unit.isEmpty,
-            prettyKeySeparator: .javaScript, indent: .string(unit))
+            nonFinite: .null,
+            numberFormat: .ecma262,
+            prettyPrinted: !unit.isEmpty,
+            prettyKeySeparator: .javaScript,
+            indent: .string(unit)
+        )
     }
 
     /// SQLite's JSON text: `%!.15g` reals, unescaped slashes, declaration order, minified — matches

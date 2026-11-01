@@ -275,11 +275,16 @@ struct DepthSafetyTests {
         let arrayText = "[" + deepFastNodeJSON(120) + "]"
         await #expect(throws: DecodingError.self) {
             _ = try await AemiJSON.decodeArrayConcurrently(
-                FastNode.self, from: Data(arrayText.utf8), maxDecodingDepth: 8)
+                FastNode.self,
+                from: Data(arrayText.utf8),
+                maxDecodingDepth: 8
+            )
         }
         // A shallow array still decodes concurrently.
         let ok = try await AemiJSON.decodeArrayConcurrently(
-            FastNode.self, from: Data(#"[{"next":[]},{"next":[]}]"#.utf8))
+            FastNode.self,
+            from: Data(#"[{"next":[]},{"next":[]}]"#.utf8)
+        )
         #expect(ok.count == 2)
     }
 

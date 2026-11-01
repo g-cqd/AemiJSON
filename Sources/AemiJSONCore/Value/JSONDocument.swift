@@ -34,7 +34,10 @@ public final class JSONDocument: Sendable {
     package let containerSpans: ContainerSpans
 
     package init(
-        backing: Backing, tape: ContiguousArray<UInt64>, keysAreUnique: Bool = false, isJSON5: Bool = false,
+        backing: Backing,
+        tape: ContiguousArray<UInt64>,
+        keysAreUnique: Bool = false,
+        isJSON5: Bool = false,
         containerSpans: ContainerSpans = ContainerSpans()
     ) {
         self.backing = backing

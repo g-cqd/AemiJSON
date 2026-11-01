@@ -31,7 +31,8 @@ private func doc(_ s: String) -> JSON { try! AemiJSON.parse(s).root }
 private let store = doc(
     #"""
     {"store":{"book":[{"title":"A","price":5,"tags":["x"]},{"title":"B","price":15},{"title":"C","price":8,"author":"Z"}],"bicycle":{"price":100}}}
-    """#)
+    """#
+)
 
 @Test func jsonPathStructural() throws {
     #expect(try store.query("$.store.book[0].title").compactMap(\.string) == ["A"])
@@ -169,7 +170,9 @@ private let store = doc(
     let bait = String(repeating: "a", count: 100_000) + "!"
     let doc = try AemiJSON.parse(#"["\#(bait)","aaa"]"#).root
     #expect(
-        try doc.query(#"$[?match(@, "(a+)+")]"#).count == 1, "only \"aaa\" is a whole-string match; the bait ends in !")
+        try doc.query(#"$[?match(@, "(a+)+")]"#).count == 1,
+        "only \"aaa\" is a whole-string match; the bait ends in !"
+    )
     #expect(try doc.query(#"$[?search(@, "(a+)+")]"#).count == 2)
     let clock = ContinuousClock()
     var none = -1

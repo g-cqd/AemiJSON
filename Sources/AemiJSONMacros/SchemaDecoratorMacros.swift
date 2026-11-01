@@ -8,28 +8,32 @@ import SwiftSyntaxMacros
 
 struct SchemaNumberMacro: PeerMacro {
     static func expansion(
-        of node: AttributeSyntax, providingPeersOf declaration: some DeclSyntaxProtocol,
+        of node: AttributeSyntax,
+        providingPeersOf declaration: some DeclSyntaxProtocol,
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] { [] }
 }
 
 struct SchemaStringMacro: PeerMacro {
     static func expansion(
-        of node: AttributeSyntax, providingPeersOf declaration: some DeclSyntaxProtocol,
+        of node: AttributeSyntax,
+        providingPeersOf declaration: some DeclSyntaxProtocol,
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] { [] }
 }
 
 struct SchemaEnumMacro: PeerMacro {
     static func expansion(
-        of node: AttributeSyntax, providingPeersOf declaration: some DeclSyntaxProtocol,
+        of node: AttributeSyntax,
+        providingPeersOf declaration: some DeclSyntaxProtocol,
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] { [] }
 }
 
 struct SchemaInfoMacro: PeerMacro {
     static func expansion(
-        of node: AttributeSyntax, providingPeersOf declaration: some DeclSyntaxProtocol,
+        of node: AttributeSyntax,
+        providingPeersOf declaration: some DeclSyntaxProtocol,
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] { [] }
 }

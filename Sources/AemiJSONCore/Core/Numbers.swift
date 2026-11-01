@@ -64,8 +64,10 @@ public enum JSONNumber {
         // (inlined here — no `Double` round-trip, so the result is correctly rounded to nearest `Float`).
         guard let decimal = unsafe scanDecimal(p, offset, length, maxDigits: 7) else { return nil }
         return DecimalFloat.float(
-            significand: UInt32(truncatingIfNeeded: decimal.significand), exponent: decimal.exponent,
-            negative: decimal.negative)
+            significand: UInt32(truncatingIfNeeded: decimal.significand),
+            exponent: decimal.exponent,
+            negative: decimal.negative
+        )
     }
 
     // `parseJSON5Number`, but accumulating the hexadecimal body into `Float` directly so a large hex
@@ -143,12 +145,17 @@ public enum JSONNumber {
         // cannot prove correct — then the caller's stdlib fallback rounds it.
         guard let decimal = unsafe scanDecimal(p, offset, length, maxDigits: 19) else { return nil }
         if let clinger = DecimalFloat.double(
-            significand: decimal.significand, exponent: decimal.exponent, negative: decimal.negative)
-        {
+            significand: decimal.significand,
+            exponent: decimal.exponent,
+            negative: decimal.negative
+        ) {
             return clinger
         }
         return DecimalFloat.eiselLemire(
-            significand: decimal.significand, exponent: decimal.exponent, negative: decimal.negative)
+            significand: decimal.significand,
+            exponent: decimal.exponent,
+            negative: decimal.negative
+        )
     }
 
     // Re-scans a (validated) plain decimal number into its sign, decimal significand, and the power of
@@ -160,7 +167,10 @@ public enum JSONNumber {
     // path (see `scanPaddedDecimal`).
     @inline(__always)
     static func scanDecimal(
-        _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, maxDigits: Int
+        _ p: UnsafePointer<UInt8>,
+        _ offset: Int,
+        _ length: Int,
+        maxDigits: Int
     ) -> (significand: UInt64, exponent: Int, negative: Bool)? {
         var i = offset
         let end = offset + length
@@ -226,7 +236,10 @@ public enum JSONNumber {
     // back in range with the wrong value. Kept out of line: only over-long numbers reach it.
     @inline(never)
     static func scanPaddedDecimal(
-        _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, maxDigits: Int
+        _ p: UnsafePointer<UInt8>,
+        _ offset: Int,
+        _ length: Int,
+        maxDigits: Int
     ) -> (significand: UInt64, exponent: Int, negative: Bool)? {
         var i = offset
         let end = offset + length
@@ -295,7 +308,10 @@ public enum JSONNumber {
     // unsigned (negatives accumulate downward so Int.min and UInt.max both work).
     @inline(__always)
     public static func parseInteger<T: FixedWidthInteger>(
-        _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, _ type: T.Type
+        _ p: UnsafePointer<UInt8>,
+        _ offset: Int,
+        _ length: Int,
+        _ type: T.Type
     ) -> T? {
         // Caller owns `p[offset ..< offset + length]` for this call; `p` is read-only and never escapes.
         assert(offset >= 0 && length >= 0, "parseInteger requires a non-negative byte range")
@@ -342,7 +358,11 @@ public enum JSONNumber {
     // overflow handling; a negative sign accumulates downward so `Int.min` magnitudes still fit.
     @inline(__always)
     static func parseHexInteger<T: FixedWidthInteger>(
-        _ p: UnsafePointer<UInt8>, _ start: Int, _ end: Int, _ neg: Bool, _ type: T.Type
+        _ p: UnsafePointer<UInt8>,
+        _ start: Int,
+        _ end: Int,
+        _ neg: Bool,
+        _ type: T.Type
     ) -> T? {
         guard start < end else { return nil }
         var v: T = 0

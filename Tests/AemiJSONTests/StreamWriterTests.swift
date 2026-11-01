@@ -51,7 +51,8 @@ func ecma262NumberMatchesJSONStringify(_ input: Double, _ expected: String) {
             w.integer(2)
             w.endObject()
             w.endArray()
-        } == #"[{"a":1},{"b":2}]"#)
+        } == #"[{"a":1},{"b":2}]"#
+    )
 }
 
 // The two load-bearing cases from the request: caller-ordered dynamic keys and verbatim splice.
@@ -112,7 +113,8 @@ func ecma262NumberMatchesJSONStringify(_ input: Double, _ expected: String) {
             w.number(.nan)
             w.number(-.infinity)
             w.endArray()
-        } == "[null,null,null]")
+        } == "[null,null,null]"
+    )
     #expect(emit { $0.stringOrNull(nil) } == "null")
 }
 

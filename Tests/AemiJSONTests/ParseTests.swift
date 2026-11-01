@@ -14,7 +14,9 @@ import Testing
         let mine = adj(s)
         #expect(
             mine.bitPattern == reference.bitPattern || (mine.isNaN && reference.isNaN),
-            "parseDouble(\(s)) = \(mine) but Double(\(s)) = \(reference)", sourceLocation: sourceLocation)
+            "parseDouble(\(s)) = \(mine) but Double(\(s)) = \(reference)",
+            sourceLocation: sourceLocation
+        )
     }
 
     // Explicit edge cases: zeros, 2^53 boundary, subnormals, exponent extremes, the fast/slow seam.
@@ -166,7 +168,8 @@ private func parse5(_ s: String) throws(JSONError) -> JSON {
 @Test func json5GrammarParsesExtensions() throws {
     // Comments, unquoted keys, single-quoted strings, trailing commas.
     let j = try parse5(
-        "{\n  // line comment\n  unquoted: 'single quoted',\n  \"quoted\": 1, /* block */\n  arr: [1, 2, 3,],\n}")
+        "{\n  // line comment\n  unquoted: 'single quoted',\n  \"quoted\": 1, /* block */\n  arr: [1, 2, 3,],\n}"
+    )
     #expect(j.unquoted.string == "single quoted")
     #expect(j.quoted.int == 1)
     #expect(j.arr.arrayValue.compactMap(\.int) == [1, 2, 3])
@@ -210,7 +213,9 @@ private func parse5(_ s: String) throws(JSONError) -> JSON {
     var decoder = AemiJSON.JSONDecoder()
     decoder.allowsJSON5 = true
     let cfg = try decoder.decode(
-        Config.self, from: Data("{ host: 'localhost', port: 0x1F90, debug: true, /* ok */ }".utf8))
+        Config.self,
+        from: Data("{ host: 'localhost', port: 0x1F90, debug: true, /* ok */ }".utf8)
+    )
     #expect(cfg == Config(host: "localhost", port: 8080, debug: true))
 }
 

@@ -79,7 +79,9 @@ let isNIO = Context.environment["AEMIJSON_NIO"] != nil || Context.environment["A
 // code under an existing build. Atelier and TerminalKit pin the same revision: SwiftPM rejects one package
 // identity at two revisions in a graph, so all three move together.
 let aemiDependency: Package.Dependency = .package(
-    url: "https://github.com/Aemi-Studio/aemi.git", revision: "6d8e8624ff08f7cab3c7d4feb71e3e5650f9c4b1")
+    url: "https://github.com/Aemi-Studio/aemi.git",
+    revision: "6d8e8624ff08f7cab3c7d4feb71e3e5650f9c4b1"
+)
 
 // AemiRuntime (the production `TaskProvider`/`Clock` seams the concurrent parse/decode paths use) and
 // AemiTestKit (the test-only kit) are now both vended by the Aemi umbrella package, so they
@@ -106,20 +108,23 @@ if isDev {
     // Shared lint/format tooling (Format/Lint/LintBuild plugins + canonical `.swift-format`).
     // Dev-only, resolved from the published `main` branch.
     packageDependencies.append(
-        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0"))
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0")
+    )
     // ordo-one's statistically-rigorous benchmark framework (p-percentile latencies, malloc /
     // throughput metrics, CI-gated thresholds) — the project's single benchmark suite lives in
     // `Benchmarks/AemiJSONSuite` and runs via `swift package benchmark`. Dev-only: the suite target is
     // added only under `AEMIJSON_DEV`, so consumers never resolve it.
     packageDependencies.append(
-        .package(url: "https://github.com/ordo-one/benchmark", from: "1.38.0"))
+        .package(url: "https://github.com/ordo-one/benchmark", from: "1.38.0")
+    )
     // (AemiTestKit is vended by the Aemi package now; the test target references it from there.)
 }
 if isNIO {
     // swift-nio (NIOCore) supplies `ByteBuffer`. Resolved only under `AEMIJSON_NIO`, so default
     // consumers of `AemiJSON` / `AemiJSONCore` never pull it into their dependency graph.
     packageDependencies.append(
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0"))
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0")
+    )
 }
 
 let orderedCollections: Target.Dependency = .product(name: "OrderedCollections", package: "swift-collections")
@@ -183,8 +188,10 @@ let package = Package(
         // OrderedCollections (order-preserving eager objects) and AemiKernel (shared byte/number
         // primitives) — both Foundation-free with no transitive package deps, so the core stays portable.
         .target(
-            name: "AemiJSONCore", dependencies: [orderedCollections, aemiKernel, aemiKernels, aemiRegex],
-            swiftSettings: kernelSettings),
+            name: "AemiJSONCore",
+            dependencies: [orderedCollections, aemiKernel, aemiKernels, aemiRegex],
+            swiftSettings: kernelSettings
+        ),
         .target(
             // `aemiKernel` is declared directly (not only transitively via `AemiJSONCore`) because the
             // umbrella links it itself — `EncoderBufferPool` uses `AemiKernel.ByteBufferPool`.
@@ -196,7 +203,9 @@ let package = Package(
                 "AemiJSONCore", "AemiJSONMacros", orderedCollections, aemiKernel, aemiKernels, aemiRegex,
                 .product(name: "AemiRuntime", package: "aemi")
             ],
-            swiftSettings: strictSettings, plugins: aemijsonBuildPlugins),
+            swiftSettings: strictSettings,
+            plugins: aemijsonBuildPlugins
+        ),
         // JSON-RPC 2.0 (roadmap 0006). Framing, messages and the connection need only the engine; the stdio reader runs its blocking
         // reads on AemiRuntime's offload pool.
         .target(
@@ -204,15 +213,19 @@ let package = Package(
             dependencies: [
                 "AemiJSONCore", orderedCollections, aemiKernels, .product(name: "AemiRuntime", package: "aemi")
             ],
-            swiftSettings: strictSettings + [.strictMemorySafety()], plugins: aemijsonBuildPlugins),
+            swiftSettings: strictSettings + [.strictMemorySafety()],
+            plugins: aemijsonBuildPlugins
+        ),
         .testTarget(
             name: "AemiJSONRPCTests",
             dependencies: ["AemiJSONRPC", "AemiJSONCore", .product(name: "AemiRuntime", package: "aemi")],
-            swiftSettings: testSettings),
+            swiftSettings: testSettings
+        ),
         .testTarget(
             name: "AemiJSONCompatibilityTests",
             dependencies: ["AemiJSON", "AemiJSONCore", "ADJSON", "ADJSONCore"],
-            swiftSettings: testSettings),
+            swiftSettings: testSettings
+        ),
         .testTarget(
             name: "AemiJSONTests",
             dependencies: [
@@ -232,21 +245,31 @@ let package = Package(
         .plugin(
             name: "CoverageCheck",
             capability: .command(
-                intent: .custom(verb: "coverage-check", description: "Gate line coverage against a floor"))),
+                intent: .custom(verb: "coverage-check", description: "Gate line coverage against a floor")
+            )
+        ),
         .plugin(
             name: "BenchCompare",
             capability: .command(
                 intent: .custom(
-                    verb: "bench-compare", description: "Render the AemiJSON-vs-Foundation benchmark table"))),
+                    verb: "bench-compare",
+                    description: "Render the AemiJSON-vs-Foundation benchmark table"
+                )
+            )
+        ),
         .plugin(
             name: "FetchFixtures",
             capability: .command(
                 intent: .custom(
-                    verb: "fetch-fixtures", description: "Download conformance and benchmark corpora"),
+                    verb: "fetch-fixtures",
+                    description: "Download conformance and benchmark corpora"
+                ),
                 permissions: [
                     .allowNetworkConnections(scope: .all(), reason: "Download third-party JSON corpora"),
                     .writeToPackageDirectory(reason: "Write fixtures into Tests and Benchmarks")
-                ]))
+                ]
+            )
+        )
     ]
 )
 
@@ -263,7 +286,8 @@ if isFuzz {
                 .unsafeFlags(["-parse-as-library", "-sanitize=fuzzer"])
             ],
             linkerSettings: [.unsafeFlags(["-sanitize=fuzzer"])]
-        ))
+        )
+    )
     // Declare the explicit executable product so `swift build --product AemiJSONFuzz` links the binary.
     // (`--target` only compiles the module: with `-parse-as-library` the `main` comes from libFuzzer
     // at link time, so without a product to drive the link no executable is produced.)
@@ -284,7 +308,8 @@ if isDev {
             path: "Benchmarks/AemiJSONSuite",
             swiftSettings: strictSettings,
             plugins: [.plugin(name: "BenchmarkPlugin", package: "benchmark")]
-        ))
+        )
+    )
     // AemiJSONProbe (AEMIJSON_DEV-gated): a per-phase resource probe built on `AemiMetrics.ProcessProbe`.
     // The ordo-one suite reports per-benchmark percentiles; this attributes CPU, retired instructions,
     // and held footprint to each lifecycle phase (parse → materialize → query → encode), which the
@@ -295,7 +320,8 @@ if isDev {
             dependencies: ["AemiJSON", .product(name: "AemiMetrics", package: "aemi")],
             path: "Benchmarks/AemiJSONProbe",
             swiftSettings: strictSettings
-        ))
+        )
+    )
 }
 
 if isNIO {
@@ -308,8 +334,12 @@ if isNIO {
     package.targets.append(.target(name: "ADJSONNIO", dependencies: ["AemiJSONNIO"], swiftSettings: strictSettings))
     package.targets.append(
         .target(
-            name: "AemiJSONNIO", dependencies: ["AemiJSONCore", orderedCollections, nioCore],
-            swiftSettings: strictSettings))
+            name: "AemiJSONNIO",
+            dependencies: ["AemiJSONCore", orderedCollections, nioCore],
+            swiftSettings: strictSettings
+        )
+    )
     package.targets.append(
-        .testTarget(name: "AemiJSONNIOTests", dependencies: ["AemiJSONNIO", nioCore], swiftSettings: testSettings))
+        .testTarget(name: "AemiJSONNIOTests", dependencies: ["AemiJSONNIO", nioCore], swiftSettings: testSettings)
+    )
 }

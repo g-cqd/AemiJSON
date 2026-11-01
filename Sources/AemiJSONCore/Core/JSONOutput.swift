@@ -98,7 +98,10 @@ public enum JSONOutput {
     /// unchanged.
     @inlinable
     public static func appendString(
-        _ s: String, to bytes: inout [UInt8], escapeSlashes: Bool = false, escapeHTMLUnsafe: Bool = false
+        _ s: String,
+        to bytes: inout [UInt8],
+        escapeSlashes: Bool = false,
+        escapeHTMLUnsafe: Bool = false
     ) {
         bytes.append(0x22)
         var str = s
@@ -119,11 +122,19 @@ public enum JSONOutput {
                         // `encodeStopMask`; non-ASCII is copied verbatim (not a stop).
                         let slashNeedle: UInt8 = escapeSlashes ? 0x2F : 0x22
                         i += unsafe AemiKernels.indexOfControlOrAny(
-                            base: p + i, count: remaining, 0x22, 0x5C, slashNeedle, 0x22, 0x22)
+                            base: p + i,
+                            count: remaining,
+                            0x22,
+                            0x5C,
+                            slashNeedle,
+                            0x22,
+                            0x22
+                        )
                     } else {
                         while i + 8 <= n {
                             let word = UInt64(
-                                littleEndian: unsafe UnsafeRawPointer(p + i).loadUnaligned(as: UInt64.self))
+                                littleEndian: unsafe UnsafeRawPointer(p + i).loadUnaligned(as: UInt64.self)
+                            )
                             let mask = encodeStopMask(word, escapeSlashes: escapeSlashes)
                             if mask == 0 {
                                 i += 8

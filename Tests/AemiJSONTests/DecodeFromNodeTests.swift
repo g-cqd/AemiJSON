@@ -49,7 +49,8 @@ struct DecodeFromNodeTests {
         let fromNode = try decoder.decode(Hover.self, from: node)
         let raw = try #require(
             try AemiJSON.parse(envelope, options: JSONParseOptions(recordsContainerSpans: true)).root["result"]
-                .withRawJSONBytes { Data($0) })
+                .withRawJSONBytes { Data($0) }
+        )
         #expect(fromNode == (try decoder.decode(Hover.self, from: raw)))
         #expect(fromNode == Hover(contents: "a \"quoted\"\nline", range: [Position(line: 1, character: 2)]))
         #expect(try decoder.decode(Position.self, from: node["range"][index: 0]) == Position(line: 1, character: 2))
@@ -76,7 +77,8 @@ struct DecodeFromNodeTests {
         let document = try AemiJSON.parse(#"{"result":{"contents":"x","line":4}}"#)
         #expect(
             try AemiJSON.JSONDecoder().decode(FastHover.self, from: document.root["result"])
-                == FastHover(contents: "x", line: 4))
+                == FastHover(contents: "x", line: 4)
+        )
     }
 
     @Test func countsTheDepthLimitFromTheNode() throws {
@@ -113,6 +115,7 @@ struct DecodeFromNodeTests {
         let document = try parseInPlace(Data(envelope.utf8))
         #expect(
             try AemiJSON.JSONDecoder().decode(Position.self, from: document.root["result"]["range"][index: 0])
-                == Position(line: 1, character: 2))
+                == Position(line: 1, character: 2)
+        )
     }
 }

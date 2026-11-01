@@ -19,7 +19,8 @@ struct JSONEventReaderTests {
                 .key("b"), .beginArray, .bool(true), .null, .string("x"), .endArray,
                 .key("c"), .beginObject, .endObject,
                 .endObject
-            ])
+            ]
+        )
     }
 
     @Test func rootScalarsAndEmptyContainers() throws {

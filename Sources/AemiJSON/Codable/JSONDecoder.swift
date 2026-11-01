@@ -62,8 +62,11 @@ extension AemiJSON {
 
         private var strategies: DecodeStrategies {
             DecodeStrategies(
-                date: dateDecodingStrategy, data: dataDecodingStrategy,
-                nonConformingFloat: nonConformingFloatDecodingStrategy, key: keyDecodingStrategy)
+                date: dateDecodingStrategy,
+                data: dataDecodingStrategy,
+                nonConformingFloat: nonConformingFloatDecodingStrategy,
+                key: keyDecodingStrategy
+            )
         }
 
         public func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
@@ -96,14 +99,18 @@ extension AemiJSON {
         public func decode<T: Decodable>(_ type: T.Type, from node: JSON) throws -> T {
             guard node.exists else {
                 throw DecodingError.valueNotFound(
-                    type, .init(codingPath: [], debugDescription: "The JSON node to decode is missing"))
+                    type,
+                    .init(codingPath: [], debugDescription: "The JSON node to decode is missing")
+                )
             }
             return try decode(type, from: node.doc, at: node.index)
         }
 
         private func decode<T: Decodable>(_ type: T.Type, from document: JSONDocument, at index: Int) throws -> T {
             try document.withDecodeContext(
-                userInfo: userInfo, strategies: strategies, maxDecodeDepth: maxDecodingDepth
+                userInfo: userInfo,
+                strategies: strategies,
+                maxDecodeDepth: maxDecodingDepth
             ) { ctx in try ctx.decodeValue(T.self, at: index) }
         }
 
@@ -114,8 +121,13 @@ extension AemiJSON {
         /// guard, so the result matches `decode(_:from:)` on the equivalent bytes.
         public func decode<T: Decodable>(_ type: T.Type, from value: JSONValue) throws -> T {
             let decoder = JSONValueDecoderImpl(
-                value: value, codingPath: [], userInfo: userInfo, strategies: strategies, depth: 0,
-                maxDepth: maxDecodingDepth)
+                value: value,
+                codingPath: [],
+                userInfo: userInfo,
+                strategies: strategies,
+                depth: 0,
+                maxDepth: maxDecodingDepth
+            )
             return try decoder.unbox(value, as: type, [])
         }
     }

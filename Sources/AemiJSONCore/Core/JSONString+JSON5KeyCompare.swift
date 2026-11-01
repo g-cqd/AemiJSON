@@ -5,7 +5,11 @@ extension JSONString {
     /// - Precondition: The parser validated the source range and its escapes; the target range is valid.
     /// - Complexity: O(length) time and O(1) extra space.
     public static func unescapedEqualsJSON5(
-        _ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int, _ target: UnsafePointer<UInt8>, _ targetLength: Int
+        _ p: UnsafePointer<UInt8>,
+        _ offset: Int,
+        _ length: Int,
+        _ target: UnsafePointer<UInt8>,
+        _ targetLength: Int
     ) -> Bool {
         assert(offset >= 0 && length >= 0 && targetLength >= 0, "JSON5 comparison requires non-negative ranges")
         let targetBytes = unsafe UnsafeBufferPointer(start: target, count: targetLength)
@@ -68,8 +72,11 @@ extension JSONString {
 
     @inline(__always)
     private static func matchHex(
-        _ p: UnsafePointer<UInt8>, _ index: inout Int, _ end: Int,
-        _ target: UnsafeBufferPointer<UInt8>, _ targetIndex: inout Int
+        _ p: UnsafePointer<UInt8>,
+        _ index: inout Int,
+        _ end: Int,
+        _ target: UnsafeBufferPointer<UInt8>,
+        _ targetIndex: inout Int
     ) -> Bool {
         guard index + 1 < end else { return false }
         guard let hi = unsafe Hex.value(p[index]), let lo = unsafe Hex.value(p[index + 1]) else { return false }
@@ -100,8 +107,12 @@ extension JSONString {
 
     @inline(__always)
     private static func matchIdentity(
-        _ byte: UInt8, _ p: UnsafePointer<UInt8>, _ index: inout Int, _ end: Int,
-        _ target: UnsafeBufferPointer<UInt8>, _ targetIndex: inout Int
+        _ byte: UInt8,
+        _ p: UnsafePointer<UInt8>,
+        _ index: inout Int,
+        _ end: Int,
+        _ target: UnsafeBufferPointer<UInt8>,
+        _ targetIndex: inout Int
     ) -> Bool {
         if byte < 0x80 { return unsafe matchByte(byte, target, &targetIndex) }
         let count = byte >= 0xF0 ? 4 : (byte >= 0xE0 ? 3 : 2)

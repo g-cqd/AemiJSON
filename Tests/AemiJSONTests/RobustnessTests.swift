@@ -47,7 +47,8 @@ struct RobustnessTests {
                         bytes[Int.random(in: 0 ..< bytes.count, using: &rng)] = UInt8.random(in: 0 ... 255, using: &rng)
                     case 1:
                         bytes.insert(
-                            UInt8.random(in: 0 ... 255, using: &rng), at: Int.random(in: 0 ... bytes.count, using: &rng)
+                            UInt8.random(in: 0 ... 255, using: &rng),
+                            at: Int.random(in: 0 ... bytes.count, using: &rng)
                         )
                     case 2: bytes.remove(at: Int.random(in: 0 ..< bytes.count, using: &rng))
                     default: bytes += base  // duplicate to deepen / lengthen

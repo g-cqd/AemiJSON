@@ -73,7 +73,9 @@ struct DecimalTests {
         ]
         let decoded = try AemiJSON.JSONDecoder()
             .decode(
-                [Decimal].self, from: Data(("[" + cases.joined(separator: ",") + "]").utf8))
+                [Decimal].self,
+                from: Data(("[" + cases.joined(separator: ",") + "]").utf8)
+            )
         for (i, c) in cases.enumerated() {
             #expect(decoded[i] == Decimal(string: c, locale: posix), "mismatch for \(c)")
         }
@@ -82,7 +84,8 @@ struct DecimalTests {
     @Test func decimalRoundTripsExactly() throws {
         let original = Money(
             price: try #require(Decimal(string: "0.1")),
-            qty: try #require(Decimal(string: "123456789012345678901234567890")))
+            qty: try #require(Decimal(string: "123456789012345678901234567890"))
+        )
         let data = try AemiJSON.JSONEncoder().encode(original)
         let back = try AemiJSON.JSONDecoder().decode(Money.self, from: data)
         #expect(back == original)

@@ -12,36 +12,47 @@ private func applyPatch(_ patch: String, to target: String) throws -> JSONValue 
     // A.1 add an object member
     #expect(
         try applyPatch(#"[{"op":"add","path":"/baz","value":"qux"}]"#, to: #"{"foo":"bar"}"#)
-            == jv(#"{"foo":"bar","baz":"qux"}"#))
+            == jv(#"{"foo":"bar","baz":"qux"}"#)
+    )
     // A.2 add an array element
     #expect(
         try applyPatch(#"[{"op":"add","path":"/foo/1","value":"qux"}]"#, to: #"{"foo":["bar","baz"]}"#)
-            == jv(#"{"foo":["bar","qux","baz"]}"#))
+            == jv(#"{"foo":["bar","qux","baz"]}"#)
+    )
     // A.3 remove
     #expect(
-        try applyPatch(#"[{"op":"remove","path":"/baz"}]"#, to: #"{"baz":"qux","foo":"bar"}"#) == jv(#"{"foo":"bar"}"#))
+        try applyPatch(#"[{"op":"remove","path":"/baz"}]"#, to: #"{"baz":"qux","foo":"bar"}"#) == jv(#"{"foo":"bar"}"#)
+    )
     // A.5 replace
     #expect(
         try applyPatch(#"[{"op":"replace","path":"/baz","value":"boo"}]"#, to: #"{"baz":"qux","foo":"bar"}"#)
-            == jv(#"{"baz":"boo","foo":"bar"}"#))
+            == jv(#"{"baz":"boo","foo":"bar"}"#)
+    )
     // A.6 move (object)
     #expect(
         try applyPatch(
             #"[{"op":"move","from":"/foo/waldo","path":"/qux/thud"}]"#,
-            to: #"{"foo":{"bar":"baz","waldo":"fred"},"qux":{"corge":"grault"}}"#)
-            == jv(#"{"foo":{"bar":"baz"},"qux":{"corge":"grault","thud":"fred"}}"#))
+            to: #"{"foo":{"bar":"baz","waldo":"fred"},"qux":{"corge":"grault"}}"#
+        )
+            == jv(#"{"foo":{"bar":"baz"},"qux":{"corge":"grault","thud":"fred"}}"#)
+    )
     // A.7 move (array reorder)
     #expect(
         try applyPatch(
-            #"[{"op":"move","from":"/foo/1","path":"/foo/3"}]"#, to: #"{"foo":["all","grass","cows","eat"]}"#)
-            == jv(#"{"foo":["all","cows","eat","grass"]}"#))
+            #"[{"op":"move","from":"/foo/1","path":"/foo/3"}]"#,
+            to: #"{"foo":["all","grass","cows","eat"]}"#
+        )
+            == jv(#"{"foo":["all","cows","eat","grass"]}"#)
+    )
     // copy + append with "-"
     #expect(
         try applyPatch(#"[{"op":"copy","from":"/foo/0","path":"/foo/-"}]"#, to: #"{"foo":["a","b"]}"#)
-            == jv(#"{"foo":["a","b","a"]}"#))
+            == jv(#"{"foo":["a","b","a"]}"#)
+    )
     // test success leaves the document unchanged
     #expect(
-        try applyPatch(#"[{"op":"test","path":"/baz","value":"qux"}]"#, to: #"{"baz":"qux"}"#) == jv(#"{"baz":"qux"}"#))
+        try applyPatch(#"[{"op":"test","path":"/baz","value":"qux"}]"#, to: #"{"baz":"qux"}"#) == jv(#"{"baz":"qux"}"#)
+    )
 }
 
 @Test func rfc6902TestFailureThrows() {

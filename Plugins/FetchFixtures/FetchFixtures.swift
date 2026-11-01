@@ -36,7 +36,8 @@ struct FetchFixturesPlugin: CommandPlugin {
         try await download("\(simd)/citm_catalog.json", to: "Benchmarks/Corpus/citm_catalog.json")
         try await download(
             "https://raw.githubusercontent.com/miloyip/nativejson-benchmark/master/data/canada.json",
-            to: "Benchmarks/Corpus/canada.json")
+            to: "Benchmarks/Corpus/canada.json"
+        )
         // The broader simdjson-data corpus — a spread of real-world shapes: a GitHub API array,
         // string/unicode-heavy (gsoc), number-heavy (marine_ik), escaped-unicode (twitterescaped),
         // and a pure number array.
@@ -46,7 +47,8 @@ struct FetchFixturesPlugin: CommandPlugin {
         }
         try await download(
             "https://raw.githubusercontent.com/jsonpath-standard/jsonpath-compliance-test-suite/main/cts.json",
-            to: "Tests/AemiJSONTests/Resources/JSONPathCTS/cts.json")
+            to: "Tests/AemiJSONTests/Resources/JSONPathCTS/cts.json"
+        )
 
         // nst/JSONTestSuite: download the tarball, then expand it with `tar` and copy the parsing cases.
         let suite = root.appending(path: "Tests/AemiJSONTests/Resources/JSONTestSuite")

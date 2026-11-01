@@ -22,8 +22,13 @@ struct JSONValueDecoderImpl: Decoder {
 
     func child(_ value: JSONValue, _ codingPath: [any CodingKey]) -> JSONValueDecoderImpl {
         JSONValueDecoderImpl(
-            value: value, codingPath: codingPath, userInfo: userInfo, strategies: strategies,
-            depth: depth + 1, maxDepth: maxDepth)
+            value: value,
+            codingPath: codingPath,
+            userInfo: userInfo,
+            strategies: strategies,
+            depth: depth + 1,
+            maxDepth: maxDepth
+        )
     }
 
     func container<Key: CodingKey>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> {
@@ -65,7 +70,9 @@ struct JSONValueDecoderImpl: Decoder {
             throw DecodingError.dataCorrupted(
                 .init(
                     codingPath: codingPath,
-                    debugDescription: "Decoding exceeded the maximum nesting depth (\(maxDepth))"))
+                    debugDescription: "Decoding exceeded the maximum nesting depth (\(maxDepth))"
+                )
+            )
         }
         return try T(from: child(value, codingPath))
     }
@@ -101,7 +108,9 @@ struct JSONValueDecoderImpl: Decoder {
     }
 
     func unboxInteger<I: FixedWidthInteger>(
-        _ value: JSONValue, _ type: I.Type, _ codingPath: [any CodingKey]
+        _ value: JSONValue,
+        _ type: I.Type,
+        _ codingPath: [any CodingKey]
     ) throws -> I {
         switch value {
             case .int(let i):
@@ -172,12 +181,15 @@ struct JSONValueDecoderImpl: Decoder {
 
     func typeMismatch<T>(_ type: T.Type, _ value: JSONValue, _ codingPath: [any CodingKey]) -> DecodingError {
         DecodingError.typeMismatch(
-            type, .init(codingPath: codingPath, debugDescription: "Expected \(type) but found \(value.kindLabel)"))
+            type,
+            .init(codingPath: codingPath, debugDescription: "Expected \(type) but found \(value.kindLabel)")
+        )
     }
     private func numberDoesNotFit<T>(_ type: T.Type, _ literal: String, _ codingPath: [any CodingKey]) -> DecodingError
     {
         DecodingError.dataCorrupted(
-            .init(codingPath: codingPath, debugDescription: "Parsed JSON number \(literal) does not fit in \(type)"))
+            .init(codingPath: codingPath, debugDescription: "Parsed JSON number \(literal) does not fit in \(type)")
+        )
     }
     private func dataCorrupted(_ message: String, _ codingPath: [any CodingKey]) -> DecodingError {
         DecodingError.dataCorrupted(.init(codingPath: codingPath, debugDescription: message))
@@ -226,7 +238,9 @@ private struct KeyedValueContainer<Key: CodingKey>: KeyedDecodingContainerProtoc
     private func value(_ key: Key) throws -> JSONValue {
         guard let v = members[key.stringValue] else {
             throw DecodingError.keyNotFound(
-                key, .init(codingPath: codingPath, debugDescription: "No value for key \(key.stringValue)"))
+                key,
+                .init(codingPath: codingPath, debugDescription: "No value for key \(key.stringValue)")
+            )
         }
         return v
     }
@@ -276,7 +290,8 @@ private struct KeyedValueContainer<Key: CodingKey>: KeyedDecodingContainerProtoc
     }
 
     func nestedContainer<NestedKey>(
-        keyedBy type: NestedKey.Type, forKey key: Key
+        keyedBy type: NestedKey.Type,
+        forKey key: Key
     ) throws
         -> KeyedDecodingContainer<NestedKey>
     {
@@ -303,7 +318,8 @@ private struct UnkeyedValueContainer: UnkeyedDecodingContainer {
         guard !isAtEnd else {
             throw DecodingError.valueNotFound(
                 JSONValue.self,
-                .init(codingPath: codingPath, debugDescription: "Unkeyed container is at end"))
+                .init(codingPath: codingPath, debugDescription: "Unkeyed container is at end")
+            )
         }
         let path = codingPath + [IndexKey(currentIndex)]
         let v = elements[currentIndex]

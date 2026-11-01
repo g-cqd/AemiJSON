@@ -57,14 +57,19 @@ struct SchemaValidator {
     // SchemaValidator+Keywords.swift; this dispatcher only fans out to them and ANDs their results.
     @discardableResult
     func validate(
-        _ index: Int, _ instance: JSON, _ path: inout [String], _ errors: inout [ValidationError],
+        _ index: Int,
+        _ instance: JSON,
+        _ path: inout [String],
+        _ errors: inout [ValidationError],
         _ ctx: ValidationContext = ValidationContext()
     ) -> Bool {
         guard ctx.depth <= maxValidationDepth else {
             errors.append(
                 ValidationError(
                     instanceLocation: location(path),
-                    message: "validation exceeded the maximum nesting depth (\(maxValidationDepth))"))
+                    message: "validation exceeded the maximum nesting depth (\(maxValidationDepth))"
+                )
+            )
             return false
         }
         let node = nodes[index]

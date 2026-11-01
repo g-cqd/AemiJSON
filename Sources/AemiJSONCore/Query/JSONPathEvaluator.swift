@@ -103,7 +103,11 @@ enum JSONPathEvaluator {
     // is bounded (≤ `JSONPathParser.maxDepth`). The local `depth` guard self-bounds it too, so it
     // never depends on that far-away invariant: an over-deep AST conservatively matches nothing.
     static func evalFilter(
-        _ e: FilterExpr, current: JSON, root: JSON, cache: FilterCache, depth: Int = 0
+        _ e: FilterExpr,
+        current: JSON,
+        root: JSON,
+        cache: FilterCache,
+        depth: Int = 0
     ) -> Bool {
         guard depth <= JSONPathParser.maxDepth else { return false }
         switch e {
@@ -115,8 +119,10 @@ enum JSONPathEvaluator {
             case .existence(let q): return !evalQuery(q, current: current, root: root, cache: cache).isEmpty
             case .comparison(let l, let op, let r):
                 return compare(
-                    evalComparand(l, current: current, root: root, cache: cache), op,
-                    evalComparand(r, current: current, root: root, cache: cache))
+                    evalComparand(l, current: current, root: root, cache: cache),
+                    op,
+                    evalComparand(r, current: current, root: root, cache: cache)
+                )
             case .regex(let s, let p, let anchored):
                 return evalRegex(s, p, anchored, current: current, root: root, cache: cache)
         }
@@ -207,7 +213,12 @@ enum JSONPathEvaluator {
     }
 
     static func evalRegex(
-        _ sc: Comparand, _ pattern: RegexOperand, _ anchored: Bool, current: JSON, root: JSON, cache: FilterCache
+        _ sc: Comparand,
+        _ pattern: RegexOperand,
+        _ anchored: Bool,
+        current: JSON,
+        root: JSON,
+        cache: FilterCache
     )
         -> Bool
     {
@@ -221,7 +232,10 @@ enum JSONPathEvaluator {
                 // here; a malformed pattern simply doesn't match (evaluation can't throw).
                 guard case .string(let pat) = evalComparand(pc, current: current, root: root, cache: cache),
                     let compiled = try? Pattern(
-                        pat, syntax: .iRegexpWithAnchors, matching: anchored ? .wholeString : .search)
+                        pat,
+                        syntax: .iRegexpWithAnchors,
+                        matching: anchored ? .wholeString : .search
+                    )
                 else { return false }
                 re = compiled
         }

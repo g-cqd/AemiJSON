@@ -41,9 +41,12 @@ final class EncodeState {
     static let singleValueSlot = -2
 
     init(
-        _ w: JSONWriter, options: JSONEncodingOptions = .rfc8259,
-        strategies: EncodeStrategies = EncodeStrategies(), userInfo: [CodingUserInfoKey: Any] = [:],
-        maxEncodeDepth: Int = 2048, pretty: Bool = false
+        _ w: JSONWriter,
+        options: JSONEncodingOptions = .rfc8259,
+        strategies: EncodeStrategies = EncodeStrategies(),
+        userInfo: [CodingUserInfoKey: Any] = [:],
+        maxEncodeDepth: Int = 2048,
+        pretty: Bool = false
     ) {
         self.w = w
         self.options = options
@@ -163,7 +166,9 @@ final class EncodeState {
     func encodeDecimal(_ decimal: Decimal) throws {
         guard !decimal.isNaN else {
             throw EncodingError.invalidValue(
-                decimal, .init(codingPath: [], debugDescription: "Decimal.nan cannot be represented in JSON"))
+                decimal,
+                .init(codingPath: [], debugDescription: "Decimal.nan cannot be represented in JSON")
+            )
         }
         w.bytes.append(contentsOf: decimal.description.utf8)
     }
@@ -235,7 +240,8 @@ struct TapeEncoder: Encoder {
             frame = current >> 1
         }
         return KeyedEncodingContainer(
-            KeyedTapeEncodingContainer<Key>(state: state, frame: frame, codingPath: codingPath))
+            KeyedTapeEncodingContainer<Key>(state: state, frame: frame, codingPath: codingPath)
+        )
     }
 
     func unkeyedContainer() -> any UnkeyedEncodingContainer {
@@ -255,7 +261,8 @@ struct TapeEncoder: Encoder {
         let current = state.encoders[slot]
         precondition(
             current == EncodeState.noContainer || current == EncodeState.singleValueSlot,
-            "Encoder already requested a different container type.")
+            "Encoder already requested a different container type."
+        )
         state.encoders[slot] = EncodeState.singleValueSlot
         return SingleValueTapeEncodingContainer(state: state, codingPath: codingPath)
     }
@@ -317,12 +324,14 @@ private struct KeyedTapeEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
     }
 
     mutating func nestedContainer<NK: CodingKey>(
-        keyedBy keyType: NK.Type, forKey key: Key
+        keyedBy keyType: NK.Type,
+        forKey key: Key
     ) -> KeyedEncodingContainer<NK> {
         member(key)
         let f = state.open(object: true)
         return KeyedEncodingContainer(
-            KeyedTapeEncodingContainer<NK>(state: state, frame: f, codingPath: codingPath + [key]))
+            KeyedTapeEncodingContainer<NK>(state: state, frame: f, codingPath: codingPath + [key])
+        )
     }
 
     mutating func nestedUnkeyedContainer(forKey key: Key) -> any UnkeyedEncodingContainer {

@@ -255,7 +255,9 @@ public struct JSONEventReader {
                     guard let p = buf.baseAddress else { return "" }
                     if !hasEscape {
                         return unsafe String(
-                            decoding: UnsafeBufferPointer(start: p + start, count: length), as: UTF8.self)
+                            decoding: UnsafeBufferPointer(start: p + start, count: length),
+                            as: UTF8.self
+                        )
                     }
                     return unsafe isJSON5
                         ? JSONString.unescapeJSON5(p, start, length) : JSONString.unescape(p, start, length)
@@ -292,7 +294,9 @@ public struct JSONEventReader {
         return bytes.withUnsafeBufferPointer { buf in
             guard let p = buf.baseAddress else { return nil }
             return unsafe String(
-                decoding: UnsafeBufferPointer(start: p + range.lowerBound, count: range.count), as: UTF8.self)
+                decoding: UnsafeBufferPointer(start: p + range.lowerBound, count: range.count),
+                as: UTF8.self
+            )
         }
     }
 

@@ -177,7 +177,8 @@ struct PathParserDepthTests {
     /// outcome directly, so no hand-off box is needed.
     private func assertParses(_ path: String) {
         let parsed = runOnConstrainedStack(
-            stackSize: Self.workerStackSize, name: "PathParserDepthTests.worker"
+            stackSize: Self.workerStackSize,
+            name: "PathParserDepthTests.worker"
         ) {
             (try? JSONPath(path)) != nil
         }
@@ -187,7 +188,8 @@ struct PathParserDepthTests {
     /// Assert `path` is rejected with a `JSONPathError` (not a crash), on the 512 KiB worker stack.
     private func assertRejectsCleanly(_ path: String) {
         let parsed = runOnConstrainedStack(
-            stackSize: Self.workerStackSize, name: "PathParserDepthTests.worker"
+            stackSize: Self.workerStackSize,
+            name: "PathParserDepthTests.worker"
         ) { () -> Bool in
             do {
                 _ = try JSONPath(path)

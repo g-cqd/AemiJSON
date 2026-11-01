@@ -51,7 +51,8 @@ struct NumberGrammarParityTests {
                 let sax = saxAccepts(s, mode.options)
                 #expect(
                     tape == sax,
-                    "grammar diverged (\(mode.name)) for \(s.debugDescription): tape=\(tape) sax=\(sax)")
+                    "grammar diverged (\(mode.name)) for \(s.debugDescription): tape=\(tape) sax=\(sax)"
+                )
             }
         }
     }
@@ -68,7 +69,8 @@ struct NumberGrammarParityTests {
             let doc = "[\(literal)]"
             #expect(
                 tapeAccepts(doc, mode.options) == saxAccepts(doc, mode.options),
-                "grammar diverged (\(mode.name)) for element \(literal.debugDescription)")
+                "grammar diverged (\(mode.name)) for element \(literal.debugDescription)"
+            )
         }
     }
 }

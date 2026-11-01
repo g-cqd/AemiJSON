@@ -24,7 +24,11 @@ extension TapeBuilder {
                 // (control `< 0x20`, non-ASCII `>= 0x80`, quote, backslash), so the accepted grammar is
                 // unchanged; only the fast-forward is wider than the 8-byte SWAR below.
                 j += unsafe AemiKernels.indexOfStringStop(
-                    base: p + j, count: remaining, quote: 0x22, escape: 0x5C)
+                    base: p + j,
+                    count: remaining,
+                    quote: 0x22,
+                    escape: 0x5C
+                )
             } else {
                 // Short remainder: the inline 8-byte SWAR fast-forward (no call overhead), exactly as
                 // before. This size gate (like `UTF8Validation.simdMinBytes`) keeps short JSON strings —
@@ -32,7 +36,8 @@ extension TapeBuilder {
                 // regress them. Only whole words inside the buffer are loaded (`j + 8 <= n`).
                 while j + 8 <= n {
                     let word = UInt64(
-                        littleEndian: unsafe UnsafeRawPointer(p + j).loadUnaligned(as: UInt64.self))
+                        littleEndian: unsafe UnsafeRawPointer(p + j).loadUnaligned(as: UInt64.self)
+                    )
                     let mask = Self.stringStopMask(word)
                     if mask == 0 {
                         j += 8

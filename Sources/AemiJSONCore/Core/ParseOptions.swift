@@ -92,7 +92,10 @@ public struct JSONParseOptions: Sendable {
     /// RFC 7493 I-JSON profile: strict syntax, duplicate object keys rejected, and numbers
     /// restricted to the IEEE-754 double domain (integers within ±(2^53−1), no ±∞).
     public static let iJSON = JSONParseOptions(
-        validation: .strict, duplicateKeys: .throwError, restrictsNumbersToIEEE754: true)
+        validation: .strict,
+        duplicateKeys: .throwError,
+        restrictsNumbersToIEEE754: true
+    )
 
     @inline(__always) var isStrict: Bool {
         guard case .strict = validation else { return false }

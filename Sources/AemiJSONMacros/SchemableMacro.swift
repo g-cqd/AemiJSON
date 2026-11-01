@@ -31,18 +31,24 @@ struct SchemableMacro: ExtensionMacro {
     ) throws -> [ExtensionDeclSyntax] {
         guard let structDecl = declaration.as(StructDeclSyntax.self) else {
             context.diagnose(
-                SyntaxExtract.note(node, "Schemable", "@Schemable only supports structs; no schema generated"))
+                SyntaxExtract.note(node, "Schemable", "@Schemable only supports structs; no schema generated")
+            )
             return []
         }
         if SyntaxExtract.declaresCodingKeys(structDecl) {
             context.diagnose(
                 SyntaxExtract.note(
-                    node, "Schemable", "@Schemable skips types with custom CodingKeys; no schema generated"))
+                    node,
+                    "Schemable",
+                    "@Schemable skips types with custom CodingKeys; no schema generated"
+                )
+            )
             return []
         }
         guard let props = schemaProperties(structDecl) else {
             context.diagnose(
-                SyntaxExtract.note(node, "Schemable", "@Schemable needs explicit property types; no schema generated"))
+                SyntaxExtract.note(node, "Schemable", "@Schemable needs explicit property types; no schema generated")
+            )
             return []
         }
 
@@ -53,17 +59,23 @@ struct SchemableMacro: ExtensionMacro {
         if !selfRefs.isEmpty {
             context.diagnose(
                 SyntaxExtract.note(
-                    node, "Schemable",
+                    node,
+                    "Schemable",
                     "@Schemable does not yet support self-referential types; describing "
-                        + "\(selfRefs.joined(separator: ", ")) as an open object"))
+                        + "\(selfRefs.joined(separator: ", ")) as an open object"
+                )
+            )
         }
         if !unresolved.isEmpty {
             context.diagnose(
                 SyntaxExtract.note(
-                    node, "Schemable",
+                    node,
+                    "Schemable",
                     "@Schemable can't resolve \(unresolved.joined(separator: ", ")) to a JSON type "
                         + "(type matching is syntactic) — describing as an open object. Spell scalar types "
-                        + "plainly (e.g. `Int`, not `Swift.Int` or a typealias) or use a @Schema… decorator."))
+                        + "plainly (e.g. `Int`, not `Swift.Int` or a typealias) or use a @Schema… decorator."
+                )
+            )
         }
 
         // The rooted document differs from the bare fragment only by a leading `$schema` member,
@@ -130,7 +142,10 @@ private enum Seg {
 }
 
 private func schemaTextBody(
-    _ props: [SchemaProperty], enclosing: String, selfRefs: inout [String], unresolved: inout [String]
+    _ props: [SchemaProperty],
+    enclosing: String,
+    selfRefs: inout [String],
+    unresolved: inout [String]
 ) -> String {
     // `properties` is always present (even when empty) to match zod's `tools/list` output for
     // no-argument tools. Properties and `required` follow declaration order.
@@ -150,13 +165,21 @@ private func schemaTextBody(
 }
 
 private func propertyFragment(
-    _ p: SchemaProperty, enclosing: String, selfRefs: inout [String], unresolved: inout [String]
+    _ p: SchemaProperty,
+    enclosing: String,
+    selfRefs: inout [String],
+    unresolved: inout [String]
 ) -> [Seg] {
     // `@SchemaInfo(description:)` wins over the `///` doc comment; `@SchemaInfo(title:)` adds a title.
     let desc = p.decorators.description ?? p.doc
     return fragment(
-        for: p.type, meta: SchemaMeta(desc: desc, title: p.decorators.title), dec: p.decorators,
-        enclosing: enclosing, selfRefs: &selfRefs, unresolved: &unresolved)
+        for: p.type,
+        meta: SchemaMeta(desc: desc, title: p.decorators.title),
+        dec: p.decorators,
+        enclosing: enclosing,
+        selfRefs: &selfRefs,
+        unresolved: &unresolved
+    )
 }
 
 /// The optional `description` / `title` annotations a schema fragment carries.
@@ -167,8 +190,12 @@ private struct SchemaMeta {
 }
 
 private func fragment(
-    for type: TypeSyntax, meta: SchemaMeta, dec: SchemaDecorators,
-    enclosing: String, selfRefs: inout [String], unresolved: inout [String]
+    for type: TypeSyntax,
+    meta: SchemaMeta,
+    dec: SchemaDecorators,
+    enclosing: String,
+    selfRefs: inout [String],
+    unresolved: inout [String]
 ) -> [Seg] {
     let desc = meta.desc
     let title = meta.title
@@ -182,55 +209,59 @@ private func fragment(
 
     if let wrapped = optionalWrapped(type) {
         return fragment(
-            for: wrapped, meta: SchemaMeta(desc: desc, title: title), dec: dec, enclosing: enclosing,
-            selfRefs: &selfRefs, unresolved: &unresolved)
+            for: wrapped,
+            meta: SchemaMeta(desc: desc, title: title),
+            dec: dec,
+            enclosing: enclosing,
+            selfRefs: &selfRefs,
+            unresolved: &unresolved
+        )
     }
     if let array = type.as(ArrayTypeSyntax.self) {
         return arrayFragment(
-            element: array.element, desc: desc, title: title, enclosing: enclosing, selfRefs: &selfRefs,
-            unresolved: &unresolved)
+            element: array.element,
+            desc: desc,
+            title: title,
+            enclosing: enclosing,
+            selfRefs: &selfRefs,
+            unresolved: &unresolved
+        )
     }
     if let dict = type.as(DictionaryTypeSyntax.self) {
         return dictFragment(
-            value: dict.value, desc: desc, title: title, enclosing: enclosing, selfRefs: &selfRefs,
-            unresolved: &unresolved)
+            value: dict.value,
+            desc: desc,
+            title: title,
+            enclosing: enclosing,
+            selfRefs: &selfRefs,
+            unresolved: &unresolved
+        )
     }
     if let id = type.as(IdentifierTypeSyntax.self) {
         let base = id.name.text
         if let generics = id.genericArgumentClause?.arguments.compactMap({ $0.argument.as(TypeSyntax.self) }) {
             if base == "Array", let inner = generics.first {
                 return arrayFragment(
-                    element: inner, desc: desc, title: title, enclosing: enclosing, selfRefs: &selfRefs,
-                    unresolved: &unresolved)
+                    element: inner,
+                    desc: desc,
+                    title: title,
+                    enclosing: enclosing,
+                    selfRefs: &selfRefs,
+                    unresolved: &unresolved
+                )
             }
             if base == "Dictionary", generics.count >= 2 {
                 return dictFragment(
-                    value: generics[1], desc: desc, title: title, enclosing: enclosing, selfRefs: &selfRefs,
-                    unresolved: &unresolved)
+                    value: generics[1],
+                    desc: desc,
+                    title: title,
+                    enclosing: enclosing,
+                    selfRefs: &selfRefs,
+                    unresolved: &unresolved
+                )
             }
         }
-        if base == "Bool" {
-            return [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"boolean\"}")]
-        }
-        if integerTypes.contains(base) {
-            return [
-                .lit(
-                    scalarObject(
-                        forcedNumberType(dec) ?? "integer", desc: desc, title: title,
-                        constraints: numberConstraints(dec)))
-            ]
-        }
-        if base == "Double" || base == "Float" {
-            return [
-                .lit(
-                    scalarObject(
-                        forcedNumberType(dec) ?? "number", desc: desc, title: title,
-                        constraints: numberConstraints(dec)))
-            ]
-        }
-        if base == "String" {
-            return [.lit(scalarObject("string", desc: desc, title: title, constraints: stringConstraints(dec)))]
-        }
+        if let scalar = scalarFragment(base, desc: desc, title: title, dec: dec) { return scalar }
         if base == enclosing {
             selfRefs.append(base)
             return [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"object\"}")]
@@ -245,25 +276,78 @@ private func fragment(
     return [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"object\"}")]
 }
 
+/// The JSON scalar fragment the type named `base` maps to (boolean, integer, number or string); nil for others.
+private func scalarFragment(_ base: String, desc: String?, title: String?, dec: SchemaDecorators) -> [Seg]? {
+    if base == "Bool" {
+        return [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"boolean\"}")]
+    }
+    if integerTypes.contains(base) {
+        return [
+            .lit(
+                scalarObject(
+                    forcedNumberType(dec) ?? "integer",
+                    desc: desc,
+                    title: title,
+                    constraints: numberConstraints(dec)
+                )
+            )
+        ]
+    }
+    if base == "Double" || base == "Float" {
+        return [
+            .lit(
+                scalarObject(
+                    forcedNumberType(dec) ?? "number",
+                    desc: desc,
+                    title: title,
+                    constraints: numberConstraints(dec)
+                )
+            )
+        ]
+    }
+    if base == "String" {
+        return [.lit(scalarObject("string", desc: desc, title: title, constraints: stringConstraints(dec)))]
+    }
+    return nil
+}
+
 private func arrayFragment(
-    element: TypeSyntax, desc: String?, title: String?, enclosing: String, selfRefs: inout [String],
+    element: TypeSyntax,
+    desc: String?,
+    title: String?,
+    enclosing: String,
+    selfRefs: inout [String],
     unresolved: inout [String]
 ) -> [Seg] {
     [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"array\",\"items\":")]
         + fragment(
-            for: element, meta: .none, dec: SchemaDecorators(), enclosing: enclosing,
-            selfRefs: &selfRefs, unresolved: &unresolved)
+            for: element,
+            meta: .none,
+            dec: SchemaDecorators(),
+            enclosing: enclosing,
+            selfRefs: &selfRefs,
+            unresolved: &unresolved
+        )
         + [.lit("}")]
 }
 
 private func dictFragment(
-    value: TypeSyntax, desc: String?, title: String?, enclosing: String, selfRefs: inout [String],
+    value: TypeSyntax,
+    desc: String?,
+    title: String?,
+    enclosing: String,
+    selfRefs: inout [String],
     unresolved: inout [String]
 ) -> [Seg] {
     [.lit("{" + annotationPrefix(desc: desc, title: title) + "\"type\":\"object\",\"additionalProperties\":")]
         + fragment(
-            for: value, meta: .none, dec: SchemaDecorators(), enclosing: enclosing,
-            selfRefs: &selfRefs, unresolved: &unresolved)
+            for: value,
+            meta: .none,
+            dec: SchemaDecorators(),
+            enclosing: enclosing,
+            selfRefs: &selfRefs,
+            unresolved: &unresolved
+        )
         + [.lit("}")]
 }
 

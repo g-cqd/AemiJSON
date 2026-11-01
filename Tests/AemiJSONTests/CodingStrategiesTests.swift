@@ -98,7 +98,10 @@ private let sampleData = Data([0x00, 0x01, 0x02, 0xFF, 0x10, 0xAB])
 @Test func nonConformingFloatDecodesFromConfiguredStrings() throws {
     var dec = AemiJSON.JSONDecoder()
     dec.nonConformingFloatDecodingStrategy = .convertFromString(
-        positiveInfinity: "Infinity", negativeInfinity: "-Infinity", nan: "NaN")
+        positiveInfinity: "Infinity",
+        negativeInfinity: "-Infinity",
+        nan: "NaN"
+    )
     #expect(try dec.decode(DoubleBox.self, from: Data(#"{"v":"Infinity"}"#.utf8)).v == .infinity)
     #expect(try dec.decode(DoubleBox.self, from: Data(#"{"v":"-Infinity"}"#.utf8)).v == -.infinity)
     #expect(try dec.decode(DoubleBox.self, from: Data(#"{"v":"NaN"}"#.utf8)).v.isNaN)
@@ -141,7 +144,8 @@ private struct SnakeModel: Codable, Equatable {
     fnd.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     #expect(
         String(decoding: try adj.encode(model), as: UTF8.self)
-            == String(decoding: try fnd.encode(model), as: UTF8.self))
+            == String(decoding: try fnd.encode(model), as: UTF8.self)
+    )
 }
 
 @Test func snakeCaseHandlesAcronymsLikeFoundation() throws {
@@ -158,12 +162,14 @@ private struct SnakeModel: Codable, Equatable {
     fnd.keyEncodingStrategy = .convertToSnakeCase
     fnd.outputFormatting = [.sortedKeys]
     #expect(
-        String(decoding: try adj.encode(v), as: UTF8.self) == String(decoding: try fnd.encode(v), as: UTF8.self))
+        String(decoding: try adj.encode(v), as: UTF8.self) == String(decoding: try fnd.encode(v), as: UTF8.self)
+    )
 }
 
 @Test func keyDecodingConvertsFromSnakeCase() throws {
     let json = Data(
-        #"{"first_name":"Ada","last_name":"L","age_in_years":36,"nested":{"street_name":"Main"}}"#.utf8)
+        #"{"first_name":"Ada","last_name":"L","age_in_years":36,"nested":{"street_name":"Main"}}"#.utf8
+    )
     var adj = AemiJSON.JSONDecoder()
     adj.keyDecodingStrategy = .convertFromSnakeCase
     let fnd = Foundation.JSONDecoder()

@@ -41,7 +41,9 @@ private let strictSpellings: [KeySpellings] = [
 private let json5Spellings: [KeySpellings] = [
     KeySpellings(key: "a", bodies: ["a", "'a'", "\"a\"", "'\\u0061'", "\"\\u0061\"", "'\\x61'", "'\\a'", "'a\\\n'"]),
     KeySpellings(
-        key: "ab", bodies: ["ab", "'ab'", "'a\\\nb'", "'a\\\r\nb'", "'a\\\u{2028}b'", "'a\\\u{2029}b'", "'\\x61b'"]),
+        key: "ab",
+        bodies: ["ab", "'ab'", "'a\\\nb'", "'a\\\r\nb'", "'a\\\u{2028}b'", "'a\\\u{2029}b'", "'\\x61b'"]
+    ),
     KeySpellings(key: "A", bodies: ["A", "'A'", "'\\x41'", "'\\u0041'"]),
     KeySpellings(key: "é", bodies: ["é", "'é'", "'\\u00e9'", "'\\xe9'", "'\\xE9'"]),
     KeySpellings(key: "\u{A0}", bodies: ["'\u{A0}'", "'\\u00a0'", "'\\xa0'"]),
@@ -84,7 +86,8 @@ struct DuplicateKeyEscapeTests {
             let value = ReadRoute.tape.value(of: Array("{\(spelling.token):1}".utf8), options: options)
             #expect(
                 value == .object([spelling.key: .int(1)]),
-                "\(spelling.token) did not decode to \(spelling.key.debugDescription): \(String(describing: value))")
+                "\(spelling.token) did not decode to \(spelling.key.debugDescription): \(String(describing: value))"
+            )
         }
     }
 
@@ -96,7 +99,8 @@ struct DuplicateKeyEscapeTests {
                 let parsed = try? AemiJSON.parse(document, options: throwError)
                 #expect(
                     (parsed == nil) == sameKey(first, second),
-                    "\(document): same key=\(sameKey(first, second)), rejected=\(parsed == nil)")
+                    "\(document): same key=\(sameKey(first, second)), rejected=\(parsed == nil)"
+                )
             }
         }
     }
@@ -109,7 +113,8 @@ struct DuplicateKeyEscapeTests {
                 let parsed = try? AemiJSON.parse(document, options: json5ThrowError)
                 #expect(
                     (parsed == nil) == sameKey(first, second),
-                    "\(document): same key=\(sameKey(first, second)), rejected=\(parsed == nil)")
+                    "\(document): same key=\(sameKey(first, second)), rejected=\(parsed == nil)"
+                )
             }
         }
     }

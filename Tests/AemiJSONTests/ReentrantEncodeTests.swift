@@ -72,7 +72,8 @@ private func foundationValue(_ bytes: some Sequence<UInt8>) throws -> NSObject {
         theirs.outputFormatting = pretty ? [.sortedKeys, .prettyPrinted] : [.sortedKeys]
         #expect(
             String(decoding: try mine.encode(value), as: UTF8.self)
-                == String(decoding: try theirs.encode(value), as: UTF8.self))
+                == String(decoding: try theirs.encode(value), as: UTF8.self)
+        )
     }
 
     /// The streaming writer's own order is the order of the calls.

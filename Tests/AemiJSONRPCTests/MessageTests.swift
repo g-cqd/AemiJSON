@@ -95,7 +95,8 @@ private func refusal(_ text: String) -> JSONRPCMessage.Invalid? {
         #expect(invalid?.id == .string("q"))
         let answer = try invalid?.response() ?? []
         #expect(
-            String(decoding: answer, as: UTF8.self).hasPrefix(#"{"jsonrpc":"2.0","id":"q","error":{"code":-32600,"#))
+            String(decoding: answer, as: UTF8.self).hasPrefix(#"{"jsonrpc":"2.0","id":"q","error":{"code":-32600,"#)
+        )
     }
 }
 

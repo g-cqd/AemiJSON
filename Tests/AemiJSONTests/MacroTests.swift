@@ -24,11 +24,25 @@ private struct MProfile: Codable, Equatable {
 
 private let macroSamples: [MUser] = [
     MUser(
-        id: 1, name: "héllo", nick: nil, score: 3.5, active: true, tags: ["x", "y"], meta: ["k": 2],
-        profile: MProfile(bio: "hi", city: nil, followers: 9_000_000_000)),
+        id: 1,
+        name: "héllo",
+        nick: nil,
+        score: 3.5,
+        active: true,
+        tags: ["x", "y"],
+        meta: ["k": 2],
+        profile: MProfile(bio: "hi", city: nil, followers: 9_000_000_000)
+    ),
     MUser(
-        id: 2, name: "b\"q", nick: "nick", score: -0.25, active: false, tags: [], meta: [:],
-        profile: MProfile(bio: "yo", city: "NYC", followers: 0))
+        id: 2,
+        name: "b\"q",
+        nick: "nick",
+        score: -0.25,
+        active: false,
+        tags: [],
+        meta: [:],
+        profile: MProfile(bio: "yo", city: "NYC", followers: 0)
+    )
 ]
 
 @Test func macroGeneratedRoundTripsThroughFoundation() throws {

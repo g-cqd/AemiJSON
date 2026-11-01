@@ -75,16 +75,20 @@ struct ParityTests {
         expectRoundTripIdentity(v, sourceLocation: sourceLocation) {
             JSONValue(
                 try AemiJSON.parse(
-                    try $0.encodedBytes(options: JSONEncodingOptions(keyOrder: .sorted)), options: opts
+                    try $0.encodedBytes(options: JSONEncodingOptions(keyOrder: .sorted)),
+                    options: opts
                 )
-                .root)
+                .root
+            )
         }
         expectRoundTripIdentity(v, sourceLocation: sourceLocation) {
             JSONValue(
                 try AemiJSON.parse(
-                    try $0.encodedBytes(options: JSONEncodingOptions(prettyPrinted: true)), options: opts
+                    try $0.encodedBytes(options: JSONEncodingOptions(prettyPrinted: true)),
+                    options: opts
                 )
-                .root)
+                .root
+            )
         }
     }
 

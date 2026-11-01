@@ -45,7 +45,8 @@ import Testing
     }
 
     let text = JSONSchema.describe(
-        Person(name: "A", age: 30, nickname: nil, addr: Addr(city: "X", zip: 1), scores: [1.5, 2.0]))
+        Person(name: "A", age: 30, nickname: nil, addr: Addr(city: "X", zip: 1), scores: [1.5, 2.0])
+    )
     let s = try AemiJSON.parse(text).root
 
     // AemiTestKit's typed asserts: each subscript chain type-checks once as a plain argument,

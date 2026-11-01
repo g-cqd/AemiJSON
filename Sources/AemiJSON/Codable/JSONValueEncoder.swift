@@ -94,7 +94,9 @@ private func guardEncodeDepth(_ depth: Int, _ maxDepth: Int, _ value: Any, _ cod
             value,
             .init(
                 codingPath: codingPath,
-                debugDescription: "Encoding exceeded the maximum nesting depth (\(maxDepth))"))
+                debugDescription: "Encoding exceeded the maximum nesting depth (\(maxDepth))"
+            )
+        )
     }
 }
 
@@ -123,7 +125,8 @@ private final class JSONValueEncoderImpl: Encoder {
             slot.kind = .object(object)
         }
         return KeyedEncodingContainer(
-            KeyedContainer<Key>(object: object, codingPath: codingPath, depth: depth, maxDepth: maxDepth))
+            KeyedContainer<Key>(object: object, codingPath: codingPath, depth: depth, maxDepth: maxDepth)
+        )
     }
 
     func unkeyedContainer() -> any UnkeyedEncodingContainer {
@@ -168,7 +171,8 @@ private struct SingleValueContainer: SingleValueEncodingContainer {
     mutating func encode<T: Encodable>(_ value: T) throws {
         try guardEncodeDepth(depth, maxDepth, value, codingPath)
         try value.encode(
-            to: JSONValueEncoderImpl(codingPath: codingPath, slot: slot, depth: depth + 1, maxDepth: maxDepth))
+            to: JSONValueEncoderImpl(codingPath: codingPath, slot: slot, depth: depth + 1, maxDepth: maxDepth)
+        )
     }
 }
 
@@ -202,17 +206,28 @@ private struct KeyedContainer<Key: CodingKey>: KeyedEncodingContainerProtocol {
         try guardEncodeDepth(depth, maxDepth, value, codingPath + [key])
         try value.encode(
             to: JSONValueEncoderImpl(
-                codingPath: codingPath + [key], slot: slot(key), depth: depth + 1, maxDepth: maxDepth))
+                codingPath: codingPath + [key],
+                slot: slot(key),
+                depth: depth + 1,
+                maxDepth: maxDepth
+            )
+        )
     }
 
     mutating func nestedContainer<NestedKey>(
-        keyedBy keyType: NestedKey.Type, forKey key: Key
+        keyedBy keyType: NestedKey.Type,
+        forKey key: Key
     ) -> KeyedEncodingContainer<NestedKey> {
         let object = RefObject()
         slot(key).kind = .object(object)
         return KeyedEncodingContainer(
             KeyedContainer<NestedKey>(
-                object: object, codingPath: codingPath + [key], depth: depth + 1, maxDepth: maxDepth))
+                object: object,
+                codingPath: codingPath + [key],
+                depth: depth + 1,
+                maxDepth: maxDepth
+            )
+        )
     }
 
     mutating func nestedUnkeyedContainer(forKey key: Key) -> any UnkeyedEncodingContainer {
@@ -223,7 +238,11 @@ private struct KeyedContainer<Key: CodingKey>: KeyedEncodingContainerProtocol {
 
     mutating func superEncoder() -> any Encoder {
         JSONValueEncoderImpl(
-            codingPath: codingPath, slot: object.slot(forKey: "super"), depth: depth + 1, maxDepth: maxDepth)
+            codingPath: codingPath,
+            slot: object.slot(forKey: "super"),
+            depth: depth + 1,
+            maxDepth: maxDepth
+        )
     }
 
     mutating func superEncoder(forKey key: Key) -> any Encoder {
@@ -264,7 +283,12 @@ private struct UnkeyedContainer: UnkeyedEncodingContainer {
         try guardEncodeDepth(depth, maxDepth, value, codingPath + [key])
         try value.encode(
             to: JSONValueEncoderImpl(
-                codingPath: codingPath + [key], slot: appendSlot(), depth: depth + 1, maxDepth: maxDepth))
+                codingPath: codingPath + [key],
+                slot: appendSlot(),
+                depth: depth + 1,
+                maxDepth: maxDepth
+            )
+        )
     }
 
     mutating func nestedContainer<NestedKey>(
@@ -275,7 +299,12 @@ private struct UnkeyedContainer: UnkeyedEncodingContainer {
         appendSlot().kind = .object(object)
         return KeyedEncodingContainer(
             KeyedContainer<NestedKey>(
-                object: object, codingPath: codingPath + [key], depth: depth + 1, maxDepth: maxDepth))
+                object: object,
+                codingPath: codingPath + [key],
+                depth: depth + 1,
+                maxDepth: maxDepth
+            )
+        )
     }
 
     mutating func nestedUnkeyedContainer() -> any UnkeyedEncodingContainer {

@@ -245,7 +245,10 @@ extension JSONValue {
     }
 
     private func writeCompact(
-        _ value: JSONValue, into bytes: inout [UInt8], depth: Int, options: JSONEncodingOptions
+        _ value: JSONValue,
+        into bytes: inout [UInt8],
+        depth: Int,
+        options: JSONEncodingOptions
     ) throws {
         switch value {
             case .null:
@@ -258,7 +261,11 @@ extension JSONValue {
                 try Self.writeNumber(d, into: &bytes, options: options)
             case .string(let s):
                 JSONOutput.appendString(
-                    s, to: &bytes, escapeSlashes: options.escapeSlashes, escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+                    s,
+                    to: &bytes,
+                    escapeSlashes: options.escapeSlashes,
+                    escapeHTMLUnsafe: options.escapeHTMLUnsafe
+                )
             case .array(let elements):
                 bytes.append(0x5B)
                 var first = true
@@ -275,8 +282,11 @@ extension JSONValue {
                     if !first { bytes.append(0x2C) }
                     first = false
                     JSONOutput.appendString(
-                        key, to: &bytes, escapeSlashes: options.escapeSlashes,
-                        escapeHTMLUnsafe: options.escapeHTMLUnsafe)
+                        key,
+                        to: &bytes,
+                        escapeSlashes: options.escapeSlashes,
+                        escapeHTMLUnsafe: options.escapeHTMLUnsafe
+                    )
                     bytes.append(0x3A)
                     try writeCompactChild(member, into: &bytes, depth: depth + 1, options: options)
                 }
@@ -286,7 +296,10 @@ extension JSONValue {
 
     @inline(__always)
     private func writeCompactChild(
-        _ value: JSONValue, into bytes: inout [UInt8], depth: Int, options: JSONEncodingOptions
+        _ value: JSONValue,
+        into bytes: inout [UInt8],
+        depth: Int,
+        options: JSONEncodingOptions
     ) throws {
         if depth >= Self.maxFastDepth {
             try value.writeIterative(into: &bytes, depth: depth, options: options)
@@ -311,7 +324,11 @@ extension JSONValue {
                     bytes.append(b)
                 case .key(let k, let pretty):
                     JSONOutput.appendString(
-                        k, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
+                        k,
+                        to: &bytes,
+                        escapeSlashes: escapeSlashes,
+                        escapeHTMLUnsafe: escapeHTMLUnsafe
+                    )
                     if pretty {
                         if spaceBeforeColon { bytes.append(0x20) }  // `"k" : ` (Foundation) vs `"k": ` (JS)
                         bytes.append(0x3A)
@@ -325,7 +342,9 @@ extension JSONValue {
                 case .value(let value, let depth):
                     guard depth <= Self.maxEncodingDepth else {
                         throw EncodingError.invalidValue(
-                            value, .init(codingPath: [], debugDescription: "Nesting exceeds \(Self.maxEncodingDepth)"))
+                            value,
+                            .init(codingPath: [], debugDescription: "Nesting exceeds \(Self.maxEncodingDepth)")
+                        )
                     }
                     switch value {
                         case .null:
@@ -338,7 +357,11 @@ extension JSONValue {
                             try Self.writeNumber(d, into: &bytes, options: options)
                         case .string(let s):
                             JSONOutput.appendString(
-                                s, to: &bytes, escapeSlashes: escapeSlashes, escapeHTMLUnsafe: escapeHTMLUnsafe)
+                                s,
+                                to: &bytes,
+                                escapeSlashes: escapeSlashes,
+                                escapeHTMLUnsafe: escapeHTMLUnsafe
+                            )
                         case .array(let elements):
                             emitArray(elements, depth: depth, into: &bytes, stack: &stack, pretty: pretty)
                         case .object(let members):
@@ -370,7 +393,11 @@ extension JSONValue {
     /// Emits a `[`-array: pushes the closing `]`, then each element + separator in reverse
     /// (the iterative-emission shape, identical output to the recursive path).
     private func emitArray(
-        _ elements: [JSONValue], depth: Int, into bytes: inout [UInt8], stack: inout [WriteOp], pretty: Bool
+        _ elements: [JSONValue],
+        depth: Int,
+        into bytes: inout [UInt8],
+        stack: inout [WriteOp],
+        pretty: Bool
     ) {
         bytes.append(0x5B)
         if elements.isEmpty {

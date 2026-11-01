@@ -74,9 +74,14 @@ final class DecodeContext {
     // out-of-range index while release builds keep the raw-pointer speed.
     @usableFromInline
     init(
-        doc: JSONDocument, bytes: UnsafePointer<UInt8>, byteCount: Int,
-        tape: UnsafePointer<UInt64>, tapeCount: Int, userInfo: [CodingUserInfoKey: Any],
-        strategies: DecodeStrategies, maxDecodeDepth: Int
+        doc: JSONDocument,
+        bytes: UnsafePointer<UInt8>,
+        byteCount: Int,
+        tape: UnsafePointer<UInt64>,
+        tapeCount: Int,
+        userInfo: [CodingUserInfoKey: Any],
+        strategies: DecodeStrategies,
+        maxDecodeDepth: Int
     ) {
         self.doc = doc
         self.bytes = bytes
@@ -123,7 +128,9 @@ final class DecodeContext {
     /// does: a type mismatch against a dictionary).
     @usableFromInline func objectExpected(codingPath: [any CodingKey]) -> DecodingError {
         DecodingError.typeMismatch(
-            [String: Any].self, .init(codingPath: codingPath, debugDescription: "Expected an object"))
+            [String: Any].self,
+            .init(codingPath: codingPath, debugDescription: "Expected an object")
+        )
     }
 
     @inline(__always) @inlinable func tag(_ i: Int) -> UInt8 { Slot.tag(slot(i)) }
@@ -256,13 +263,22 @@ extension JSONDocument {
     /// borrowed for this call only, so it is marked dead when `body` returns: a `Decoder` or container
     /// kept past that point traps on its next read instead of reading freed memory.
     func withDecodeContext<R>(
-        userInfo: [CodingUserInfoKey: Any], strategies: DecodeStrategies, maxDecodeDepth: Int,
+        userInfo: [CodingUserInfoKey: Any],
+        strategies: DecodeStrategies,
+        maxDecodeDepth: Int,
         _ body: (DecodeContext) throws -> R
     ) rethrows -> R {
         try withBuffers { bytes, byteCount, tape, tapeCount in
             let ctx = DecodeContext(
-                doc: self, bytes: bytes, byteCount: byteCount, tape: tape, tapeCount: tapeCount,
-                userInfo: userInfo, strategies: strategies, maxDecodeDepth: maxDecodeDepth)
+                doc: self,
+                bytes: bytes,
+                byteCount: byteCount,
+                tape: tape,
+                tapeCount: tapeCount,
+                userInfo: userInfo,
+                strategies: strategies,
+                maxDecodeDepth: maxDecodeDepth
+            )
             defer { ctx.isLive = false }
             return try body(ctx)
         }
@@ -281,14 +297,21 @@ struct TapeDecoder: Decoder {
         let hint = converted == nil ? ctx.openMemberHint(of: index) : -1
         return KeyedDecodingContainer(
             KeyedTapeDecodingContainer<Key>(
-                ctx: ctx, index: index, codingPath: codingPath, convertedMembers: converted, hint: hint)
+                ctx: ctx,
+                index: index,
+                codingPath: codingPath,
+                convertedMembers: converted,
+                hint: hint
+            )
         )
     }
 
     func unkeyedContainer() throws -> any UnkeyedDecodingContainer {
         guard ctx.tag(index) == JSONKind.array.rawValue else {
             throw DecodingError.typeMismatch(
-                [Any].self, .init(codingPath: codingPath, debugDescription: "Expected an array"))
+                [Any].self,
+                .init(codingPath: codingPath, debugDescription: "Expected an array")
+            )
         }
         return UnkeyedTapeDecodingContainer(ctx: ctx, containerIndex: index, codingPath: codingPath)
     }
@@ -400,7 +423,9 @@ private struct KeyedTapeDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
     @inline(__always) private func requireIndex(_ key: Key) throws -> Int {
         guard let vi = memberValueIndex(key) else {
             throw DecodingError.keyNotFound(
-                key, .init(codingPath: codingPath, debugDescription: "No value for key \(key.stringValue)"))
+                key,
+                .init(codingPath: codingPath, debugDescription: "No value for key \(key.stringValue)")
+            )
         }
         return vi
     }
@@ -508,7 +533,8 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
         let at = cursor
         guard let result = extract(c, at) else {
             throw DecodingError.typeMismatch(
-                T.self, .init(codingPath: codingPath + [IndexKey(currentIndex)], debugDescription: "Expected \(T.self)")
+                T.self,
+                .init(codingPath: codingPath + [IndexKey(currentIndex)], debugDescription: "Expected \(T.self)")
             )
         }
         advance()
@@ -518,7 +544,8 @@ private struct UnkeyedTapeDecodingContainer: UnkeyedDecodingContainer {
     private func end(_ type: Any.Type) -> DecodingError {
         DecodingError.valueNotFound(
             type,
-            .init(codingPath: codingPath + [IndexKey(currentIndex)], debugDescription: "Unkeyed container is at end"))
+            .init(codingPath: codingPath + [IndexKey(currentIndex)], debugDescription: "Unkeyed container is at end")
+        )
     }
 }
 

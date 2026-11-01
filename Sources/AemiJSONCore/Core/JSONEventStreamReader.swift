@@ -158,7 +158,9 @@ public struct JSONEventStreamReader {
     // else require a `,` and advance to `plainNext` (or `json5Restart` in JSON5, which also accepts a
     // trailing-comma close).
     private mutating func commaOrClose(
-        _ closer: UInt8, json5Restart: Expect, plainNext: Expect
+        _ closer: UInt8,
+        json5Restart: Expect,
+        plainNext: Expect
     ) throws(JSONError) -> Step {
         if skipWS() { return .needMore }
         if i >= count { return .needMore }
@@ -201,7 +203,9 @@ public struct JSONEventStreamReader {
                     key = buffer.withUnsafeBufferPointer { buf in
                         guard let p = unsafe buf.baseAddress.map({ unsafe $0 + base }) else { return "" }
                         return unsafe String(
-                            decoding: UnsafeBufferPointer(start: p + open, count: end - open), as: UTF8.self)
+                            decoding: UnsafeBufferPointer(start: p + open, count: end - open),
+                            as: UTF8.self
+                        )
                     }
             }
         } else {

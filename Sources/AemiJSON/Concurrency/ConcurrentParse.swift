@@ -64,7 +64,9 @@ extension AemiJSON {
     ///   serially on the calling task; above it they are split into
     ///   `min(coreCount, count / minimumBatch)` batches.
     public static func parseLinesConcurrently(
-        _ bytes: [UInt8], options: JSONParseOptions = .strict, minimumBatch: Int = 64
+        _ bytes: [UInt8],
+        options: JSONParseOptions = .strict,
+        minimumBatch: Int = 64
     ) async throws -> [JSONDocument] {
         let lines = ndjsonLines(bytes)
         let n = lines.count
@@ -96,7 +98,10 @@ extension AemiJSON {
 
     @available(*, deprecated, message: "The batches run in a task group; the task provider is no longer used")
     public static func parseLinesConcurrently(
-        _ bytes: [UInt8], options: JSONParseOptions = .strict, minimumBatch: Int = 64, taskProvider: any TaskProvider
+        _ bytes: [UInt8],
+        options: JSONParseOptions = .strict,
+        minimumBatch: Int = 64,
+        taskProvider: any TaskProvider
     ) async throws -> [JSONDocument] {
         try await parseLinesConcurrently(bytes, options: options, minimumBatch: minimumBatch)
     }
@@ -104,7 +109,10 @@ extension AemiJSON {
     /// Parses `lines[lo ..< hi]`, checking for cancellation of the current task every 64 records,
     /// starting with the first.
     private static func parseRecords(
-        _ lines: [[UInt8]], _ lo: Int, _ hi: Int, options: JSONParseOptions
+        _ lines: [[UInt8]],
+        _ lo: Int,
+        _ hi: Int,
+        options: JSONParseOptions
     ) throws -> [JSONDocument] {
         var documents: [JSONDocument] = []
         documents.reserveCapacity(hi - lo)
@@ -117,7 +125,9 @@ extension AemiJSON {
 
     /// `Data` convenience for ``parseLinesConcurrently(_:options:minimumBatch:)``.
     public static func parseLinesConcurrently(
-        _ data: Data, options: JSONParseOptions = .strict, minimumBatch: Int = 64
+        _ data: Data,
+        options: JSONParseOptions = .strict,
+        minimumBatch: Int = 64
     ) async throws -> [JSONDocument] {
         try await parseLinesConcurrently([UInt8](data), options: options, minimumBatch: minimumBatch)
     }

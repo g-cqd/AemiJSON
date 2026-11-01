@@ -25,11 +25,29 @@ private struct E: Codable, Equatable {
 
 private let samples: [E] = [
     E(
-        id: 1, title: "a\"b\tc\nd", note: nil, flag: true, ratio: 3.5, big: -9_000_000_000,
-        ints: [], points: [], meta: [:], maybe: nil),
+        id: 1,
+        title: "a\"b\tc\nd",
+        note: nil,
+        flag: true,
+        ratio: 3.5,
+        big: -9_000_000_000,
+        ints: [],
+        points: [],
+        meta: [:],
+        maybe: nil
+    ),
     E(
-        id: 2, title: "héllo", note: "set", flag: false, ratio: -0.25, big: 9_000_000_000,
-        ints: [1, 2, 3], points: [Pt(x: 1, y: 2), Pt(x: 3, y: 4)], meta: ["k": 7], maybe: Pt(x: 9, y: 9))
+        id: 2,
+        title: "héllo",
+        note: "set",
+        flag: false,
+        ratio: -0.25,
+        big: 9_000_000_000,
+        ints: [1, 2, 3],
+        points: [Pt(x: 1, y: 2), Pt(x: 3, y: 4)],
+        meta: ["k": 7],
+        maybe: Pt(x: 9, y: 9)
+    )
 ]
 
 @Test func encodeRoundTripsThroughFoundationAndSelf() throws {
@@ -59,8 +77,17 @@ private let samples: [E] = [
 
 @Test func omitsNilOptionalsLikeFoundation() throws {
     let v = E(
-        id: 1, title: "t", note: nil, flag: true, ratio: 1, big: 0,
-        ints: [], points: [], meta: [:], maybe: nil)
+        id: 1,
+        title: "t",
+        note: nil,
+        flag: true,
+        ratio: 1,
+        big: 0,
+        ints: [],
+        points: [],
+        meta: [:],
+        maybe: nil
+    )
     let mine = try AemiJSON.JSONEncoder().encode(v)
     let obj = try AemiJSON.parse(mine).root
     #expect(obj.note.exists == false)
@@ -112,12 +139,14 @@ private let samples: [E] = [
     // .javaScript: ECMA-262 numbers (5.0 -> "5") and non-finite -> null.
     #expect(String(decoding: try JSONValue.number(5.0).encoded(options: .javaScript), as: UTF8.self) == "5")
     #expect(
-        String(decoding: try JSONValue.number(.infinity).encoded(options: .javaScript), as: UTF8.self) == "null")
+        String(decoding: try JSONValue.number(.infinity).encoded(options: .javaScript), as: UTF8.self) == "null"
+    )
     // keyOrder: .sorted
     let obj = JSONValue.object(["b": .number(2), "a": .number(1)])
     #expect(
         String(decoding: try obj.encoded(options: JSONEncodingOptions(keyOrder: .sorted)), as: UTF8.self)
-            == #"{"a":1.0,"b":2.0}"#)
+            == #"{"a":1.0,"b":2.0}"#
+    )
     // The default profile stays strict.
     #expect(throws: EncodingError.self) { try JSONValue.number(.nan).encoded() }
 }
@@ -296,20 +325,23 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     var declaration = AemiJSON.JSONEncoder()
     declaration.prettyPrinted = true
     #expect(
-        String(decoding: try declaration.encode(F()), as: UTF8.self) == "{\n  \"a\" : 2.0,\n  \"b\" : 3.5\n}")
+        String(decoding: try declaration.encode(F()), as: UTF8.self) == "{\n  \"a\" : 2.0,\n  \"b\" : 3.5\n}"
+    )
 
     var sorted = AemiJSON.JSONEncoder()
     sorted.prettyPrinted = true
     sorted.options = JSONEncodingOptions(keyOrder: .sorted)
     #expect(
-        String(decoding: try sorted.encode(F()), as: UTF8.self) == "{\n  \"a\" : 2.0,\n  \"b\" : 3.5\n}")
+        String(decoding: try sorted.encode(F()), as: UTF8.self) == "{\n  \"a\" : 2.0,\n  \"b\" : 3.5\n}"
+    )
 }
 
 @Test func jsonValuePrettyPrintsNestedStructure() throws {
     let v = JSONValue.object(["a": .number(1), "b": .array([.number(2), .string("x")]), "e": .object([:])])
     let out = String(
         decoding: try v.encodedBytes(options: JSONEncodingOptions(keyOrder: .sorted, prettyPrinted: true)),
-        as: UTF8.self)
+        as: UTF8.self
+    )
     #expect(
         out == """
             {
@@ -320,7 +352,8 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
               ],
               "e" : {}
             }
-            """)
+            """
+    )
 }
 
 // The pretty key separator is configurable: `.foundation` keeps `" : "` (the default), `.javaScript`
@@ -390,7 +423,8 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
               ],
               "e": {}
             }
-            """)
+            """
+    )
     // JSON.stringify(value, null, 4).
     let four = "{\n    \"a\": 1,\n    \"b\": [\n        2,\n        \"x\"\n    ],\n    \"e\": {}\n}"
     #expect(String(decoding: try tree.encodedBytes(options: .javaScript(space: 4)), as: UTF8.self) == four)
@@ -478,7 +512,9 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     ])
     expectEqual(tree, handBuilt)
     let sortedEncoded = String(
-        decoding: try tree.encodedBytes(options: JSONEncodingOptions(keyOrder: .sorted)), as: UTF8.self)
+        decoding: try tree.encodedBytes(options: JSONEncodingOptions(keyOrder: .sorted)),
+        as: UTF8.self
+    )
     expectEqual(sortedEncoded, #"{"id":9007199254740993,"ratio":0.5,"small":7}"#)
 }
 
@@ -494,5 +530,6 @@ private func hasNoHTMLUnsafeBytes(_ bytes: [UInt8]) -> Bool {
     // Default profile stays strict (rejects non-finite, keeps Double.description form).
     #expect(throws: EncodingError.self) { try AemiJSON.JSONEncoder().encode(F(a: 1, b: .nan)) }
     #expect(
-        String(decoding: try AemiJSON.JSONEncoder().encode(F(a: 1.5, b: 2)), as: UTF8.self) == #"{"a":1.5,"b":2.0}"#)
+        String(decoding: try AemiJSON.JSONEncoder().encode(F(a: 1.5, b: 2)), as: UTF8.self) == #"{"a":1.5,"b":2.0}"#
+    )
 }

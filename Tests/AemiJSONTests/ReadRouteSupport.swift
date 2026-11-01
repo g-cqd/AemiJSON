@@ -123,7 +123,9 @@ enum ReadRoute: Sendable, CustomStringConvertible {
 
 /// Asserts every route reads `bytes` as `expected`, or rejects them when `expected` is `nil`.
 func expectEveryRoute(
-    _ bytes: [UInt8], options: JSONParseOptions = .json5, reads expected: JSONValue?,
+    _ bytes: [UInt8],
+    options: JSONParseOptions = .json5,
+    reads expected: JSONValue?,
     sourceLocation: SourceLocation = #_sourceLocation
 ) {
     for route in ReadRoute.all {
@@ -131,13 +133,16 @@ func expectEveryRoute(
         #expect(
             actual == expected,
             "\(route) read \(describe(bytes)) as \(String(describing: actual)), expected \(String(describing: expected))",
-            sourceLocation: sourceLocation)
+            sourceLocation: sourceLocation
+        )
     }
 }
 
 /// Asserts every route reads `text` as `expected`, or rejects it when `expected` is `nil`.
 func expectEveryRoute(
-    _ text: String, options: JSONParseOptions = .json5, reads expected: JSONValue?,
+    _ text: String,
+    options: JSONParseOptions = .json5,
+    reads expected: JSONValue?,
     sourceLocation: SourceLocation = #_sourceLocation
 ) {
     expectEveryRoute(Array(text.utf8), options: options, reads: expected, sourceLocation: sourceLocation)

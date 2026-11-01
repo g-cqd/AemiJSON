@@ -20,7 +20,10 @@ extension SchemaValidator {
     // the same instance location. A missing or already-active ref is a no-op (the ancestor frame
     // already validates this subschema here), so it contributes nothing to `ok`.
     func validateRef(
-        _ node: SchemaNode, _ instance: JSON, _ path: inout [String], _ errors: inout [ValidationError],
+        _ node: SchemaNode,
+        _ instance: JSON,
+        _ path: inout [String],
+        _ errors: inout [ValidationError],
         _ ctx: ValidationContext
     ) -> Bool {
         guard let ref = node.ref, let target = resolve(ref) else { return true }
@@ -31,7 +34,10 @@ extension SchemaValidator {
 
     // `type` / `const` / `enum`.
     func validateTypeConstEnum(
-        _ node: SchemaNode, _ instance: JSON, _ path: [String], _ errors: inout [ValidationError]
+        _ node: SchemaNode,
+        _ instance: JSON,
+        _ path: [String],
+        _ errors: inout [ValidationError]
     ) -> Bool {
         var ok = true
         func fail(_ message: String) {
@@ -51,7 +57,10 @@ extension SchemaValidator {
     // Numeric bounds. Only parses the number when a numeric keyword is present — otherwise a typed
     // schema (`{"type":"number"}`) would pay `strtod` on every value for nothing.
     func validateNumericBounds(
-        _ node: SchemaNode, _ instance: JSON, _ path: [String], _ errors: inout [ValidationError]
+        _ node: SchemaNode,
+        _ instance: JSON,
+        _ path: [String],
+        _ errors: inout [ValidationError]
     ) -> Bool {
         let hasNumericBound =
             node.minimum != nil || node.maximum != nil || node.exclusiveMinimum != nil
@@ -86,7 +95,10 @@ extension SchemaValidator {
 
     // String length / pattern — only materializes the String when a string keyword needs it.
     func validateStringBounds(
-        _ node: SchemaNode, _ instance: JSON, _ path: [String], _ errors: inout [ValidationError]
+        _ node: SchemaNode,
+        _ instance: JSON,
+        _ path: [String],
+        _ errors: inout [ValidationError]
     ) -> Bool {
         guard node.minLength != nil || node.maxLength != nil || node.pattern != nil,
             let s = instance.string
@@ -111,7 +123,10 @@ extension SchemaValidator {
 
     // Array keywords: minItems / maxItems / uniqueItems / prefixItems / items / contains.
     func validateArray(
-        _ node: SchemaNode, _ instance: JSON, _ path: inout [String], _ errors: inout [ValidationError],
+        _ node: SchemaNode,
+        _ instance: JSON,
+        _ path: inout [String],
+        _ errors: inout [ValidationError],
         _ ctx: ValidationContext
     ) -> Bool {
         guard let elems = instance.array else { return true }
@@ -172,7 +187,10 @@ extension SchemaValidator {
     // cursor, avoiding a materialized `[String: JSON]` per object; otherwise the full path materializes
     // `instance.object` to track the evaluated-properties set additionalProperties needs.
     func validateObject(
-        _ node: SchemaNode, _ instance: JSON, _ path: inout [String], _ errors: inout [ValidationError],
+        _ node: SchemaNode,
+        _ instance: JSON,
+        _ path: inout [String],
+        _ errors: inout [ValidationError],
         _ ctx: ValidationContext
     ) -> Bool {
         if node.patternProperties == nil, node.additionalProperties == nil,
@@ -184,7 +202,10 @@ extension SchemaValidator {
     }
 
     private func validateObjectFast(
-        _ node: SchemaNode, _ instance: JSON, _ path: inout [String], _ errors: inout [ValidationError],
+        _ node: SchemaNode,
+        _ instance: JSON,
+        _ path: inout [String],
+        _ errors: inout [ValidationError],
         _ ctx: ValidationContext
     ) -> Bool {
         var ok = true
@@ -210,7 +231,10 @@ extension SchemaValidator {
     }
 
     private func validateObjectFull(
-        _ node: SchemaNode, _ instance: JSON, _ path: inout [String], _ errors: inout [ValidationError],
+        _ node: SchemaNode,
+        _ instance: JSON,
+        _ path: inout [String],
+        _ errors: inout [ValidationError],
         _ ctx: ValidationContext
     ) -> Bool {
         guard let obj = instance.object else { return true }
@@ -232,8 +256,11 @@ extension SchemaValidator {
     // properties / patternProperties / additionalProperties, tracking which members each matched so
     // additionalProperties applies only to the leftovers.
     private func validateObjectMembers(
-        _ node: SchemaNode, _ obj: [String: JSON], _ path: inout [String],
-        _ errors: inout [ValidationError], _ ctx: ValidationContext
+        _ node: SchemaNode,
+        _ obj: [String: JSON],
+        _ path: inout [String],
+        _ errors: inout [ValidationError],
+        _ ctx: ValidationContext
     ) -> Bool {
         var ok = true
         var evaluated = Set<String>()
@@ -270,8 +297,12 @@ extension SchemaValidator {
     // dependentRequired / dependentSchemas. `has` decides member presence (cursor `instance[k].exists`
     // on the fast path, `obj[k] != nil` on the full path) so both object paths share this logic.
     private func validateDependents(
-        _ node: SchemaNode, _ instance: JSON, _ path: inout [String], _ errors: inout [ValidationError],
-        _ ctx: ValidationContext, has: (String) -> Bool
+        _ node: SchemaNode,
+        _ instance: JSON,
+        _ path: inout [String],
+        _ errors: inout [ValidationError],
+        _ ctx: ValidationContext,
+        has: (String) -> Bool
     ) -> Bool {
         var ok = true
         func fail(_ message: String) {
@@ -293,7 +324,10 @@ extension SchemaValidator {
 
     // Boolean applicators: allOf / anyOf / oneOf / not / if-then-else.
     func validateApplicators(
-        _ node: SchemaNode, _ instance: JSON, _ path: inout [String], _ errors: inout [ValidationError],
+        _ node: SchemaNode,
+        _ instance: JSON,
+        _ path: inout [String],
+        _ errors: inout [ValidationError],
         _ ctx: ValidationContext
     ) -> Bool {
         var ok = true

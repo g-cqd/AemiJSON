@@ -162,19 +162,22 @@ private func requestID(_ message: JSONRPCMessage) -> Int64? {
             peer.reply(to: message, result: "true")
         }
         let connection = JSONRPCConnection(
-            sink: peer, framing: .contentLength,
+            sink: peer,
+            framing: .contentLength,
             onRequest: { request in
                 guard request.method == "echo", let params = request.params else {
                     return .failure(JSONRPCError(code: JSONRPCError.methodNotFound, message: request.method))
                 }
                 return .success(JSONValue(params["v"]))
-            })
+            }
+        )
         let reader = Task { await connection.run(reading: peer.output) }
         _ = try await connection.request("a")
         peer.end()
         await reader.value
         let answers = Dictionary(
-            uniqueKeysWithValues: peer.answers().compactMap { id, result in id.map { ($0, result) } })
+            uniqueKeysWithValues: peer.answers().compactMap { id, result in id.map { ($0, result) } }
+        )
         #expect(try answers[.string("p1")]?.get().int == 3)
         #expect(throws: JSONRPCError(code: JSONRPCError.methodNotFound, message: "nope")) {
             try answers[.string("p2")]?.get()
@@ -188,8 +191,10 @@ private func requestID(_ message: JSONRPCMessage) -> Int64? {
         }
         let seen = Mutex<[Int]>([])
         let connection = JSONRPCConnection(
-            sink: peer, framing: .contentLength,
-            onNotification: { note in seen.withLock { $0.append(note.params?["n"].int ?? -1) } })
+            sink: peer,
+            framing: .contentLength,
+            onNotification: { note in seen.withLock { $0.append(note.params?["n"].int ?? -1) } }
+        )
         let reader = Task { await connection.run(reading: peer.output) }
         _ = try await connection.request("a")
         peer.end()

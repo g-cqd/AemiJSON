@@ -9,7 +9,8 @@ import Testing
 private let byteOrderMark: [UInt8] = [0xEF, 0xBB, 0xBF]
 
 private func parseInPlace<Source: ByteSource & Sendable>(
-    _ source: Source, options: JSONParseOptions
+    _ source: Source,
+    options: JSONParseOptions
 ) throws -> JSONDocument {
     try AemiJSON.parse(source, options: options)
 }
@@ -62,16 +63,20 @@ struct ParseEntryPointTests {
         let expected = JSONValue.object(["a": .int(1), "b": .bool(true)])
         #expect(
             try parseEverywhere(Array(#""a":1,"b":true"#.utf8), options: options)
-                == Array(repeating: expected, count: 5))
+                == Array(repeating: expected, count: 5)
+        )
         // An already-braced input is parsed as is, and the mark is stripped before any wrapping.
         #expect(
             try parseEverywhere(Array(#"{"a":1,"b":true}"#.utf8), options: options)
-                == Array(repeating: expected, count: 5))
+                == Array(repeating: expected, count: 5)
+        )
         #expect(
             try parseEverywhere(byteOrderMark + Array(#""a":1,"b":true"#.utf8), options: options)
-                == Array(repeating: expected, count: 5))
+                == Array(repeating: expected, count: 5)
+        )
         #expect(
             try parseEverywhere(byteOrderMark + Array(#" {"a":1,"b":true}"#.utf8), options: options)
-                == Array(repeating: expected, count: 5))
+                == Array(repeating: expected, count: 5)
+        )
     }
 }

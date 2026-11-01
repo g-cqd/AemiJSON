@@ -61,7 +61,10 @@ extension JSONSchema {
 @attached(
     extension,
     conformances: AemiJSONSchemaProviding,
-    names: named(jsonSchema), named(jsonSchemaText), named(__adjsonSchemaText), named(__adjsonSchemaCompiled)
+    names: named(jsonSchema),
+    named(jsonSchemaText),
+    named(__adjsonSchemaText),
+    named(__adjsonSchemaCompiled)
 )
 public macro Schemable(dialect: SchemaDialect = .none) =
     #externalMacro(module: "AemiJSONMacros", type: "SchemableMacro")

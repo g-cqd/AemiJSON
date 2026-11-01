@@ -65,7 +65,9 @@ struct EscapeSWARTests {
                     let s = String(chars)
                     for es in [false, true] {
                         #expect(
-                            produced(s, escapeSlashes: es) == reference(s, escapeSlashes: es), "len=\(len) pos=\(pos)")
+                            produced(s, escapeSlashes: es) == reference(s, escapeSlashes: es),
+                            "len=\(len) pos=\(pos)"
+                        )
                     }
                 }
             }

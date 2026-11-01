@@ -62,7 +62,9 @@ extension JSONValue {
     }
 
     private func sqliteSet(
-        _ segments: ArraySlice<SQLiteJSONPath.Segment>, _ value: JSONValue, _ mode: SQLiteSetMode,
+        _ segments: ArraySlice<SQLiteJSONPath.Segment>,
+        _ value: JSONValue,
+        _ mode: SQLiteSetMode,
         _ depth: Int
     ) -> JSONValue {
         guard depth < Self.maxMutationDepth else { return self }  // fail closed: no-op

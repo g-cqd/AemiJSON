@@ -10,7 +10,10 @@ struct SQLiteMutationTests {
         String(decoding: try v.encodedBytes(options: .sqlite), as: UTF8.self)
     }
     private func set(
-        _ input: String, _ path: String, _ value: String, _ mode: JSONValue.SQLiteSetMode
+        _ input: String,
+        _ path: String,
+        _ value: String,
+        _ mode: JSONValue.SQLiteSetMode
     ) throws
         -> String
     {

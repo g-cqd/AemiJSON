@@ -39,7 +39,11 @@ extension JSONNumber {
     ///     that runs to `count` is then validated rather than reported `.incomplete`.
     /// - Returns: The scan outcome — the validated lexeme's extent, or `.incomplete` / a failure.
     static func scanLexeme(
-        _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, strict: Bool, complete: Bool
+        _ p: UnsafePointer<UInt8>,
+        _ start: Int,
+        _ count: Int,
+        strict: Bool,
+        complete: Bool
     ) -> ScanOutcome {
         // Phase 1 — extent: consume every byte that can appear in a number lexeme.
         var j = start
@@ -115,7 +119,10 @@ extension JSONNumber {
     /// `complete: true` (the non-streaming readers) turns a lexeme that runs to `count` into a final
     /// result; otherwise such a lexeme is `.incomplete`.
     static func scanJSON5Lexeme(
-        _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, complete: Bool
+        _ p: UnsafePointer<UInt8>,
+        _ start: Int,
+        _ count: Int,
+        complete: Bool
     ) -> ScanOutcome {
         @inline(__always) func digit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
         var i = start
@@ -157,7 +164,10 @@ extension JSONNumber {
     /// Validates a JSON5 `[eE][+-]?digits` exponent suffix, advancing `i`. Returns a
     /// terminal `.incomplete`/`.invalid` outcome, or nil to continue to `.ok`.
     private static func scanJSON5Exponent(
-        _ p: UnsafePointer<UInt8>, _ i: inout Int, _ count: Int, complete: Bool
+        _ p: UnsafePointer<UInt8>,
+        _ i: inout Int,
+        _ count: Int,
+        complete: Bool
     ) -> ScanOutcome? {
         @inline(__always) func digit(_ b: UInt8) -> Bool { b >= 0x30 && b <= 0x39 }
         if i < count, unsafe p[i] == 0x65 || p[i] == 0x45 {  // e / E
@@ -176,7 +186,11 @@ extension JSONNumber {
     // Match a fixed ASCII literal (`Infinity` / `NaN`) at `start`. `.incomplete` if only a prefix is
     // present and more bytes may arrive; `.invalid` on any mismatch.
     private static func matchLiteral(
-        _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, _ literal: StaticString, complete: Bool
+        _ p: UnsafePointer<UInt8>,
+        _ start: Int,
+        _ count: Int,
+        _ literal: StaticString,
+        complete: Bool
     ) -> ScanOutcome {
         let lit = unsafe literal.utf8Start
         let len = literal.utf8CodeUnitCount
@@ -206,7 +220,11 @@ enum JSONToken {
     /// non-streaming readers) treats an unterminated trailing comment as consumed to the end rather
     /// than `incomplete`.
     static func skipInsignificant(
-        _ p: UnsafePointer<UInt8>, _ from: Int, _ count: Int, json5: Bool, complete: Bool
+        _ p: UnsafePointer<UInt8>,
+        _ from: Int,
+        _ count: Int,
+        json5: Bool,
+        complete: Bool
     ) -> SkipResult {
         var i = from
         while i < count {
@@ -289,7 +307,10 @@ extension JSONString {
     /// decode — the caller materializes via `unescape` when `hasEscape`.
     ///
     static func scanLexeme(
-        _ p: UnsafePointer<UInt8>, _ open: Int, _ count: Int, strict: Bool
+        _ p: UnsafePointer<UInt8>,
+        _ open: Int,
+        _ count: Int,
+        strict: Bool
     ) -> ScanOutcome {
         var j = open + 1
         var hasEscape = false
@@ -302,7 +323,11 @@ extension JSONString {
             let remaining = count - j
             if remaining >= JSONString.kernelStringScanMinBytes {
                 j += unsafe AemiKernels.indexOfStringStop(
-                    base: p + j, count: remaining, quote: 0x22, escape: 0x5C)
+                    base: p + j,
+                    count: remaining,
+                    quote: 0x22,
+                    escape: 0x5C
+                )
                 guard j < count else { return .incomplete }
             }
             let c = unsafe p[j]
@@ -329,7 +354,10 @@ extension JSONString {
     /// mode any byte may follow. Returns a terminal `.incomplete`/`.invalid`, or nil to
     /// continue scanning.
     private static func scanStringEscape(
-        _ p: UnsafePointer<UInt8>, _ j: inout Int, _ count: Int, strict: Bool
+        _ p: UnsafePointer<UInt8>,
+        _ j: inout Int,
+        _ count: Int,
+        strict: Bool
     ) -> ScanOutcome? {
         guard j + 1 < count else { return .incomplete }
         if !strict {
@@ -460,7 +488,10 @@ extension JSONString {
     /// `.ok(end, hasEscape: false)` past the identifier; `.incomplete` (streaming only) if it runs to
     /// the buffer end, where more identifier bytes might still arrive.
     static func scanIdentifier(
-        _ p: UnsafePointer<UInt8>, _ start: Int, _ count: Int, complete: Bool
+        _ p: UnsafePointer<UInt8>,
+        _ start: Int,
+        _ count: Int,
+        complete: Bool
     ) -> ScanOutcome {
         guard start < count, unsafe isIdentStart(p[start]) else { return .invalid }
         var i = start
