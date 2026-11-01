@@ -191,10 +191,18 @@ private func encodePaths<T: Encodable>(_ value: T) -> (mine: [String], theirs: [
         #expect(r.mine == r.theirs)
     }
 
+    // Foundation's encoder gives `["0", "v", "1"]` on macOS 26 and drops the position, `["0", "v"]`, on macOS 27 and Linux. AemiJSON
+    // keeps it, as both decoders do for the same shape (`aWrongTypeInANestedArray`).
     @Test func encodingANaNInANestedArray() {
         let r = encodePaths([E(v: [1, .nan])])
-        #expect(r.theirs == ["0", "v"])
-        #expect(r.mine == r.theirs)
+        #expect(r.theirs == ["0", "v", "1"] || r.theirs == ["0", "v"])
+        #expect(r.mine == ["0", "v", "1"])
+    }
+
+    @Test func encodingANaNInADictionaryOfArrays() {
+        let value: [String: [Double]] = ["a": [1, .nan]]
+        let r = encodePaths(value)
+        #expect(r.mine == ["a", "1"])
     }
 
     // Foundation's encoder drops a nested container's own key or position (`["a", "0", "x"]` and `["b", "1"]` on this toolchain) where its
