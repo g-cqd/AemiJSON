@@ -145,3 +145,26 @@ private struct Tracked: Decodable, Sendable {
     #expect(documents.count == 3)
     #expect(documents.map { $0.root.intValue } == [1, 2, 3])
 }
+
+private func utf8(_ text: String) -> [UInt8] { Array(text.utf8) }
+
+@Test func `complete lines leave a partial last record for the next read`() {
+    let written: [UInt8] = utf8("{\"a\":1}\n\n  {\"b\":2}\r\n{\"c\":")
+    let first = AemiJSON.ndjsonCompleteLines(written)
+    let expected: [[UInt8]] = [utf8("{\"a\":1}"), utf8("{\"b\":2}")]
+    #expect(first.lines == expected)
+    let rest: [UInt8] = Array(written[first.consumed...])
+    #expect(rest == utf8("{\"c\":"))
+    // The rest arrives: reading again from `consumed` gives the record whole.
+    let next: [UInt8] = rest + utf8("3}\n")
+    let second = AemiJSON.ndjsonCompleteLines(next)
+    #expect(second.lines == [utf8("{\"c\":3}")])
+    #expect(second.consumed == next.count)
+}
+
+@Test func `no complete line consumes nothing`() {
+    let half = AemiJSON.ndjsonCompleteLines(utf8("{\"half\":"))
+    #expect(half.lines.isEmpty)
+    #expect(half.consumed == 0)
+    #expect(AemiJSON.ndjsonCompleteLines([]).consumed == 0)
+}

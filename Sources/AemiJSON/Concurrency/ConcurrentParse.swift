@@ -32,6 +32,25 @@ extension AemiJSON {
         return lines
     }
 
+    /// The complete records of a JSON Lines stream that is still being written: like ``ndjsonLines(_:)``, but only
+    /// the lines a `\n` ends, and how many bytes they took.
+    ///
+    /// A writer appending to a file may have written half of its last record when a reader looks; that half is not
+    /// a record and, parsed, is an error that is not one. Keep `bytes[consumed...]` and read again from there once
+    /// more has arrived; at the end of the stream, ``ndjsonLines(_:)`` of what is left gives the last record if it
+    /// has no final newline.
+    /// - Returns: The trimmed, non-blank records of the complete lines, and the offset just past the last `\n` (0
+    ///   when there is none).
+    public static func ndjsonCompleteLines(_ bytes: [UInt8]) -> (lines: [[UInt8]], consumed: Int) {
+        var lines: [[UInt8]] = []
+        var start = 0
+        for i in bytes.indices where bytes[i] == 0x0A {
+            appendTrimmedLine(bytes, start, i, into: &lines)
+            start = i + 1
+        }
+        return (lines, start)
+    }
+
     /// Trim leading/trailing ASCII whitespace from `bytes[lo..<hi]` and append it as an owned
     /// `[UInt8]` unless the trimmed range is empty.
     private static func appendTrimmedLine(_ bytes: [UInt8], _ lo: Int, _ hi: Int, into lines: inout [[UInt8]]) {
