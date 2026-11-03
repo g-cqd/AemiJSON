@@ -36,7 +36,8 @@ private func bytes(_ scalar: Unicode.Scalar) -> [UInt8] { Array(String(scalar).u
 
 private func hex(_ scalar: Unicode.Scalar) -> String { "U+" + String(scalar.value, radix: 16, uppercase: true) }
 
-private let oneInA: JSONValue = .object(["a": .int(1)])
+// Keep expected heap-backed objects scoped to the assertion, not process lifetime.
+private var oneInA: JSONValue { .object(["a": .int(1)]) }
 
 struct JSON5UnicodeWhitespaceTests {
     @Test(arguments: SpaceSeparator.all)

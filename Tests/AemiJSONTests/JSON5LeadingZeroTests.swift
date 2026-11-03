@@ -21,26 +21,29 @@ struct JSON5LeadingZeroTests {
         expectEveryRoute(document, reads: nil)
     }
 
-    @Test(arguments: [
-        ("{a: 0.5}", JSONValue.object(["a": .number(0.5)])),
-        ("{a: 0}", .object(["a": .int(0)])),
-        ("{a: -0}", .object(["a": .number(-0.0)])),
-        ("{a: +0}", .object(["a": .int(0)])),
-        ("{a: 0e1}", .object(["a": .number(0)])),
-        ("{a: 0E+5}", .object(["a": .number(0)])),
-        ("{a: 0.}", .object(["a": .number(0)])),
-        ("{a: 0.0}", .object(["a": .number(0)])),
-        ("{a: -.01}", .object(["a": .number(-0.01)])),
-        ("{a: 0x1F}", .object(["a": .int(31)])),
-        ("{a: 0x01}", .object(["a": .int(1)])),
-        ("{a: -0x0F}", .object(["a": .int(-15)])),
-        ("{a: 0X0}", .object(["a": .int(0)])),
-        ("[0,1,10,100]", .array([.int(0), .int(1), .int(10), .int(100)])),
-        ("[0.01, 10.01, 100e-2]", .array([.number(0.01), .number(10.01), .number(1)])),
-        ("0", .int(0))
-    ])
-    func aZeroThatIsNotFollowedByADigitIsStillANumber(_ document: String, _ expected: JSONValue) {
-        expectEveryRoute(document, reads: expected)
+    @Test func aZeroThatIsNotFollowedByADigitIsStillANumber() {
+        // Own the heap-backed expected values for this invocation, not the test macro's generator lifetime.
+        let cases: [(String, JSONValue)] = [
+            ("{a: 0.5}", JSONValue.object(["a": .number(0.5)])),
+            ("{a: 0}", .object(["a": .int(0)])),
+            ("{a: -0}", .object(["a": .number(-0.0)])),
+            ("{a: +0}", .object(["a": .int(0)])),
+            ("{a: 0e1}", .object(["a": .number(0)])),
+            ("{a: 0E+5}", .object(["a": .number(0)])),
+            ("{a: 0.}", .object(["a": .number(0)])),
+            ("{a: 0.0}", .object(["a": .number(0)])),
+            ("{a: -.01}", .object(["a": .number(-0.01)])),
+            ("{a: 0x1F}", .object(["a": .int(31)])),
+            ("{a: 0x01}", .object(["a": .int(1)])),
+            ("{a: -0x0F}", .object(["a": .int(-15)])),
+            ("{a: 0X0}", .object(["a": .int(0)])),
+            ("[0,1,10,100]", .array([.int(0), .int(1), .int(10), .int(100)])),
+            ("[0.01, 10.01, 100e-2]", .array([.number(0.01), .number(10.01), .number(1)])),
+            ("0", .int(0))
+        ]
+        for (document, expected) in cases {
+            expectEveryRoute(document, reads: expected)
+        }
     }
 
     @Test func aLeadingZeroSplitAcrossChunksIsRejectedNotJoined() {

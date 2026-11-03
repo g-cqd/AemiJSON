@@ -9,7 +9,8 @@ import Testing
 
 private let byteOrderMark: [UInt8] = [0xEF, 0xBB, 0xBF]
 
-private let oneInA: JSONValue = .object(["a": .int(1)])
+// Keep expected heap-backed objects scoped to the assertion, not process lifetime.
+private var oneInA: JSONValue { .object(["a": .int(1)]) }
 
 struct ReaderByteOrderMarkTests {
     @Test(arguments: [JSONParseOptions.strict, .lenient, .json5])
