@@ -21,14 +21,16 @@
         "consumer",
         "macos-debug",
         "macos-release"
-      ]
+      ],
+      "title": "Fixtures \u00b7 Fetch Corpora"
     },
     {
       "id": "foundation-free-core",
       "run": "swift build --target AemiJSONCore",
       "before": [
         "consumer"
-      ]
+      ],
+      "title": "Compatibility \u00b7 Foundation-Free Core"
     }
   ]
 }

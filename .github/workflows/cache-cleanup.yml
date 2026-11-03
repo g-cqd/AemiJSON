@@ -5,7 +5,7 @@
 # `hashFiles('Sources/**', …)`. Left alone, a couple of commits exhaust the quota. This keeps only the
 # most-recently-used caches up to a budget and deletes the cold tail (older generations), and clears a
 # PR's caches as soon as it closes.
-name: Cache cleanup
+name: Cache Maintenance
 
 on:
   # After each CI run completes, trim back under budget — keeps the freshest per-scope caches warm and
@@ -32,6 +32,7 @@ concurrency:
 
 jobs:
   prune:
+    name: Cache · Prune Old Entries
     runs-on: ubuntu-latest
     steps:
       - name: Delete caches for the closed PR
