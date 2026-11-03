@@ -53,8 +53,8 @@ struct FetchFixturesPlugin: CommandPlugin {
         // nst/JSONTestSuite: download the tarball, then expand it with `tar` and copy the parsing cases.
         let suite = root.appending(path: "Tests/AemiJSONTests/Resources/JSONTestSuite")
         try fm.createDirectory(at: suite, withIntermediateDirectories: true)
-        let tmp = root.appending(path: ".build/_fixtures-tmp")
-        try? fm.removeItem(at: tmp)
+        // SwiftPM grants writes here, including when .build is a symlink outside the package.
+        let tmp = context.pluginWorkDirectoryURL.appending(path: "fixtures-\(UUID().uuidString)")
         try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: tmp) }
 
