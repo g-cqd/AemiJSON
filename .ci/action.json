@@ -1,0 +1,34 @@
+{
+  "swift": {
+    "environment": {
+      "AEMIJSON_DEV": "1",
+      "AD_TYPECHECK_BUDGET_MS": "250"
+    }
+  },
+  "checks": {
+    "macos-address": [],
+    "macos-thread": []
+  },
+  "commands": [
+    {
+      "id": "fixtures",
+      "run": "swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures",
+      "before": [
+        "linux-debug",
+        "linux-release",
+        "linux-address",
+        "linux-thread",
+        "consumer",
+        "macos-debug",
+        "macos-release"
+      ]
+    },
+    {
+      "id": "foundation-free-core",
+      "run": "swift build --target AemiJSONCore",
+      "before": [
+        "consumer"
+      ]
+    }
+  ]
+}

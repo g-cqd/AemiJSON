@@ -1,83 +1,39 @@
-# The COMMON legs (lint/gate + build & test on macOS + Linux, debug/release, coverage) route through
-# the shared reusable workflow. The package-UNIQUE jobs fan out alongside it: the Foundation-free-core
-# Linux portability build, an API-stability check, the cross-platform compile matrix, a path-gated
-# ASan/TSan pass over the unsafe scanner + concurrency layer, the libFuzzer pass, the ordo-one
-# benchmark suite, the DocC link check, and the DocC Pages deploy.
-#
-# AemiJSON's test suite fetches conformance/benchmark fixtures via `swift package fetch-fixtures`
-# (network) before `swift test`. RESOLVED: the reusable workflow now takes a `fixtures-command` input
-# and the `quality:` job passes the fetch-fixtures command, so the reusable's macOS/Linux build/test
-# legs materialize fixtures before testing (no fixture-dependent test fails/skips on them). The
-# fixture-fetching benchmark/fuzz jobs below keep their own fetch step (they run outside the reusable).
-# The opt-in AemiJSONNIO test
-# (`AEMIJSON_NIO=1 swift test --filter AemiJSONNIOTests`) and the `coverage-check --floor` gate that the
-# old bespoke build-test ran are likewise not represented in the reusable.
 name: CI
 
 on:
   push:
     branches: [main]
-    paths-ignore: ["README.md", "CONTRIBUTING.md", "ROADMAP.md", ".gitignore", ".githooks/**"]
   pull_request:
-    paths-ignore: ["README.md", "CONTRIBUTING.md", "ROADMAP.md", ".gitignore", ".githooks/**"]
-  # On-demand trigger for the slow sanitizer passes (and a full platform/docs run when wanted), and to
-  # (re)generate the benchmark baseline on this runner class via the `update_baseline` input below.
+  merge_group:
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
       update_baseline:
-        description: "Regenerate the benchmark baseline (.benchmarkBaselines/main) and upload it as an artifact to commit"
+        description: Regenerate the hosted-runner benchmark baseline artifact
         type: boolean
         default: false
 
 permissions:
   contents: read
 
-# Cancel superseded runs on branches/PRs; never cancel an in-progress run on main.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
-# Type-check-budget calibration for the manifest's env-tunable -warn-long-* flags on the BESPOKE
-# jobs below (the reusable swift-quality workflow exports its own copy for the common legs):
-# 250 ms absorbs shared-runner wall-time noise; local builds keep the strict 100 ms default.
 env:
   AD_TYPECHECK_BUDGET_MS: "250"
+  AEMI_TYPECHECK_BUDGET_MS: "250"
 
 jobs:
-  quality:
-    # Shared build/test and quality checks resolve the published Aemi dependency.
-    # Additional jobs below cover platform builds, fuzzing, benchmarks, and Pages.
-    uses: Aemi-Studio/aemi/.github/workflows/swift-quality.yml@2a0ce71b93918ffdcc961ba4db8d01b66e5915f1 # aemi 2a0ce71
-    with:
-      # Static analysis is the `static-analysis` job below, not the reusable's: that job runs
-      # Scripts/analyzers.sh, the family's script with aemi's lock (deadwood 0.13.0, dolly 0.13.0,
-      # arcleak 0.15.0), and this repository's baselines.
-      enable-static-analysis: false
-      dev-env-var: AEMIJSON_DEV
-      # Sanitizers run in the path-gated `sanitizers` job below, which also covers UBSan; the reusable's copy
-      # ran the same two passes on every push and PR on top of it.
-      enable-sanitizers: false
-      enable-coverage: true
-      # The conformance/benchmark suites need fixtures fetched (network) before `swift test`; the
-      # reusable build/test legs run this first so fixture-dependent tests don't fail/skip on them.
-      fixtures-command: "swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures"
-
-  static-analysis:
-    name: Static analysis (deadwood, dolly, arcleak)
-    # All three gate under --strict, from releases pinned by version and SHA-256 (per platform) in
-    # Scripts/analyzers.sh. They read source, so no toolchain or build is needed, a run takes well under a
-    # second after the download, and the Linux archives make it a job for the cheapest runner. dolly compares
-    # against .dolly-baseline.json (the duplication that predates the gate), so only a NEW clone fails;
-    # deadwood and arcleak have no baseline.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Run the analyzers
-        run: Scripts/analyzers.sh
+  ci:
+    uses: g-cqd/swift-ci/.github/workflows/swift-ci.yml@e79543fb62f7494b8a5c2d8898b11005e81ae4b8 # swift-ci e79543f
+    permissions:
+      contents: write # reusable publish permission; no archives are configured for this library
 
   changes:
     name: Detect unsafe / concurrency changes
-    needs: quality
+    needs: ci
     # Path gate for the sanitizer passes. Two risk surfaces warrant the (otherwise main-only)
     # ASan/TSan runs on a PR: the unsafe raw-pointer scanner (`Sources/AemiJSONCore/Core/**`) for
     # OOB/UAF under ASan, and the shared-state concurrency layer — the encoder buffer pool and the
@@ -101,24 +57,9 @@ jobs:
               - 'Sources/AemiJSON/Concurrency/**'
               - 'Sources/AemiJSON/Codable/**'
 
-  linux:
-    name: Build & test (Linux, Foundation-free core)
-    # AemiJSONCore is Foundation-free; building it in isolation on Linux guards portability for
-    # zero-dependency consumers: a check the reusable's whole-package Linux leg does not make. It is one
-    # target on the stable toolchain image, so it runs beside `quality` on every push and PR rather than
-    # waiting behind it.
-    runs-on: ubuntu-latest
-    container: swift:6.4.1-noble
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Show toolchain
-        run: swift --version
-      - name: Build Foundation-free core
-        run: swift build --target AemiJSONCore
-
   api-stability:
     name: API breaking changes
-    needs: quality
+    needs: ci
     # Catch accidental public-API removals/changes in PRs (additions are fine). Compares the PR head
     # against the PR's base commit on main.
     if: github.event_name == 'pull_request'
@@ -138,10 +79,10 @@ jobs:
 
   platforms:
     name: Build (${{ matrix.platform }})
-    needs: quality
+    needs: ci
     # Cross-platform compile is broad but costly: run it on main / on demand, not on every PR
     # (the macOS leg in the reusable `quality` job already covers compilation for PRs).
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     # Use the installed SwiftPM for manifest resolution; Xcode embeds an older SwiftPM.
     strategy:
@@ -167,7 +108,7 @@ jobs:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             .build
-          key: ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-6.4.1-${{ hashFiles('Package.swift') }}
+          key: ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-6.4.1-${{ hashFiles('Package.swift') }}-${{ github.sha }}
           restore-keys: |
             ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-6.4.1-${{ hashFiles('Package.swift') }}-
             ${{ github.repository }}-platform-spm-${{ runner.os }}-${{ matrix.platform }}-6.4.1-
@@ -178,7 +119,7 @@ jobs:
 
   sanitizers:
     name: Sanitize (${{ matrix.name }})
-    needs: [quality, changes]
+    needs: [ci, changes]
     # Sanitizers are slow (TSan ~5-15x, ASan ~2x) and rebuild the whole graph under instrumentation,
     # so run them on main / on demand — and, additionally, on any PR that touches the unsafe scanner
     # OR the concurrency layer (`Sources/AemiJSONCore/Core/**`, `Sources/AemiJSON/Concurrency/**`,
@@ -213,7 +154,7 @@ jobs:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-${{ github.sha }}
           restore-keys: |
             ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-
             ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-
@@ -224,12 +165,12 @@ jobs:
 
   fuzz:
     name: Fuzz (libFuzzer, Linux)
-    needs: quality
+    needs: ci
     # libFuzzer (`-sanitize=fuzzer`) is a Linux capability of the Swift toolchain — the Darwin SDK
     # rejects the flag — so the gated `AemiJSONFuzz` target builds and runs here, time-boxed, on
     # main / manual dispatch. A crash fails the job and uploads the reproducer; commit any reproducer as a
     # regression test.
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     container: swift:6.4.1-noble
     timeout-minutes: 30
@@ -284,13 +225,13 @@ jobs:
 
   benchmarks:
     name: Benchmark (macOS, release)
-    needs: quality
+    needs: ci
     # Benchmarks rebuild the graph in release and are noisy on shared runners, so run them on
     # main / on demand — never on every PR (same gating as the platforms/sanitizers jobs). The
     # run publishes its numbers to the run's job summary for at-a-glance tracking. Regression
     # detection is **advisory** (the threshold step below is `continue-on-error`): hosted-runner
     # variance would make a hard gate flaky, so drift is surfaced in the summary, never failing CI.
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -309,7 +250,7 @@ jobs:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ github.repository }}-spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-${{ github.sha }}
           restore-keys: |
             ${{ github.repository }}-spm-${{ runner.os }}-bench-${{ hashFiles('Package.swift') }}-
             ${{ github.repository }}-spm-${{ runner.os }}-bench-
@@ -394,46 +335,9 @@ jobs:
             cat bench-output.md 2>/dev/null || echo "(no benchmark output captured)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  docs-check:
-    name: Build docs (link check)
-    needs: quality
-    # Build the combined DocC site on every push/PR (no Pages deploy) so a broken `<doc:>` or symbol
-    # link fails review instead of slipping to `main`, where the deploy-only `docs` job below is the
-    # first to surface it. `--warnings-as-errors` turns unresolved links into a build failure.
-    runs-on: macos-26
-    env:
-      AEMIJSON_DEV: "1"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Select latest Xcode
-        run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
-      - name: Install Swift 6.4.1
-        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
-        with:
-          swift-version: "6.4.1"
-      - name: Cache SwiftPM
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .build
-            ~/Library/Caches/org.swift.swiftpm
-          key: ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}
-          restore-keys: |
-            ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
-            ${{ github.repository }}-spm-${{ runner.os }}-docs-
-      - name: Build DocC (warnings as errors)
-        run: |
-          swift package --allow-writing-to-directory "$PWD/_docs_check" \
-            generate-documentation \
-            --enable-experimental-combined-documentation \
-            --target AemiJSONCore --target AemiJSON \
-            --disable-indexing --warnings-as-errors \
-            --output-path "$PWD/_docs_check"
-
   docs:
     name: Build & deploy docs (Pages)
-    needs: quality
-    if: github.ref == 'refs/heads/main'
+    needs: ci
     runs-on: macos-26
     permissions:
       contents: read
@@ -462,7 +366,7 @@ jobs:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-${{ github.sha }}
           restore-keys: |
             ${{ github.repository }}-spm-${{ runner.os }}-docs-${{ hashFiles('Package.swift') }}-
             ${{ github.repository }}-spm-${{ runner.os }}-docs-
@@ -475,7 +379,7 @@ jobs:
             generate-documentation \
             --enable-experimental-combined-documentation \
             --target AemiJSONCore --target AemiJSON \
-            --disable-indexing \
+            --disable-indexing --warnings-as-errors \
             --transform-for-static-hosting \
             --hosting-base-path "${{ github.event.repository.name }}" \
             --output-path "$PWD/_site"
@@ -490,9 +394,11 @@ jobs:
           <a href="documentation/aemijson/">AemiJSON documentation</a>
           HTML
       - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: _site
       - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
         id: deploy
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
