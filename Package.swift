@@ -80,7 +80,7 @@ let isNIO = Context.environment["AEMIJSON_NIO"] != nil || Context.environment["A
 // identity at two revisions in a graph, so all three move together.
 let aemiDependency: Package.Dependency = .package(
     url: "https://github.com/Aemi-Studio/aemi.git",
-    revision: "1eb94c225237812c3af947969e8a238b01a2f88b"
+    revision: "4879ca7522a6277e9425c69309a801de43b57771"
 )
 
 // AemiRuntime (the production `TaskProvider`/`Clock` seams the concurrent parse/decode paths use) and
@@ -92,7 +92,7 @@ var packageDependencies: [Package.Dependency] = [
     // The regular-expression engine behind JSONPath's `match()` and `search()` (RFC 9485 I-Regexp, linear time) and JSON Schema's `pattern`
     // (ECMAScript, on a budgeted backtracker). No Foundation. Pinned to one revision like Aemi, so a push to aemiregex cannot change the
     // engine under an existing build.
-    .package(url: "https://github.com/g-cqd/AemiRegex.git", revision: "7beba31743b994afd99263d28a19d64dedca0144"),
+    .package(url: "https://github.com/g-cqd/AemiRegex.git", revision: "b46ad2ab37b663ca42182f85fc2f5d63a263cfc1"),
     // Wide range: 603 keeps existing consumers resolving; 604 lets strict consumers already on
     // swift-syntax 604 (e.g. AtelierCore) share one resolution.
     .package(url: "https://github.com/swiftlang/swift-syntax.git", "603.0.0" ..< "605.0.0"),
