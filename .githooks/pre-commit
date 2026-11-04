@@ -1,21 +1,14 @@
 #!/bin/sh
-# Shared pre-commit hook — formatting gate + shipped-library discipline + internal-tag check.
+# Pre-commit: the quality gate CI runs (formatting, SwiftLint metrics, library discipline, the analyzers against
+# .ci/baselines), from the swift-ci commit CI pins, then the internal-tag check.
 #
 # Enable once per clone:   git config core.hooksPath .githooks
-# Auto-fix formatting:     swift package --allow-writing-to-package-directory format
-#
-# Runs the same `lint` command plugin CI uses, so local and CI rules can't drift.
+# Auto-fix formatting:     swift format format -i -r Package.swift Sources Tests
 set -e
+cd "$(git rev-parse --show-toplevel)"
 
-# The Aemi plugins are a dev-only dependency, gated behind the repo's `*_DEV` env var (so
-# downstream consumers never resolve them). Read that var name from `.adbuildtools.json` and set it,
-# so `swift package --disable-sandbox lint` can resolve the command plugin locally.
-dev=$(grep -o '"devEnv"[[:space:]]*:[[:space:]]*"[^"]*"' .adbuildtools.json 2>/dev/null \
-    | sed 's/.*"\([A-Za-z0-9_]*\)"$/\1/' || true)
-if [ -n "$dev" ]; then export "$dev=1"; fi
-
-echo "pre-commit: swift package --disable-sandbox lint"
-swift package --disable-sandbox lint
+echo "pre-commit: .ci/swift-ci run quality"
+.ci/swift-ci run quality
 
 # Block newly added TODO/FIXME and internal provenance citations. Diff-based, so it only flags regressions.
 if [ -x "$(dirname "$0")/check-tags.sh" ]; then

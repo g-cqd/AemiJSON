@@ -158,18 +158,23 @@ manifest's ranges and the pinned Aemi revision.
 
 Committed in `.githooks/` and enabled via `core.hooksPath` (above):
 
-- **pre-commit** → `swift package lint` (check-only; blocks the commit on violations).
-- **pre-push** → `Scripts/analyzers.sh`, then `swift test -c release --enable-testable-imports` (release
+- **pre-commit** → `.ci/swift-ci run quality` (the quality gate CI runs), then the internal-tag check.
+- **pre-push** → `.ci/swift-ci run quality`, then `swift test -c release --enable-testable-imports` (release
   is what ships; the scratch path is fixed so the release build is reused between pushes).
+
+`.ci/swift-ci` builds and runs the swift-ci commit `.github/workflows/ci.yml` pins, once, so a hook and CI run
+the same checks with the same tool versions. `.ci/swift-ci local` runs quality and the debug tests (fixtures
+included).
 
 ## Static analysis
 
-`Scripts/analyzers.sh` runs [deadwood](https://github.com/g-cqd/deadwood) (unused code),
+Quality runs swift-format, the SwiftLint metrics, the shipped-library discipline (no force unwrap or `try!`,
+no `strtod` in `Sources/AemiJSON` and `Sources/AemiJSONCore`; no inline PRNG, untyped `#expect(throws:)` or
+wall-clock assertion in `Tests`), then [deadwood](https://github.com/g-cqd/deadwood) (unused code),
 [dolly](https://github.com/g-cqd/dolly) (duplicated code) and [arcleak](https://github.com/g-cqd/arcleak)
-(retain cycles and leaks) over `Sources` and `Tests` under `--strict`. They are syntax-level, so they need no
-build, and each is pinned to a release **and to the SHA-256 of its archive for each platform** (macOS arm64 and Linux x86_64; checked before
-anything runs; a mismatch is exit 2, never a silent skip). Pin changes move version and hash together, and
-the diff of findings is read before committing: fingerprints move between versions.
+(retain cycles and leaks) over `Sources` and `Tests` under `--strict`. The analyzers are syntax-level, so they
+need no build, and swift-ci's tool lock pins each to a release **and to the SHA-256 of its archive** (checked
+before anything runs). Their scope and rules live in `.ci/action.json`.
 
 A finding ends one of three ways: fix it, name the abstraction the duplicate was missing, or accept it where
 it is, with a reason, on the line above the anchor:
@@ -178,40 +183,25 @@ it is, with a reason, on the line above the anchor:
 // @dl:accept -- <why the duplication is intentional>     (dolly)
 // @dw:accept -- <why the declaration must stay>          (deadwood)
 // @al:accept -- <why the capture is safe>                (arcleak)
+// lint:allow                                             (a reviewed discipline exception, on the line)
 ```
 
-`.dolly-baseline.json` is the one exception: the duplication that predates the gate (adopted with 96 clone
-groups in `Sources`, and 101 test-code notes). A finding the baseline holds does not fail; a new one does. It is for legacy debt, never
-for new code. Fingerprints hash rule, path, line and column, so an edit above a baselined finding brings it
-back: shrink the baseline by refactoring, and regenerate it only afterwards
-(`dolly analyze --no-cache --relative-to . --write-baseline .dolly-baseline.json Sources Tests`, with the
-pinned dolly). `Benchmarks/` is left out of the corpus: the benchmark plugin finds a global named
-`benchmarks` by name, which no syntax-level analyzer can see, so every benchmark reads as dead code.
+`.ci/baselines/dolly.json` is the one exception: the duplication that predates the gate (adopted with 96 clone
+groups in `Sources`, and 101 test-code notes). A finding the baseline holds does not fail; a new one does. It is
+for legacy debt, never for new code. Fingerprints hash rule, path, line and column, so an edit above a baselined
+finding brings it back: shrink the baseline by refactoring, and regenerate it only afterwards
+(`.ci/swift-ci baseline`, with the pinned tools). `Benchmarks/` is left out of the corpus: the benchmark plugin
+finds a global named `benchmarks` by name, which no syntax-level analyzer can see, so every benchmark reads as
+dead code.
 
 ## CI & documentation
 
-A single workflow — **`.github/workflows/ci.yml`** — chains everything and only fans out after
-the gate passes:
-
-- **`build-test`** (macOS): lint → build → fixtures → test → coverage gate, in one job (one cache,
-  warm build). The coverage step runs `coverage-check` and fails below the floor.
-- **`benchmarks`** (macOS, `main` / dispatch): runs the suite, renders the `bench-compare` table into
-  the job summary, and (advisory) checks against `.benchmarkBaselines/main` when committed.
-- **`platforms`**: a cross-platform compile matrix (iOS / tvOS / watchOS / visionOS), on
-  `main` / manual dispatch.
-- **`static-analysis`** (macOS): `Scripts/analyzers.sh`, all three gating (see *Static analysis*).
-- **`sanitizers`**: TSan + ASan passes over `swift test`, on `main` / manual dispatch — and,
-  additionally, on any PR that touches the unsafe scanner (`Sources/AemiJSONCore/Core/**`, gated by a
-  `dorny/paths-filter` `changes` job). Each pass rebuilds the graph under instrumentation, so other
-  PRs stay off the path.
-- **`api-stability`** (PRs): `diagnose-api-breaking-changes` against the base ref — a hard gate that
-  flags unintended public-API changes.
-- **`release-test`** (`main`): the test suite built in release, to catch debug-only assumptions.
-- **`linux`** (nightly container) and **`fuzz`** (libFuzzer over `Sources/AemiJSONFuzz`, Linux): run as
-  advisory (non-gating) jobs.
-- **`docs`**: builds the DocC site and deploys it to GitHub Pages on `main` —
-  <https://g-cqd.github.io/ADJSON/>. Requires Pages source = "GitHub Actions" in the repo
-  settings (a one-time manual step).
+**`.github/workflows/ci.yml`** calls the family's pinned swift-ci workflow, configured by `.ci/action.json`
+(quality; Linux debug, release and AddressSanitizer; the flag-free consumer build; macOS debug, with fixtures
+fetched first), next to this package's own jobs. **`.ci/README.md`** lists what runs when: the path-gated macOS
+sanitizers, `api-stability` on pull requests, the Apple-platform builds, libFuzzer, the benchmarks and the
+DocC site, built with warnings as errors and deployed to GitHub Pages from `main`
+(<https://g-cqd.github.io/ADJSON/>; Pages source must be "GitHub Actions" in the repository settings).
 
 ### Apple-platform builds
 

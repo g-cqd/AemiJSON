@@ -1,18 +1,19 @@
 #!/bin/sh
-# Shared pre-push hook: the static analyzers, then the suite in RELEASE, before publishing.
+# Pre-push: the quality gate CI runs (from the swift-ci commit CI pins), then the suite in RELEASE.
 #
 # Enable once per clone:   git config core.hooksPath .githooks
 #
 # Release is what ships and what the optimizer can break, and it needs testability stated explicitly, so
 # this is not a plain `swift test`. The scratch path is fixed so the release build is reused between pushes.
-# The analyzers come first: they read source and finish in well under a second.
+# Quality comes first: it reads source and finishes in seconds once its tools are cached.
 #
 # A push that changes only workflow, documentation or analyzer configuration cannot change what the suite
-# tests, so it skips the release run (the analyzers still run). The range is what git is about to send.
+# tests, so it skips the release run (quality still runs). The range is what git is about to send.
 set -e
 
-echo "pre-push: Scripts/analyzers.sh"
-Scripts/analyzers.sh
+cd "$(git rev-parse --show-toplevel)"
+echo "pre-push: .ci/swift-ci run quality"
+.ci/swift-ci run quality
 
 zero=0000000000000000000000000000000000000000
 code_changed=0
@@ -25,7 +26,7 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     fi
     if [ -z "$base" ]; then code_changed=1; continue; fi
     if git diff --name-only "$base" "$local_sha" \
-        | grep -vE '^(\.github/|\.githooks/|CONTRIBUTING\.md$|README\.md$|LICENSE$|Scripts/analyzers\.sh$|\.dolly-baseline\.json$|\.deadwood\.json$)' \
+        | grep -vE '^(\.github/|\.githooks/|CONTRIBUTING\.md$|README\.md$|LICENSE$|\.ci/baselines/|\.deadwood\.json$)' \
         | grep -q .; then
         code_changed=1
     fi

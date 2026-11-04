@@ -32,5 +32,20 @@
       ],
       "title": "Compatibility \u00b7 Foundation-Free Core"
     }
-  ]
+  ],
+  "quality": {
+    "discipline": {
+      "shipped": [
+        "Sources/AemiJSON",
+        "Sources/AemiJSONCore"
+      ],
+      "forceUnwrap": true,
+      "rules": [
+        "strtod",
+        "inline-prng",
+        "untyped-throws",
+        "wall-clock"
+      ]
+    }
+  }
 }

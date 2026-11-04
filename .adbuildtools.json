@@ -1,9 +1,0 @@
-{
-    "devEnv": "AEMIJSON_DEV",
-    "shippedTargets": ["Sources/AemiJSON", "Sources/AemiJSONCore"],
-    "strtodBan": true,
-    "forceUnwrapBan": true,
-    "prngBan": true,
-    "untypedThrowsBan": true,
-    "wallClockBan": true
-}
