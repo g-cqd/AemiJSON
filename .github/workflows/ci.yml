@@ -344,20 +344,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   docs:
-    name: Documentation · Validate & Publish
+    name: Documentation · Validate
     needs: ci
     runs-on: macos-26
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    # Serialize Pages deploys without cancelling an in-flight publish.
-    concurrency:
-      group: pages
-      cancel-in-progress: false
     env:
       AEMIJSON_DEV: "1"
     steps:
@@ -392,7 +381,7 @@ jobs:
             --transform-for-static-hosting \
             --hosting-base-path "${{ github.event.repository.name }}" \
             --output-path "$PWD/_site"
-      - name: Add root redirect to the documentation landing page
+      - name: Documentation · Add Root Redirect
         run: |
           cat > _site/index.html <<'HTML'
           <!doctype html>
@@ -407,7 +396,25 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: _site
+
+  docs-publish:
+    name: Documentation · Publish
+    # Deploys the site the validation job built: one build, and the github-pages environment (main only) is
+    # entered by main's runs alone, so a pull request never asks for it.
+    needs: docs
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    # Serialize Pages deploys without cancelling an in-flight publish.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
       - name: Documentation · Deploy Pages
-        if: github.ref == 'refs/heads/main'
         id: deploy
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
