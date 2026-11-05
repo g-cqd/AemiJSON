@@ -2,31 +2,23 @@ import AemiKernel
 
 // Number materialization over a byte range.
 public enum JSONNumber {
-    // The power-of-ten tables and the Clinger value assembly now live once in `AemiKernel.DecimalFloat`
-    // (shared with `AemiKernel.NumberParse`); the scanners below feed it a significand + exponent. The
-    // local `pow10` / `pow10Float` tables and the inline fast-path multiply were a duplicate of it.
-
-    // Parse a (scanner-validated) JSON number. The Clinger fast path handles the common case without
-    // building a `String`; anything outside its provably-correct domain falls back to the
-    // locale-independent `Double(_:)`.
+    // The decimal scan, the fast paths and the long-decimal slow path are aemi's (`DecimalScanner`,
+    // `DecimalFloat`, aemi ADR 0031), promoted from this file: one implementation for JSON, TOML and
+    // YAML. What stays here is JSON's own: the JSON5 spellings, integers, and the hexadecimal forms.
     //
-    // `Double(_:)` parses with fixed C-locale semantics, unlike libc `strtod`, which honours the
-    // host `LC_NUMERIC` and would misread "1.5" as 1.0 under a comma-decimal locale. It only fails
-    // on out-of-range magnitudes, which round to ±inf exactly as `strtod` did, and, on Linux, on a decimal
-    // tens of thousands of digits long; `LongDecimal` rounds that one. Short numbers
-    // (≤15 UTF-8 bytes) use the inline small-string buffer, so no heap allocation occurs.
+    // Parse a (scanner-validated) JSON number. A plain decimal goes through aemi's scanner (eight digits
+    // at a time, zeros that only pad costing nothing) and Clinger, Eisel-Lemire, or the locale-independent
+    // `Double(_:)` on a short rewrite of a very long decimal; never libc `strtod`, which honours the host
+    // `LC_NUMERIC` and would misread "1.5" as 1.0 under a comma-decimal locale.
     @inline(__always)
     public static func parseDouble(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Double {
         // Caller owns `p[offset ..< offset + length]` for this call; `p` is read-only and never escapes.
-        assert(offset >= 0 && length >= 0, "parseDouble requires a non-negative byte range")
-        if let fast = unsafe parseDoubleFast(p, offset, length) { return fast }
-        // The slow path also covers the JSON5-only spellings (Infinity / NaN / hex). The fast path
-        // already returned for every strict/lenient number it can, so this never runs on their hot
-        // path; only a long/extreme decimal reaches here and `parseJSON5Number` returns nil for it.
+        let (buffer, literal) = unsafe decimal(p, offset, length)
+        if let literal { return unsafe DecimalFloat.double(literal, in: buffer) }
+        // The JSON5 spellings (Infinity / NaN / hex), then what `Double(_:)` reads that the scanner does not
+        // (a JSON5 `.5` or `5.`).
         if let json5 = unsafe parseJSON5Number(p, offset, length) { return json5 }
-        let s = unsafe String(decoding: UnsafeBufferPointer(start: p + offset, count: length), as: UTF8.self)
-        if let value = Double(s) { return value }
-        return unsafe LongDecimal.normalized(p, offset, length).flatMap { Double($0) } ?? .nan
+        return unsafe Double(String(decoding: buffer, as: UTF8.self)) ?? .nan
     }
 
     // Parse a (scanner-validated) JSON number to `Float`, **correctly rounded to the nearest Float**.
@@ -35,38 +27,43 @@ public enum JSONNumber {
     // to `Float` rounds twice (decimal→Double, then Double→Float), which for some short decimals lands
     // on a different `Float` bit pattern than rounding the decimal straight to the nearest `Float`
     // (double-rounding error). The encoder emits the shortest `Float` decimal (`Float.description`), so
-    // decode must invert it at `Float` width to round-trip the exact bit pattern. A `Float`-width
-    // Clinger fast path handles exactly-representable values; everything else falls back to the
-    // standard library's `Float(_:)`, which parses the decimal string to the correctly-rounded nearest
-    // `Float` directly (single rounding, fixed C-locale, no libc/`strtof`).
+    // decode must invert it at `Float` width to round-trip the exact bit pattern: aemi's
+    // `DecimalFloat.float(_:in:)` rounds once.
     @inline(__always)
     public static func parseFloat(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Float {
-        // Caller owns `p[offset ..< offset + length]` for this call; `p` is read-only and never escapes.
-        assert(offset >= 0 && length >= 0, "parseFloat requires a non-negative byte range")
-        if let fast = unsafe parseFloatFast(p, offset, length) { return fast }
-        // JSON5-only spellings (Infinity / NaN / hex), parsed at `Float` width so hex accumulates into
-        // `Float` directly (no Double round-trip). Returns nil for an ordinary decimal.
+        let (buffer, literal) = unsafe decimal(p, offset, length)
+        if let literal { return unsafe DecimalFloat.float(literal, in: buffer) }
         if let json5 = unsafe parseJSON5Float(p, offset, length) { return json5 }
-        let s = unsafe String(decoding: UnsafeBufferPointer(start: p + offset, count: length), as: UTF8.self)
-        if let value = Float(s) { return value }
-        return unsafe LongDecimal.normalized(p, offset, length).flatMap { Float($0) } ?? .nan
+        return unsafe Float(String(decoding: buffer, as: UTF8.self)) ?? .nan
     }
 
-    // Clinger fast path at `Float` width. When the decimal significand fits in 2^24 (so
-    // `Float(significand)` is exact) and the net power of ten is within ±10 (so `pow10Float[..]` is
-    // exact), a single IEEE multiply/divide is correctly rounded — bit-identical to `Float(_:)`.
-    // Returns nil (→ slow path) for anything else: ≥8 significand digits (could exceed 2^24), an
-    // out-of-range exponent, or any byte the re-scan doesn't consume.
+    // The number's bytes, and aemi's literal when the whole range is one plain decimal.
     @inline(__always)
+    static func decimal(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int)
+        -> (UnsafeBufferPointer<UInt8>, DecimalLiteral?)
+    {
+        assert(offset >= 0 && length >= 0, "a number needs a non-negative byte range")
+        let buffer = unsafe UnsafeBufferPointer(start: p + offset, count: length)
+        guard let literal = unsafe DecimalScanner.scan(buffer, from: 0), literal.end == length else {
+            return unsafe (buffer, nil)
+        }
+        return unsafe (buffer, literal)
+    }
+
+    // The fast paths alone (for the tests that hold them to padded decimals): the value when Clinger or
+    // Eisel-Lemire proves it, else nil. A literal whose digits are only padding past the nineteen keeps them.
+    static func parseDoubleFast(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Double? {
+        unsafe decimal(p, offset, length).1.flatMap(DecimalFloat.fastDouble)
+    }
+
     static func parseFloatFast(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Float? {
-        // At most 7 significant digits keeps the significand under 2^24; the exact-domain gate and the
-        // value assembly live in the shared `AemiKernel.DecimalFloat` Clinger fast path at `Float` width
-        // (inlined here — no `Double` round-trip, so the result is correctly rounded to nearest `Float`).
-        guard let decimal = unsafe scanDecimal(p, offset, length, maxDigits: 7) else { return nil }
+        guard let literal = unsafe decimal(p, offset, length).1?.trimmed, !literal.truncated,
+            literal.significand <= 1 << 24
+        else { return nil }
         return DecimalFloat.float(
-            significand: UInt32(truncatingIfNeeded: decimal.significand),
-            exponent: decimal.exponent,
-            negative: decimal.negative
+            significand: UInt32(truncatingIfNeeded: literal.significand),
+            exponent: literal.exponent,
+            negative: literal.negative
         )
     }
 
@@ -129,179 +126,6 @@ public enum JSONNumber {
                 return k > idx + 2 ? sign * value : nil
             default: return nil
         }
-    }
-
-    // Clinger fast path. When the decimal significand fits in 2^53 (so `Double(significand)` is
-    // exact) and the net power of ten is within ±22 (so `pow10[..]` is exact), a single IEEE
-    // multiply/divide is correctly rounded — bit-identical to `Double(_:)`. Returns `nil` (→ slow
-    // path) for anything else: ≥20 significant digits, an out-of-range exponent, or any byte the
-    // re-scan doesn't consume.
-    @inline(__always)
-    static func parseDoubleFast(_ p: UnsafePointer<UInt8>, _ offset: Int, _ length: Int) -> Double? {
-        // At most 19 significant digits keeps the significand exact in a `UInt64`. The exact-domain
-        // Clinger gate and the value assembly live in `AemiKernel.DecimalFloat`; when Clinger rejects
-        // (significand > 2^53 or |exponent| > 22) the Eisel-Lemire fast path resolves the correctly-rounded
-        // Double without a `String` + `Double(_:)` round-trip, returning nil only for the rare case it
-        // cannot prove correct — then the caller's stdlib fallback rounds it.
-        guard let decimal = unsafe scanDecimal(p, offset, length, maxDigits: 19) else { return nil }
-        if let clinger = DecimalFloat.double(
-            significand: decimal.significand,
-            exponent: decimal.exponent,
-            negative: decimal.negative
-        ) {
-            return clinger
-        }
-        return DecimalFloat.eiselLemire(
-            significand: decimal.significand,
-            exponent: decimal.exponent,
-            negative: decimal.negative
-        )
-    }
-
-    // Re-scans a (validated) plain decimal number into its sign, decimal significand, and the power of
-    // ten still to apply, for the fast paths above. Returns nil when the number is not one the scan
-    // consumes whole (a JSON5 spelling) or has more than `maxDigits` significant digits.
-    //
-    // The first scan counts every digit, which keeps its loops tight; a number that runs past the
-    // budget gets a second, zero-aware scan, so zeros that only pad the number do not cost the fast
-    // path (see `scanPaddedDecimal`).
-    @inline(__always)
-    static func scanDecimal(
-        _ p: UnsafePointer<UInt8>,
-        _ offset: Int,
-        _ length: Int,
-        maxDigits: Int
-    ) -> (significand: UInt64, exponent: Int, negative: Bool)? {
-        var i = offset
-        let end = offset + length
-        guard i < end else { return nil }
-        var negative = false
-        if unsafe p[i] == 0x2D {
-            negative = true
-            i += 1
-        }
-        var significand: UInt64 = 0
-        var digits = 0
-        var exponent = 0  // power of ten still to apply
-
-        while i < end, unsafe p[i] >= 0x30, unsafe p[i] <= 0x39 {
-            significand = unsafe significand &* 10 &+ UInt64(p[i] - 0x30)
-            digits += 1
-            i += 1
-            if digits > maxDigits { return unsafe scanPaddedDecimal(p, offset, length, maxDigits: maxDigits) }
-        }
-        if i < end, unsafe p[i] == 0x2E {
-            i += 1
-            while i < end, unsafe p[i] >= 0x30, unsafe p[i] <= 0x39 {
-                significand = unsafe significand &* 10 &+ UInt64(p[i] - 0x30)
-                digits += 1
-                exponent -= 1
-                i += 1
-                if digits > maxDigits { return unsafe scanPaddedDecimal(p, offset, length, maxDigits: maxDigits) }
-            }
-        }
-        if i < end, unsafe p[i] == 0x65 || p[i] == 0x45 {  // e / E
-            i += 1
-            var expNegative = false
-            if i < end, unsafe p[i] == 0x2D {
-                expNegative = true
-                i += 1
-            } else if i < end, unsafe p[i] == 0x2B {
-                i += 1
-            }
-            var e = 0
-            var sawExpDigit = false
-            // Cap the accumulator so a pathologically long exponent (`1e` + thousands of digits) cannot
-            // overflow `Int`; any value ≥ 1_000_000 is far outside the range either fast path accepts,
-            // and with at most `maxDigits` digits before it no fraction can bring it back, so clamping
-            // changes no accepted result — it only routes an over-large exponent to rejection.
-            while i < end, unsafe p[i] >= 0x30, unsafe p[i] <= 0x39 {
-                if e < 1_000_000 { e = unsafe e * 10 + Int(p[i] - 0x30) }
-                sawExpDigit = true
-                i += 1
-            }
-            guard sawExpDigit else { return nil }
-            exponent += expNegative ? -e : e
-        }
-        guard i == end, digits > 0 else { return nil }
-        return (significand, exponent, negative)
-    }
-
-    // `scanDecimal` for a number with more digits than the budget: zeros count toward `maxDigits` only
-    // between significant digits. A leading zero changes nothing and is dropped; a trailing one waits
-    // in `pendingZeros` and, if no significant digit follows, scales the exponent instead of widening
-    // the significand. So `0.000000000000000000001` and `1.0000000000000000000000` keep the fast path.
-    // With the zero count unbounded, the exponent has to be exact as well: past seven digits this scan
-    // gives up instead of clamping, since a clamped exponent could meet a long run of zeros and land
-    // back in range with the wrong value. Kept out of line: only over-long numbers reach it.
-    @inline(never)
-    static func scanPaddedDecimal(
-        _ p: UnsafePointer<UInt8>,
-        _ offset: Int,
-        _ length: Int,
-        maxDigits: Int
-    ) -> (significand: UInt64, exponent: Int, negative: Bool)? {
-        var i = offset
-        let end = offset + length
-        guard i < end else { return nil }
-        var negative = false
-        if unsafe p[i] == 0x2D {
-            negative = true
-            i += 1
-        }
-        var significand: UInt64 = 0
-        var digits = 0  // significant digits folded into `significand`
-        var pendingZeros = 0  // zeros after a significant digit, not yet folded in
-        var exponent = 0  // power of ten still to apply
-        var inFraction = false
-        while i < end {
-            let c = unsafe p[i]
-            if c == 0x2E, !inFraction {  // '.'
-                inFraction = true
-                i += 1
-                continue
-            }
-            guard c >= 0x30, c <= 0x39 else { break }
-            i += 1
-            if inFraction { exponent -= 1 }
-            if c == 0x30 {
-                if digits > 0 { pendingZeros += 1 }
-                continue
-            }
-            digits += pendingZeros + 1
-            if digits > maxDigits { return nil }
-            while pendingZeros > 0 {
-                significand &*= 10
-                pendingZeros -= 1
-            }
-            significand = significand &* 10 &+ UInt64(c - 0x30)
-        }
-        // The budget ran out, so the scan did see digits.
-        guard let suffix = unsafe exactExponent(p, &i, end), i == end else { return nil }
-        return (significand, exponent + pendingZeros + suffix, negative)
-    }
-
-    // The value of an optional `e`/`E` exponent suffix at `p[i]`, advancing `i` past it: 0 when there
-    // is none, nil when it has no digits or more than seven (far past any exponent a fast path accepts).
-    @inline(__always)
-    private static func exactExponent(_ p: UnsafePointer<UInt8>, _ i: inout Int, _ end: Int) -> Int? {
-        guard i < end, unsafe p[i] == 0x65 || p[i] == 0x45 else { return 0 }  // e / E
-        i += 1
-        var negative = false
-        if i < end, unsafe p[i] == 0x2D || p[i] == 0x2B {
-            negative = unsafe p[i] == 0x2D
-            i += 1
-        }
-        var e = 0
-        var digits = 0
-        while i < end, unsafe p[i] >= 0x30, unsafe p[i] <= 0x39 {
-            digits += 1
-            if digits > 7 { return nil }
-            e = unsafe e * 10 + Int(p[i] - 0x30)
-            i += 1
-        }
-        guard digits > 0 else { return nil }
-        return negative ? -e : e
     }
 
     // Generic integer parse with correct overflow handling for any width, signed or

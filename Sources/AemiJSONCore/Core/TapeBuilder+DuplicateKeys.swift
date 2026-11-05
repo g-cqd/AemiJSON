@@ -8,9 +8,9 @@ extension TapeBuilder {
     // unique-keys shortcut ("the first match is the only match") is sound. `a` and `\u0061` are one key.
     //
     // Keys are bucketed under a hash of their decoded bytes in O(1) expected time, which avoids the O(n²)
-    // all-pairs scan a hostile object with many keys could exploit (DoS). The hash is Swift's `Hasher`
-    // (SipHash), seeded randomly per process, so an attacker cannot precompute a flood of colliding keys to
-    // force the O(bucket²) compare fallback.
+    // all-pairs scan a hostile object with many keys could exploit (DoS). The hash is aemi's `KeyedHash`
+    // (SipHash-1-3, keyed randomly per process, as `Hasher` is), so an attacker cannot precompute a flood of
+    // colliding keys to force the O(bucket²) compare fallback.
     //
     // The common key has no escape: its raw bytes are its decoded bytes, so it is hashed and compared in
     // place, exactly as before. Only a key whose slot has the escape flag is decoded, into the one scratch
@@ -21,14 +21,16 @@ extension TapeBuilder {
         let offset = Slot.low(keySlot)
         let length = Slot.length(keySlot)
         let escaped = Slot.flags(keySlot) & 1 == 1
-        var hasher = Hasher()
+        // aemi's KeyedHash (SipHash-1-3 under the process's secret key, aemi ADR 0031): the same defence as the
+        // standard library's `Hasher`, at under half its cost on a short key.
+        let keyed: UInt64
         if escaped {
             unsafe JSONString.appendUnescaped(p, offset, length, json5: json5, replacing: &decodedKey)
-            decodedKey.withUnsafeBytes { unsafe hasher.combine(bytes: $0) }
+            keyed = decodedKey.withUnsafeBytes { unsafe KeyedHash.process.hash($0) }
         } else {
-            unsafe hasher.combine(bytes: UnsafeRawBufferPointer(start: p + offset, count: length))
+            keyed = unsafe KeyedHash.process.hash(UnsafeRawBufferPointer(start: p + offset, count: length))
         }
-        let hash = hasher.finalize()
+        let hash = Int(truncatingIfNeeded: keyed)
         // Read the bucket for the collision check, then append in place. The `if let` binding is
         // released before the `default:` subscript mutates, so the stored array keeps refcount 1 and
         // the append doesn't copy-on-write the whole bucket on every key.
