@@ -156,23 +156,9 @@ public struct JSON: Sendable {
     /// type, pass the node itself to `AemiJSON.JSONDecoder`'s `decode(_:from:)`, which reads the
     /// parsed tape and needs neither these bytes nor a second parse.
     public func withRawJSONBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R? {
-        guard index >= 0 else { return nil }
-        let off: Int
-        let len: Int
-        switch tag {
-            case JSONKind.object.rawValue, JSONKind.array.rawValue:
-                guard let span = doc.containerSpans.span(ofContainerAt: index) else { return nil }
-                off = span.lowerBound
-                len = span.count
-            case JSONKind.string.rawValue:
-                off = Slot.low(slot) - 1  // include the opening quote
-                len = Slot.length(slot) + 2  // and the closing one
-            default:
-                off = Slot.low(slot)
-                len = Slot.length(slot)
-        }
+        guard let range = sourceRange else { return nil }
         return try unsafe doc.withBytePointer { p in
-            try unsafe body(UnsafeRawBufferPointer(start: p + off, count: len))
+            try unsafe body(UnsafeRawBufferPointer(start: p + range.lowerBound, count: range.count))
         }
     }
 
