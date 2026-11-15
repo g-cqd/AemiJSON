@@ -94,6 +94,17 @@ public enum JSONRPCMessage: Sendable {
 
         /// The error response that answers it.
         public func response() throws -> [UInt8] { try JSONRPC.response(id: id, error: error) }
+
+        /// A line longer than `limit` bytes, which was dropped unread: a parse error, with no id.
+        static func lineTooLong(_ limit: Int) -> Invalid {
+            Invalid(
+                error: JSONRPCError(
+                    code: JSONRPCError.parseError,
+                    message: "parse error: a line is longer than \(limit) bytes"
+                ),
+                id: nil
+            )
+        }
     }
 
     /// Reads a message from a body.

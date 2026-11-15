@@ -50,9 +50,21 @@ public enum JSONRPCConnectionError: Error, Sendable, Equatable, CustomStringConv
 /// and the peer is told when a ``JSONRPCCancellation`` is set. Requests from the peer are answered by `onRequest`, each in its own child
 /// task so the reader never waits on one, or with a null result when there is no handler, so the peer never waits on this side.
 /// Notifications go to `onNotification` in order, on the reader: the handler must not wait on a response from this connection.
+///
+/// A connection that serves (``init(serving:framing:cancellation:admit:onNotification:)``) keeps the order its requests arrive in:
+/// each is admitted on the reader, before the next message is read, and only the work its admission returns runs in a child task.
+/// It also answers what it cannot read, as JSON-RPC asks of a server: a body that is not a message, and a line too long to read,
+/// each get their error, with the id when one could be read.
 public final class JSONRPCConnection: Sendable {
     public typealias RequestHandler = @Sendable (JSONRPCRequest) async -> Result<JSONValue, JSONRPCError>
     public typealias NotificationHandler = @Sendable (JSONRPCNotification) async -> Void
+    /// The work that answers one request, run in a child task of the reader.
+    public typealias RequestWork = @Sendable () async -> Result<JSONValue, JSONRPCError>
+    /// Admits a request: called on the reader, in the order requests arrive, and returns the work that answers it. What it changes
+    /// is seen by the admission of the next request and by the notifications after it, so a server whose requests depend on one
+    /// another (nothing before `initialize`; a cancellation after the request it cancels) decides here and works in what it returns.
+    /// Like a notification's handler, it must not wait on a response from this connection.
+    public typealias RequestAdmission = @Sendable (JSONRPCRequest) async -> RequestWork
 
     private enum Slot {
         /// Sent; nobody waits yet.
@@ -74,6 +86,8 @@ public final class JSONRPCConnection: Sendable {
     private let framing: JSONRPCFraming
     private let cancellation: JSONRPCCancellation?
     private let onRequest: RequestHandler?
+    /// Set for a connection that serves: requests are admitted in order, and what cannot be read is answered.
+    private let admit: RequestAdmission?
     private let onNotification: NotificationHandler?
     private let state = Mutex(State())
 
@@ -88,6 +102,24 @@ public final class JSONRPCConnection: Sendable {
         self.framing = framing
         self.cancellation = cancellation
         self.onRequest = onRequest
+        admit = nil
+        self.onNotification = onNotification
+    }
+
+    /// A connection in the server's role, writing to `sink`: each request from the peer is admitted by `admit` in the order it
+    /// arrived, and a body that is not a message is answered with its error.
+    public init(
+        serving sink: any JSONRPCSink,
+        framing: JSONRPCFraming,
+        cancellation: JSONRPCCancellation? = nil,
+        admit: @escaping RequestAdmission,
+        onNotification: NotificationHandler? = nil
+    ) {
+        self.sink = sink
+        self.framing = framing
+        self.cancellation = cancellation
+        onRequest = nil
+        self.admit = admit
         self.onNotification = onNotification
     }
 
@@ -207,7 +239,12 @@ public final class JSONRPCConnection: Sendable {
                     case .lines:
                         var decoder = LineFraming()
                         for try await chunk in chunks {
-                            for case .message(let body) in decoder.append(chunk) { await receive(body, &group) }
+                            for line in decoder.append(chunk) {
+                                switch line {
+                                    case .message(let body): await receive(body, &group)
+                                    case .tooLong: await refuse(.lineTooLong(decoder.maximumLineLength))
+                                }
+                            }
                         }
                 }
             } catch {
@@ -219,10 +256,21 @@ public final class JSONRPCConnection: Sendable {
 
     /// Delivers one message.
     private func receive(_ body: [UInt8], _ group: inout TaskGroup<Void>) async {
-        guard let message = try? JSONRPCMessage(parsing: body) else { return }
+        let message: JSONRPCMessage
+        do {
+            message = try JSONRPCMessage(parsing: body)
+        } catch {
+            await refuse(error)
+            return
+        }
         switch message {
             case .request(let request):
-                group.addTask { await self.answer(request) }
+                if let admit {
+                    let work = await admit(request)
+                    group.addTask { await self.write(work(), answering: request) }
+                } else {
+                    group.addTask { await self.answer(request) }
+                }
             case .notification(let notification):
                 await onNotification?(notification)
             case .response(let id, let result):
@@ -231,9 +279,20 @@ public final class JSONRPCConnection: Sendable {
         }
     }
 
+    /// Answers what could not be read with its error, when this connection serves; otherwise says nothing, since a client's peer
+    /// may print lines that are not messages.
+    private func refuse(_ invalid: JSONRPCMessage.Invalid) async {
+        guard admit != nil, let body = try? invalid.response() else { return }
+        try? await sink.write(framing.frame(body))
+    }
+
     /// Answers a request from the peer.
     private func answer(_ request: JSONRPCRequest) async {
-        let outcome = await onRequest?(request) ?? .success(.null)
+        await write(await onRequest?(request) ?? .success(.null), answering: request)
+    }
+
+    /// Writes `outcome` as the response to `request`.
+    private func write(_ outcome: Result<JSONValue, JSONRPCError>, answering request: JSONRPCRequest) async {
         let body: [UInt8]?
         switch outcome {
             case .success(let result): body = try? JSONRPC.response(id: request.id, result: result)
