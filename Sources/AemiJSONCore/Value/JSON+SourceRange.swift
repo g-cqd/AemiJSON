@@ -24,21 +24,15 @@ extension JSON {
     /// with the byte range of the key as written: its quotes included when it has them, the bare name
     /// for a JSON5 identifier key.
     public func forEachMemberWithKeyRange(_ body: (String, Range<Int>, JSON) -> Void) {
-        guard tag == JSONKind.object.rawValue else { return }
-        let count = Slot.count(slot)
-        unsafe doc.withBytePointer { p in
-            var i = index + 1
-            for _ in 0 ..< count {
-                let keySlot = doc.tape[i]
-                let start = Slot.low(keySlot)
-                let end = start + Slot.length(keySlot)
-                // A quoted key's slot starts after its quote; a bare identifier is never preceded by one.
-                let before: UInt8 = start > 0 ? unsafe p[start - 1] : 0
-                let quoted = before == 0x22 || before == 0x27
-                let key = JSON(doc: doc, index: i).string ?? ""
-                body(key, quoted ? start - 1 ..< end + 1 : start ..< end, JSON(doc: doc, index: i + 1))
-                i = Slot.next(after: i + 1, doc.tape[i + 1])
-            }
+        unsafe forEachMemberSlot { p, i in
+            let keySlot = doc.tape[i]
+            let start = Slot.low(keySlot)
+            let end = start + Slot.length(keySlot)
+            // A quoted key's slot starts after its quote; a bare identifier is never preceded by one.
+            let before: UInt8 = start > 0 ? unsafe p[start - 1] : 0
+            let quoted = before == 0x22 || before == 0x27
+            let key = JSON(doc: doc, index: i).string ?? ""
+            body(key, quoted ? start - 1 ..< end + 1 : start ..< end, JSON(doc: doc, index: i + 1))
         }
     }
 }

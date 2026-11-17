@@ -218,13 +218,22 @@ public struct JSON: Sendable {
     /// `[String: JSON]`. Duplicate keys are visited as they appear (callers that build a dictionary
     /// get last-value-wins for free).
     public func forEachMember(_ body: (String, JSON) -> Void) {
+        unsafe forEachMemberSlot { p, i in
+            body(unsafe decodeKey(p, doc.tape[i]), JSON(doc: doc, index: i + 1))
+        }
+    }
+
+    /// The walk of an object's members in document order: the input's bytes and each member's key slot (its value is
+    /// the next). One walk for ``forEachMember(_:)`` and ``forEachMemberWithKeyRange(_:)``.
+    /// - Parameter body: Called with the bytes and the tape index of each key.
+    @inline(__always)
+    func forEachMemberSlot(_ body: (UnsafePointer<UInt8>, Int) -> Void) {
         guard tag == JSONKind.object.rawValue else { return }
         let c = Slot.count(slot)
         unsafe doc.withBytePointer { p in
             var i = index + 1
             for _ in 0 ..< c {
-                let k = doc.tape[i]
-                body(unsafe decodeKey(p, k), JSON(doc: doc, index: i + 1))
+                unsafe body(p, i)
                 i = nextIndex(after: i + 1)
             }
         }
