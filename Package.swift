@@ -42,12 +42,12 @@ let isNIO = Context.environment["AEMIJSON_NIO"] != nil || Context.environment["A
 
 let aemiDependency: Package.Dependency = .package(
     url: "https://github.com/Aemi-Studio/aemi.git",
-    revision: "429602d69219a9063c443b9dd6bfcc9b75ae3d33"
+    revision: "32f1d61e0ee2fe19af99c1c1a040f1fbdae91d4a"
 )
 
 var packageDependencies: [Package.Dependency] = [
     aemiDependency,
-    .package(url: "https://github.com/g-cqd/AemiRegex.git", revision: "0f0dc9e1c1baa7fb32ab2ef383c53ef2f6261f26"),
+    .package(url: "https://github.com/g-cqd/AemiRegex.git", revision: "7be30789416069858a586e2c0cfc55bcd69ced14"),
     .package(url: "https://github.com/swiftlang/swift-syntax.git", "603.0.0" ..< "605.0.0"),
     .package(url: "https://github.com/apple/swift-collections.git", "1.7.1" ..< "1.8.0")
 ]
