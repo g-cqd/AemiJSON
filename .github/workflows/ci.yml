@@ -122,27 +122,20 @@ jobs:
           sdk_path="$(xcrun --sdk '${{ matrix.sdk }}' --show-sdk-path)"
           swift build --sdk "$sdk_path" --triple '${{ matrix.triple }}' --target AemiJSON
 
-  sanitizers:
-    name: Sanitizers · ${{ matrix.name }} · Linux
+  sanitizers-address:
+    name: Sanitizers · address · Linux
     needs: [ci, changes]
-    # Sanitizers are slow (TSan ~5-15x, ASan ~2x) and rebuild the whole graph under instrumentation,
-    # so run them on main / on demand — and, additionally, on any PR that touches the unsafe scanner
-    # OR the concurrency layer (`Sources/AemiJSONCore/Core/**`, `Sources/AemiJSON/Concurrency/**`,
-    # `Sources/AemiJSON/Codable/**` — gated by the `changes` job), where a memory or data-race bug is
-    # most likely to be introduced. Other PRs skip them. Runs on Linux containers so macOS runner
-    # capacity is reserved for Apple-platform checks.
+    # Sanitizers are slow (ASan ~2x) and rebuild the whole graph under instrumentation, so run them on main / on demand, and on any PR
+    # that touches the unsafe scanner or the concurrency layer (`Sources/AemiJSONCore/Core/**`, `Sources/AemiJSON/Concurrency/**`,
+    # `Sources/AemiJSON/Codable/**`, gated by the `changes` job). ASan runs in a Linux container to keep macOS runners free.
+    # `--disable-xctest`: the suite is Swift Testing only, and Linux's XCTest runner, run with no XCTest tests, leaks its own suite
+    # objects, which LeakSanitizer reported as a failure of an otherwise passing run (2026-11-25).
     if: github.event_name != 'pull_request' || needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     container:
       image: swift:6.4.1-noble
       options: --security-opt seccomp=unconfined
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: thread, flags: "--sanitize=thread", prefix: "setarch -R" }
-          - { name: address, flags: "--sanitize=address --sanitize=undefined", prefix: "" }
     steps:
       - name: Setup · Check Out Sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -154,14 +147,51 @@ jobs:
           path: |
             .build
             /root/.cache/org.swift.swiftpm
-          key: ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-${{ github.sha }}
+          key: ${{ github.repository }}-spm-${{ runner.os }}-san-address-${{ hashFiles('Package.swift') }}-${{ github.sha }}
           restore-keys: |
-            ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-${{ hashFiles('Package.swift') }}-
-            ${{ github.repository }}-spm-${{ runner.os }}-san-${{ matrix.name }}-
+            ${{ github.repository }}-spm-${{ runner.os }}-san-address-${{ hashFiles('Package.swift') }}-
+            ${{ github.repository }}-spm-${{ runner.os }}-san-address-
       - name: Fixtures · Fetch Test & Benchmark Corpora
         run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
-      - name: Test under ${{ matrix.name }} sanitizer
-        run: ${{ matrix.prefix }} swift test ${{ matrix.flags }}
+      - name: Test under address sanitizer
+        # The suppressions name one swift-foundation leak, of Data(contentsOf:) on an empty file (.github/lsan-suppressions.txt).
+        run: LSAN_OPTIONS="suppressions=$PWD/.github/lsan-suppressions.txt" swift test --disable-xctest --sanitize=address --sanitize=undefined
+
+  sanitizers-thread:
+    name: Sanitizers · thread · macOS
+    needs: [ci, changes]
+    # TSan stays on macOS: on Linux, Swift's `Synchronization.Mutex` (a futex) is not fully visible to ThreadSanitizer, which reports
+    # races between two `withLock` bodies of one mutex when threads contend. A ten-line pool under `concurrentPerform` reproduces it
+    # with Swift 6.4.1 and 6.4.3 alike, and it failed this job on `ByteBufferPool` once the job moved to Linux. On macOS the mutex is
+    # an `os_unfair_lock`, which TSan follows.
+    if: github.event_name != 'pull_request' || needs.changes.outputs.core == 'true'
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - name: Setup · Check Out Sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup · Select Xcode
+        run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -print | sort -V | tail -n 1)"
+      - name: Setup · Install Swift 6.4.1
+        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
+        with:
+          swift-version: "6.4.1"
+      - name: Setup · Report Swift Version
+        run: swift --version
+      - name: Cache · Restore SwiftPM
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ github.repository }}-spm-${{ runner.os }}-san-thread-${{ hashFiles('Package.swift') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ github.repository }}-spm-${{ runner.os }}-san-thread-${{ hashFiles('Package.swift') }}-
+            ${{ github.repository }}-spm-${{ runner.os }}-san-thread-
+      - name: Fixtures · Fetch Test & Benchmark Corpora
+        run: swift package --allow-network-connections all --allow-writing-to-package-directory fetch-fixtures
+      - name: Test under thread sanitizer
+        run: swift test --sanitize=thread
 
   fuzz:
     name: Fuzzing · JSON · Linux

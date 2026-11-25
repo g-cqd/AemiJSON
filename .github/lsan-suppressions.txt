@@ -1,0 +1,5 @@
+# LeakSanitizer suppressions for the address-sanitizer job (ci.yml, sanitizers-address).
+# swift-foundation on Linux leaks the 4096-byte read buffer of Data(contentsOf:) for an empty file; the conformance suite reads
+# Tests/AemiJSONTests/Resources/JSONTestSuite/n_structure_no_data.json, which is empty by design. Only this frame is suppressed,
+# so any other leak still fails the job.
+leak:readBytesFromFile
