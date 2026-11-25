@@ -241,3 +241,7 @@ flag, and build-time lint enforcement.
 MIT — see [LICENSE](LICENSE). Fetched fixtures (JSONTestSuite, JSONPath CTS, simdjson /
 nativejson-benchmark corpus) remain under their respective upstream licenses and are not
 redistributed in this repository.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting.

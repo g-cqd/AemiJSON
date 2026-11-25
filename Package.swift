@@ -2,10 +2,6 @@
 import CompilerPluginSupport
 import PackageDescription
 
-// Maximum concurrency safety + stricter checking. These are dependency-safe (no unsafe
-// flags), so the library can still be consumed via a version-pinned SwiftPM requirement.
-// `.v6` language mode turns on complete strict-concurrency checking; the upcoming features
-// tighten existentials and import visibility.
 let strictSettings: [SwiftSetting] = [
     .swiftLanguageMode(.v6),
     .treatAllWarnings(as: .error),
@@ -15,14 +11,6 @@ let strictSettings: [SwiftSetting] = [
     .enableUpcomingFeature("MemberImportVisibility")
 ]
 
-// Compile-time type-check timing warnings (flag slow expressions / function bodies). These
-// use unsafe flags, which would block version-based dependency resolution if placed on the
-// library, so they live only on the internal (non-exported) benchmark + test targets.
-// The budget is env-tunable because `treatAllWarnings(as: .error)` turns an overrun into a HARD
-// build error while the measured quantity is type-check WALL TIME — structurally flaky on shared
-// CI runners (observed 102–168 ms flips for bodies comfortably under 100 ms locally). CI exports
-// AD_TYPECHECK_BUDGET_MS=250 to calibrate for runner noise; unset (local builds) it stays 100 so
-// regressions still surface at developer-machine speed.
 let typeCheckBudgetMS = Context.environment["AD_TYPECHECK_BUDGET_MS"].flatMap { Int($0) } ?? 100
 let timingWarningFlags: [SwiftSetting] = [
     .unsafeFlags([
@@ -31,11 +19,6 @@ let timingWarningFlags: [SwiftSetting] = [
     ])
 ]
 
-// Tests share the same 100ms budgets as the rest of the package — both per-EXPRESSION and
-// whole-FUNCTION-body. The `@dynamicMemberLookup` `JSON` chains that previously pushed thorough test
-// bodies past 100ms were fixed at the root (split into focused tests, big literals hoisted to typed
-// `let`s, chained `#expect`s moved to the kit's typed `expectEqual`/`expectTrue` asserts) rather than
-// papered over with a looser budget, so a regression past 100ms is once again a hard build error.
 let testTimingWarningFlags: [SwiftSetting] = [
     .unsafeFlags([
         "-Xfrontend", "-warn-long-function-bodies=\(typeCheckBudgetMS)",
@@ -43,112 +26,55 @@ let testTimingWarningFlags: [SwiftSetting] = [
     ])
 ]
 
-// Benchmarks: strict + timing warnings only (no runtime instrumentation, so timings stay clean).
 let benchSettings: [SwiftSetting] = strictSettings + timingWarningFlags
 
-// Tests: looser function-body timing budget + runtime actor data-race checks.
 let testSettings: [SwiftSetting] =
     strictSettings + testTimingWarningFlags + [.unsafeFlags(["-enable-actor-data-race-checks"])]
 
-// Shipped kernel (the byte-level parser): strict + StrictMemorySafety + Lifetimes, matching the other
-// AD-family kernels (AemiKernel, ADHTMLCore, ADDBCore, ADServeCore). Every unsafe construct in the parser must
-// be explicitly marked `unsafe`. Only `AemiJSONCore` carries this; the umbrella / macros stay on strict.
 let kernelSettings: [SwiftSetting] =
     strictSettings + [.strictMemorySafety(), .enableExperimentalFeature("Lifetimes")]
 
-// Dev-only tooling is gated behind `AEMIJSON_DEV` so packages that depend on AemiJSON never resolve it
-// (consumers keep just swift-syntax, which the macro needs). Contributors and CI set `AEMIJSON_DEV=1`
-// to enable the DocC plugin, the shared Aemi `format` / `lint` / `LintBuild` plugins, and the
-// benchmark suite. The local `coverage-check` / `bench-compare` / `fetch-fixtures` command plugins carry
-// no external dependencies, so they stay available without the flag.
 let isDev = Context.environment["AEMIJSON_DEV"] != nil || Context.environment["ADJSON_DEV"] != nil
 
-// The libFuzzer target is gated behind `AEMIJSON_FUZZ` so the default `swift build` is never asked to
-// link a `main`-less, `-sanitize=fuzzer` executable (the combo only works under a fuzzer build).
-// Contributors / CI set `AEMIJSON_FUZZ=1` and build it with the fuzzer sanitizer; see `Sources/AemiJSONFuzz`.
 let isFuzz = Context.environment["AEMIJSON_FUZZ"] != nil || Context.environment["ADJSON_FUZZ"] != nil
 
-// The `AemiJSONNIO` adapter (swift-nio `ByteBuffer` interop) is gated behind `AEMIJSON_NIO` so swift-nio
-// stays out of the default resolution graph — `AemiJSON` / `AemiJSONCore` consumers never fetch it. A
-// server that wants the integration builds/resolves with `AEMIJSON_NIO=1` and depends on the
-// `AemiJSONNIO` product, which re-exports `AemiJSONCore`. Same opt-in model as `AEMIJSON_DEV` / `AEMIJSON_FUZZ`.
 let isNIO = Context.environment["AEMIJSON_NIO"] != nil || Context.environment["ADJSON_NIO"] != nil
 
-// Aemi supplies the shared low-level primitives (the `AemiKernel` byte/number kernel). It is pinned to
-// one revision rather than tracking a branch, so a push to aemi cannot change the C kernels and unsafe
-// code under an existing build. Atelier and TerminalKit pin the same revision: SwiftPM rejects one package
-// identity at two revisions in a graph, so all three move together.
 let aemiDependency: Package.Dependency = .package(
     url: "https://github.com/Aemi-Studio/aemi.git",
     revision: "bd5e4cf4441ca3ed1b424935142586ccaac0f835"
 )
 
-// AemiRuntime (the production `TaskProvider`/`Clock` seams the concurrent parse/decode paths use) and
-// AemiTestKit (the test-only kit) are now both vended by the Aemi umbrella package, so they
-// resolve via `aemiDependency` above — there is no separate AemiRuntime / AemiTestKit package.
-
 var packageDependencies: [Package.Dependency] = [
     aemiDependency,
-    // The regular-expression engine behind JSONPath's `match()` and `search()` (RFC 9485 I-Regexp, linear time) and JSON Schema's `pattern`
-    // (ECMAScript, on a budgeted backtracker). No Foundation. Pinned to one revision like Aemi, so a push to aemiregex cannot change the
-    // engine under an existing build.
     .package(url: "https://github.com/g-cqd/AemiRegex.git", revision: "2df69da6f7b8086ae07272d4368d45fe1fd57160"),
-    // Wide range: 603 keeps existing consumers resolving; 604 lets strict consumers already on
-    // swift-syntax 604 (e.g. AtelierCore) share one resolution.
     .package(url: "https://github.com/swiftlang/swift-syntax.git", "603.0.0" ..< "605.0.0"),
-    // OrderedCollections backs the order-preserving eager `JSONValue.object`. It is Foundation-free
-    // with zero transitive package dependencies (measured), so the core stays portable; together with
-    // `AemiKernel` it is one of the two shipped dependencies of `AemiJSONCore` beyond the standard library.
-    // From 1.7.1: 1.7.0 referenced swift_initBorrow, which Swift runtimes before macOS 27 lack, so a
-    // test bundle failed to load on macOS 26 (apple/swift-collections#733). 1.7.1 removed it; built
-    // here, 1.7.3 references exactly the runtime symbols 1.6.0 does.
     .package(url: "https://github.com/apple/swift-collections.git", "1.7.1" ..< "1.8.0")
 ]
 if isDev {
-    // Shared lint/format tooling (Format/Lint/LintBuild plugins + canonical `.swift-format`).
-    // Dev-only, resolved from the published `main` branch.
     packageDependencies.append(
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0")
     )
-    // ordo-one's statistically-rigorous benchmark framework (p-percentile latencies, malloc /
-    // throughput metrics, CI-gated thresholds) — the project's single benchmark suite lives in
-    // `Benchmarks/AemiJSONSuite` and runs via `swift package benchmark`. Dev-only: the suite target is
-    // added only under `AEMIJSON_DEV`, so consumers never resolve it.
     packageDependencies.append(
         .package(url: "https://github.com/ordo-one/benchmark", from: "1.38.0")
     )
-    // (AemiTestKit is vended by the Aemi package now; the test target references it from there.)
 }
 if isNIO {
-    // swift-nio (NIOCore) supplies `ByteBuffer`. Resolved only under `AEMIJSON_NIO`, so default
-    // consumers of `AemiJSON` / `AemiJSONCore` never pull it into their dependency graph.
     packageDependencies.append(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0")
     )
 }
 
 let orderedCollections: Target.Dependency = .product(name: "OrderedCollections", package: "swift-collections")
-// Shared low-level byte/number primitives. Only the engine (`AemiJSONCore`) links it.
 let aemiKernel: Target.Dependency = .product(name: "AemiKernel", package: "aemi")
-// Runtime-dispatched SIMD byte kernels (the string-stop scan accelerates the tape parser's hot loop).
 let aemiKernels: Target.Dependency = .product(name: "AemiKernels", package: "aemi")
-// The regular-expression engine for JSONPath's `match()` / `search()` and JSON Schema's `pattern`. Only the engine target links it.
 let aemiRegex: Target.Dependency = .product(name: "AemiRegex", package: "aemiregex")
 
-// Build-time formatting enforcement attaches to the library only in dev/CI. A build-tool plugin on
-// a library target would otherwise run for everyone who depends on AemiJSON, so it stays gated.
 let aemijsonBuildPlugins: [Target.PluginUsage] =
     isDev ? [.plugin(name: "LintBuild", package: "aemi")] : []
 
 let package = Package(
     name: "AemiJSON",
-    // The deployment floor is pinned by `Synchronization`'s `Mutex`/`Atomic` (the library's only
-    // OS-version-sensitive dependency), which ship in macOS 15 / iOS 18 / tvOS 18 / watchOS 11 /
-    // visionOS 2. No code uses a newer-SDK API and there are no `@available` shims, so these are the
-    // true minimums. Types gated to the 2025 SDKs (`UTF8Span`, `InlineArray`) are deliberately not
-    // adopted, and `Span`/`RawSpan` back-deploy further still — adopting `UTF8Span`/`InlineArray`
-    // would raise this floor or fragment the code with availability shims. (The Swift 6.4
-    // tools-version is a *toolchain* requirement, not a deployment one.)
     platforms: [
         .macOS(.v15),
         .iOS(.v18),
@@ -157,14 +83,8 @@ let package = Package(
         .visionOS(.v2)
     ],
     products: [
-        // The full library: the engine plus Foundation interop, Codable, Schema, and the macros.
         .library(name: "AemiJSON", targets: ["AemiJSON"]),
-        // The engine on its own — Foundation-free and swift-syntax-free (its dependencies,
-        // OrderedCollections and AemiKernel, are themselves Foundation-free with no transitive deps):
-        // tape parsing, lazy navigation, JSONValue, and JSONPath/Pointer/Patch. For a lean core.
         .library(name: "AemiJSONCore", targets: ["AemiJSONCore"]),
-        // JSON-RPC 2.0 over the engine: Content-Length (LSP) and newline (MCP stdio) framing, messages, and a connection that matches
-        // responses to requests (roadmap 0006).
         .library(name: "AemiJSONRPC", targets: ["AemiJSONRPC"]),
         .library(name: "ADJSON", targets: ["ADJSON"]),
         .library(name: "ADJSONCore", targets: ["ADJSONCore"])
@@ -183,21 +103,12 @@ let package = Package(
             ],
             swiftSettings: strictSettings
         ),
-        // The Foundation-free, swift-syntax-free engine: tape parse, lazy navigation
-        // (JSONDocument/JSON/JSONValue), and query (JSONPath/Pointer/Patch). Depends on
-        // OrderedCollections (order-preserving eager objects) and AemiKernel (shared byte/number
-        // primitives) — both Foundation-free with no transitive package deps, so the core stays portable.
         .target(
             name: "AemiJSONCore",
             dependencies: [orderedCollections, aemiKernel, aemiKernels, aemiRegex],
             swiftSettings: kernelSettings
         ),
         .target(
-            // `aemiKernel` is declared directly (not only transitively via `AemiJSONCore`) because the
-            // umbrella links it itself — `EncoderBufferPool` uses `AemiKernel.ByteBufferPool`.
-            // `AemiRuntime` is the zero-dep, shipped-safe `TaskProvider` seam the concurrent
-            // parse/decode paths default to `LiveTaskProvider` (production-identical); a test injects a
-            // `TaskProviderSpy` (from the dev-only `AemiTestKit`, which re-exports the same seam).
             name: "AemiJSON",
             dependencies: [
                 "AemiJSONCore", "AemiJSONMacros", orderedCollections, aemiKernel, aemiKernels, aemiRegex,
@@ -206,8 +117,6 @@ let package = Package(
             swiftSettings: strictSettings,
             plugins: aemijsonBuildPlugins
         ),
-        // JSON-RPC 2.0 (roadmap 0006). Framing, messages and the connection need only the engine; the stdio reader runs its blocking
-        // reads on AemiRuntime's offload pool.
         .target(
             name: "AemiJSONRPC",
             dependencies: [
@@ -230,9 +139,6 @@ let package = Package(
             name: "AemiJSONTests",
             dependencies: [
                 "AemiJSON",
-                // Unconditional: 13 test files import AemiTestKit with no `#if canImport` guard, so
-                // gating this behind AEMIJSON_DEV made a plain `swift test` a hard compile failure.
-                // Aemi is already a non-dev dependency, so this costs consumers nothing.
                 .product(name: "AemiTestKit", package: "aemi"),
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax")
             ],
@@ -240,8 +146,6 @@ let package = Package(
             swiftSettings: testSettings
         ),
 
-        // Format / lint / LintBuild come from the shared Aemi dev dependency. The AemiJSON-specific
-        // command plugins below (coverage-check, bench-compare, fetch-fixtures) stay local.
         .plugin(
             name: "CoverageCheck",
             capability: .command(
@@ -274,10 +178,6 @@ let package = Package(
 )
 
 if isFuzz {
-    // `-parse-as-library` (libFuzzer supplies `main`) + `-sanitize=fuzzer` (instrument + link the
-    // fuzzer runtime). Unsafe flags are fine here: the target is internal, gated, and never a product.
-    // NOTE: `-sanitize=fuzzer` is a Linux capability of the Swift toolchain (the Darwin SDK rejects
-    // it), so this target is built and run in the Linux CI fuzz job, not on macOS.
     package.targets.append(
         .executableTarget(
             name: "AemiJSONFuzz",
@@ -288,16 +188,10 @@ if isFuzz {
             linkerSettings: [.unsafeFlags(["-sanitize=fuzzer"])]
         )
     )
-    // Declare the explicit executable product so `swift build --product AemiJSONFuzz` links the binary.
-    // (`--target` only compiles the module: with `-parse-as-library` the `main` comes from libFuzzer
-    // at link time, so without a product to drive the link no executable is produced.)
     package.products.append(.executable(name: "AemiJSONFuzz", targets: ["AemiJSONFuzz"]))
 }
 
 if isDev {
-    // ordo-one package-benchmark suite (AEMIJSON_DEV-gated): the `swift package benchmark` plugin runs
-    // these with statistical rigor and can gate CI on p-percentile thresholds. Lives under
-    // `Benchmarks/` per the framework's convention.
     package.targets.append(
         .executableTarget(
             name: "AemiJSONSuite",
@@ -310,10 +204,6 @@ if isDev {
             plugins: [.plugin(name: "BenchmarkPlugin", package: "benchmark")]
         )
     )
-    // AemiJSONProbe (AEMIJSON_DEV-gated): a per-phase resource probe built on `AemiMetrics.ProcessProbe`.
-    // The ordo-one suite reports per-benchmark percentiles; this attributes CPU, retired instructions,
-    // and held footprint to each lifecycle phase (parse → materialize → query → encode), which the
-    // suite can't break out. Run: `AEMIJSON_DEV=1 swift run -c release AemiJSONProbe`.
     package.targets.append(
         .executableTarget(
             name: "AemiJSONProbe",
@@ -325,9 +215,6 @@ if isDev {
 }
 
 if isNIO {
-    // The swift-nio interop product (AEMIJSON_NIO-gated): `ByteBuffer` ⇄ AemiJSON. A superset of the
-    // engine — it depends on and re-exports `AemiJSONCore` (Foundation-free), and adds NIOCore only
-    // here, so the base products stay dependency-clean.
     let nioCore: Target.Dependency = .product(name: "NIOCore", package: "swift-nio")
     package.products.append(.library(name: "AemiJSONNIO", targets: ["AemiJSONNIO"]))
     package.products.append(.library(name: "ADJSONNIO", targets: ["ADJSONNIO"]))
